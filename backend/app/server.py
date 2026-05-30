@@ -163,6 +163,12 @@ _intel_state = {
     "running": False,          # an inference is currently in flight
     "last_error": None,        # str | None
 }
+# Dedicated vision-enabled reasoner for the on-demand /intel/deep-look route.
+# Always uses with_vision=True regardless of INTEL_VISION; constructed lazily
+# here so the model name stays in sync with the periodic reasoner.
+_deep_look_reasoner: IntelReasoner | None = (
+    IntelReasoner(model=_INTEL_MODEL_ENV, with_vision=True) if _INTEL_ENABLED else None
+)
 
 
 def _detections_path_for(video_name: str) -> Path:
@@ -468,6 +474,26 @@ class _NoTargetDetector:
 approach_detector = _NoTargetDetector()
 
 
+async def _run_deep_look(reasoner, jpeg, labels) -> "IntelSummary":
+    """Run exactly one vision-enabled assessment over `jpeg`.
+
+    Returns an error summary (no model call) when no frame is available so the
+    caller always gets a well-typed result rather than an exception.
+    """
+    import time as _time
+
+    if jpeg is None:
+        return IntelSummary(
+            text="No frame available for deep look.",
+            threat_level="unknown",
+            labels_seen=sorted(set(labels)),
+            t=_time.time(),
+            model="",
+            latency_ms=0.0,
+        )
+    return await reasoner.summarise(jpeg, labels)
+
+
 async def _approach_loop() -> None:
     interval = 1.0 / 15.0
     while True:
@@ -605,6 +631,34 @@ async def get_intel_summary() -> dict:
             if s is not None
             else None
         ),
+    }
+
+
+@app.post("/intel/deep-look")
+async def post_deep_look() -> dict:
+    """On-demand vision-enabled assessment over the current Mavic frame.
+
+    Unlike the periodic /intel/summary (text-only by default), this endpoint
+    always encodes the latest JPEG into the prompt so the model literally sees
+    the frame. One inference per request — expect ~30–120 s on Apple Silicon
+    for Gemma 3 4B. Returns immediately with an error payload when intel is
+    disabled or no frame is available.
+    """
+    if _deep_look_reasoner is None:
+        return {"summary": None, "error": "intel disabled"}
+    jpeg = await asyncio.to_thread(mavic_camera.read_jpeg)
+    boxes, _w, _h, _t = perception.latest_boxes()
+    labels = [b.label for b in boxes]
+    summary = await _run_deep_look(_deep_look_reasoner, jpeg, labels)
+    return {
+        "summary": {
+            "text": summary.text,
+            "threat_level": summary.threat_level,
+            "labels_seen": summary.labels_seen,
+            "t": summary.t,
+            "model": summary.model,
+            "latency_ms": summary.latency_ms,
+        }
     }
 
 
