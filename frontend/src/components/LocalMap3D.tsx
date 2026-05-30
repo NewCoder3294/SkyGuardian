@@ -30,6 +30,8 @@ interface Props {
   apiBase?: string;
   /** Building-clip radius (metres). 0 = show everything in the cache. */
   buildingsRadiusM?: number;
+  /** Optional single-line status (entity count, playback time, etc.). */
+  statusLine?: string;
 }
 
 export function LocalMap3D({
@@ -39,6 +41,7 @@ export function LocalMap3D({
   showLandmarks = false,
   apiBase,
   buildingsRadiusM = 0,
+  statusLine,
 }: Props) {
   // When a buildings layer is configured we frame the camera against the
   // building radius (not the SLAM span) so the campus is visible on first
@@ -80,7 +83,7 @@ export function LocalMap3D({
           target={[0, 0, 0]}
         />
       </Canvas>
-      <ViewLegend />
+      <ViewLegend statusLine={statusLine} />
     </div>
   );
 }
@@ -189,11 +192,12 @@ function LandmarkCloud({ landmarks }: { landmarks: Entity[] }) {
   );
 }
 
-function ViewLegend() {
+function ViewLegend({ statusLine }: { statusLine?: string }) {
   return (
     <div className="tac-corners pointer-events-none absolute left-4 top-4 space-y-1 border border-border-strong bg-surface/80 px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-text-muted backdrop-blur-sm">
       <div className="text-accent">◢ Local frame · 3D</div>
       <div className="text-text-dim">Drag · orbit · scroll zoom</div>
+      {statusLine && <div className="text-text-muted">{statusLine}</div>}
     </div>
   );
 }

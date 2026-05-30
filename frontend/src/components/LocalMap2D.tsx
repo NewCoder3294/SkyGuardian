@@ -242,7 +242,7 @@ export function LocalMap2D({
         ref={canvasRef}
         className="block h-full w-full cursor-grab active:cursor-grabbing"
       />
-      <div className="tac-corners pointer-events-none absolute left-4 top-4 space-y-1 border border-border-strong bg-surface/85 px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-text-muted backdrop-blur-sm">
+      <div className="tac-corners absolute left-4 top-4 space-y-1 border border-border-strong bg-surface/85 px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-text-muted backdrop-blur-sm">
         <div className="text-accent">◢ Local frame · top-down</div>
         <div className="text-text-dim">
           {buildingsState === "loading" && "loading buildings…"}
@@ -250,16 +250,16 @@ export function LocalMap2D({
           {buildingsState === "missing" && "no buildings cached"}
         </div>
         {statusLine && (
-          <div className="pt-1 text-text-muted">{statusLine}</div>
+          <div className="text-text-muted">{statusLine}</div>
         )}
+        <button
+          type="button"
+          onClick={fitToBuildings}
+          className="mt-1 border border-border-strong bg-surface-elevated px-2 py-0.5 text-text-muted transition hover:border-accent/60 hover:text-accent"
+        >
+          Recenter
+        </button>
       </div>
-      <button
-        type="button"
-        onClick={fitToBuildings}
-        className="absolute right-4 top-4 border border-border-strong bg-surface/85 px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest text-text-muted backdrop-blur-sm transition hover:border-accent/60 hover:text-accent"
-      >
-        Recenter
-      </button>
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { IntelChat } from "@/components/IntelChat";
 import { IntelPanel } from "@/components/IntelPanel";
 import { IntelSummaryCard } from "@/components/IntelSummaryCard";
 import { LocalMap2D } from "@/components/LocalMap2D";
+import { LocalMap3D } from "@/components/LocalMap3D";
 import { SourceSelector, type SourceState } from "@/components/SourceSelector";
 import { StatusBar } from "@/components/StatusBar";
 import { ThreatAlert } from "@/components/ThreatAlert";
@@ -59,6 +60,17 @@ export default function Page() {
   useEffect(() => {
     window.localStorage.setItem("sg.tab", tab);
   }, [tab]);
+
+  // Map view dimension. Persisted alongside the tab so reloads stay put.
+  // Same SSR/CSR pattern: render "2d" first, restore after mount.
+  const [mapView, setMapView] = useState<"2d" | "3d">("2d");
+  useEffect(() => {
+    const saved = window.localStorage.getItem("sg.mapView");
+    if (saved === "2d" || saved === "3d") setMapView(saved);
+  }, []);
+  useEffect(() => {
+    window.localStorage.setItem("sg.mapView", mapView);
+  }, [mapView]);
 
   // ---- mode dispatch: live RTMP vs playback file ------------------------
   const [source, setSource] = useState<SourceState | null>(null);
@@ -239,15 +251,31 @@ export default function Page() {
           )}
           {tab === "map" && (
             <div className="relative min-h-0 flex-1">
-              <LocalMap2D
-                entities={effectiveOpEntities}
-                apiBase={apiBase}
-                statusLine={
-                  isPlayback && playbackData
-                    ? `${effectiveOpEntities.length} entities · t=${playbackTime.toFixed(1)}s`
-                    : `${effectiveOpEntities.length} entities`
-                }
-              />
+              {mapView === "2d" ? (
+                <LocalMap2D
+                  entities={effectiveOpEntities}
+                  apiBase={apiBase}
+                  statusLine={
+                    isPlayback && playbackData
+                      ? `${effectiveOpEntities.length} entities · t=${playbackTime.toFixed(1)}s`
+                      : `${effectiveOpEntities.length} entities`
+                  }
+                />
+              ) : (
+                <LocalMap3D
+                  entities={effectiveOpEntities}
+                  spanMeters={20}
+                  showLandmarks={false}
+                  apiBase={apiBase}
+                  buildingsRadiusM={800}
+                  statusLine={
+                    isPlayback && playbackData
+                      ? `${effectiveOpEntities.length} entities · t=${playbackTime.toFixed(1)}s`
+                      : `${effectiveOpEntities.length} entities`
+                  }
+                />
+              )}
+              <MapViewToggle value={mapView} onChange={setMapView} />
               <div className="pointer-events-auto absolute left-3 bottom-3 right-3 md:right-auto md:max-w-md">
                 <IntelSummaryCard apiBase={apiBase} variant="compact" />
               </div>
@@ -270,6 +298,34 @@ export default function Page() {
           )}
         </section>
       </main>
+    </div>
+  );
+}
+
+function MapViewToggle({
+  value,
+  onChange,
+}: {
+  value: "2d" | "3d";
+  onChange: (v: "2d" | "3d") => void;
+}) {
+  return (
+    <div className="pointer-events-auto absolute right-4 top-4 flex border border-border-strong bg-surface/85 font-mono text-[10px] uppercase tracking-[0.3em] backdrop-blur-sm">
+      {(["2d", "3d"] as const).map((v) => (
+        <button
+          key={v}
+          type="button"
+          onClick={() => onChange(v)}
+          aria-pressed={value === v}
+          className={`px-3 py-1.5 transition-colors ${
+            value === v
+              ? "bg-accent/15 text-accent"
+              : "text-text-muted hover:text-accent"
+          }`}
+        >
+          {v.toUpperCase()}
+        </button>
+      ))}
     </div>
   );
 }
