@@ -66,6 +66,11 @@ def test_rejects_nan_and_inf(bad):
         FollowState(distance_m=bad, t=0.0)
 
 
+def test_confirming_phase_is_accepted():
+    # Airborne target-confirmation hover before follow/track begins.
+    assert FollowState(active=True, phase="confirming", distance_m=2.0, t=1.0).phase == "confirming"
+
+
 def test_server_injected_stale_phase_is_valid():
     # The broadcast loop downgrades to phase="stale"; the model must allow it.
     msg = FollowState(active=True, phase="following", distance_m=2.0, t=1.0)

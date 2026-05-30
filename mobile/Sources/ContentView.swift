@@ -45,7 +45,11 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             voiceBar
-            ControlBar(onCommand: { client.send($0) }, enabled: isConnected)
+            // Laptop intent bar — only on the Map tab. In Feed the Tello is flown
+            // directly from the phone, so these laptop-routed buttons are inert.
+            if center == .map {
+                ControlBar(onCommand: { client.send($0) }, enabled: isConnected)
+            }
         }
         .background(Theme.paper)
         .preferredColorScheme(.light)   // forced light mode

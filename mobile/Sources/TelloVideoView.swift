@@ -77,7 +77,11 @@ struct TelloDirectView: View {
                             .background(Theme.panel.opacity(0.9)).overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
                     }
                 }
-                followControls
+                if follow.phase == .confirming {
+                    confirmBar
+                } else {
+                    followControls
+                }
             }
             .padding(8)
         }
@@ -108,6 +112,29 @@ struct TelloDirectView: View {
             Text(String(format: "BRG %+.0f°", follow.bearingDeg)).font(Theme.mono(9)).foregroundColor(Theme.faint)
         }
         .padding(6).background(Color.black.opacity(0.55))
+    }
+
+    /// Airborne target confirmation: after takeoff the Tello hovers with the lock box
+    /// drawn; the operator approves the right target before any follow/track motion.
+    private var confirmBar: some View {
+        VStack(spacing: 8) {
+            Text("TARGET ACQUIRED — CONFIRM?").font(Theme.mono(12, weight: .bold)).foregroundColor(Theme.olive)
+            Text(String(format: "Hovering · DIST %.1fm · BRG %+.0f°", follow.distance, follow.bearingDeg))
+                .font(Theme.mono(9)).foregroundColor(Theme.faint)
+            HStack(spacing: 10) {
+                Button { follow.disarmAndLand() } label: {
+                    Text("ABORT · LAND").font(Theme.mono(13, weight: .bold))
+                        .foregroundColor(.white).frame(maxWidth: .infinity).padding(.vertical, 14)
+                        .background(Theme.danger)
+                }
+                Button { follow.confirmTarget() } label: {
+                    Text("CONFIRM").font(Theme.mono(13, weight: .bold))
+                        .foregroundColor(.black).frame(maxWidth: .infinity).padding(.vertical, 14)
+                        .background(Theme.olive)
+                }
+            }
+        }
+        .padding(10).background(Color.black.opacity(0.6))
     }
 
     private var followControls: some View {
@@ -187,6 +214,7 @@ struct TelloDirectView: View {
         switch follow.phase {
         case .disarmed: return "DISARMED"
         case .searching: return "● SEARCHING"
+        case .confirming: return "◆ CONFIRM TARGET?"
         case .following: return "● FOLLOWING"
         case .lost: return "○ TAG LOST"
         case .manual: return "✋ MANUAL · say “follow me”"
@@ -196,7 +224,7 @@ struct TelloDirectView: View {
         switch follow.phase {
         case .following: return Theme.olive
         case .lost: return Theme.danger
-        case .manual: return Theme.brown
+        case .manual, .confirming: return Theme.brown
         default: return Theme.faint
         }
     }

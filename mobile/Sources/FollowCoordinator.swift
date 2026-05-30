@@ -8,13 +8,14 @@ import QuartzCore
 /// hover when the tag is lost, and an automatic land if it stays lost.
 final class FollowCoordinator: ObservableObject {
     enum Phase: Equatable {
-        case disarmed, searching, following, lost, manual
+        case disarmed, searching, confirming, following, lost, manual
 
         /// Lowercase wire label shared with the backend FollowState.phase contract.
         var label: String {
             switch self {
             case .disarmed: return "disarmed"
             case .searching: return "searching"
+            case .confirming: return "confirming"
             case .following: return "following"
             case .lost: return "lost"
             case .manual: return "manual"
@@ -53,8 +54,11 @@ final class FollowCoordinator: ObservableObject {
     private var armed = false          // airborne under our control
     private var followActive = false   // running the follow loop (false = manual hover)
     private var tookOff = false        // takeoff climb has settled (gate follow rc)
+    private var tookOffAt: CFTimeInterval = 0   // when the climb settled (confirm timeout base)
+    private var confirmed = false      // operator approved the locked target (gate follow rc)
     private var landing = false        // lost-land in progress (fire once)
     private let takeoffSettle: CFTimeInterval = 4.0   // let the takeoff climb finish before follow rc
+    private let confirmTimeout: CFTimeInterval = 30.0 // auto-land if the operator never confirms
 
     private let rcInterval = 0.066                   // ~15 Hz stick updates
     private let staleTimeout: CFTimeInterval = 1.5   // ride through tag losses for continuity (loose)
@@ -82,6 +86,7 @@ final class FollowCoordinator: ObservableObject {
             self.armed = true
             self.followActive = true
             self.tookOff = false
+            self.confirmed = false   // operator must confirm the locked target before follow rc
             self.landing = false
             self.latest = nil
             self.latestTime = CACurrentMediaTime()   // grace period before lost-land
@@ -89,6 +94,7 @@ final class FollowCoordinator: ObservableObject {
             // autonomous sticks never fight the takeoff.
             self.rcQueue.asyncAfter(deadline: .now() + self.takeoffSettle) {
                 self.tookOff = true
+                self.tookOffAt = CACurrentMediaTime()
                 self.latestTime = CACurrentMediaTime()
             }
         }
@@ -113,11 +119,13 @@ final class FollowCoordinator: ObservableObject {
             self.armed = true
             self.followActive = true
             self.tookOff = false
+            self.confirmed = false   // operator must confirm the locked target before track rc
             self.landing = false
             self.latest = nil
             self.latestTime = CACurrentMediaTime()
             self.rcQueue.asyncAfter(deadline: .now() + self.takeoffSettle) {
                 self.tookOff = true
+                self.tookOffAt = CACurrentMediaTime()
                 self.latestTime = CACurrentMediaTime()
             }
         }
@@ -146,6 +154,7 @@ final class FollowCoordinator: ObservableObject {
             self.followActive = true
             self.landing = false
             self.tookOff = true            // already airborne — no settle delay needed
+            self.confirmed = true          // target was confirmed before the takeover; don't re-confirm
             self.latest = nil
             self.latestTime = CACurrentMediaTime()  // fresh grace before lost-land
         }
@@ -158,7 +167,7 @@ final class FollowCoordinator: ObservableObject {
         stream?.onPixelBuffer = nil
         rcQueue.async {                    // rcTimer + control state are rcQueue-owned
             self.rcTimer?.cancel(); self.rcTimer = nil
-            self.armed = false; self.followActive = false
+            self.armed = false; self.followActive = false; self.confirmed = false
         }
         TelloCommander.shared.rc(.hover)
         TelloCommander.shared.send("land")
@@ -174,7 +183,7 @@ final class FollowCoordinator: ObservableObject {
         stream?.onPixelBuffer = nil
         rcQueue.async {
             self.rcTimer?.cancel(); self.rcTimer = nil
-            self.armed = false; self.followActive = false
+            self.armed = false; self.followActive = false; self.confirmed = false
         }
         TelloCommander.shared.send("emergency")
         mode = .tag
@@ -280,6 +289,21 @@ final class FollowCoordinator: ObservableObject {
         let fresh = age < staleTimeout && latest != nil
         let tag = fresh ? latest : nil
 
+        // Target-confirmation gate: after takeoff the drone HOVERS and shows the lock
+        // for the operator to approve. No follow/track rc is sent until confirmTarget().
+        if !confirmed {
+            TelloCommander.shared.rc(.hover)
+            if now - tookOffAt > confirmTimeout {
+                // Operator never confirmed — land for safety rather than hover forever.
+                landing = true
+                rcTimer?.cancel(); rcTimer = nil
+                DispatchQueue.main.async { self.disarmAndLand() }
+            } else {
+                setPhase(fresh ? .confirming : .searching)
+            }
+            return
+        }
+
         if fresh {
             TelloCommander.shared.rc(controller.command(for: tag))
             setPhase(.following)
@@ -292,6 +316,17 @@ final class FollowCoordinator: ObservableObject {
             TelloCommander.shared.rc(controller.command(for: nil))   // hover while searching
             setPhase(.lost)
         }
+    }
+
+    /// Operator approved the locked target → release the follow/track loop. Only
+    /// meaningful while in the .confirming/.searching pre-confirm hover.
+    func confirmTarget() {
+        rcQueue.async {
+            guard self.armed, !self.confirmed else { return }
+            self.confirmed = true
+            self.latestTime = CACurrentMediaTime()   // fresh grace as following begins
+        }
+        setPhase(.searching)
     }
 
     private func setPhase(_ p: Phase) {

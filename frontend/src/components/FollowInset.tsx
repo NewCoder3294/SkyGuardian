@@ -19,7 +19,7 @@ export function FollowInset({ state }: { state: FollowState | null }) {
       ? "text-ok"
       : state.phase === "lost" || state.phase === "stale"
         ? "text-fail"
-        : state.phase === "manual"
+        : state.phase === "manual" || state.phase === "confirming"
           ? "text-accent"
           : "text-text-dim";
 

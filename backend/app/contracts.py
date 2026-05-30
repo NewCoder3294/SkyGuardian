@@ -150,7 +150,7 @@ class FollowState(BaseModel):
     # "stale" is server-injected when the phone's stream ages out; the phone only
     # ever sends the five live phases.
     phase: Literal[
-        "disarmed", "searching", "following", "lost", "manual", "stale"
+        "disarmed", "searching", "confirming", "following", "lost", "manual", "stale"
     ] = "disarmed"
     distance_m: float = Field(default=0.0, ge=0.0, le=200.0)   # metres, bounded
     bearing_deg: float = Field(default=0.0, ge=-360.0, le=360.0)
