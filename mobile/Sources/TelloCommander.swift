@@ -71,6 +71,13 @@ final class TelloCommander: ObservableObject {
         return true
     }
 
+    /// High-rate stick control (the follow loop's channel). Unlike `send`, `rc` gets
+    /// no ack and is meant to be streamed continuously; we fire-and-forget on q.
+    func rc(_ c: RCCommand) {
+        connect()
+        q.async { self.rawSend(c.sdk) }
+    }
+
     func disconnect() {
         q.async {
             self.keepalive?.cancel(); self.keepalive = nil

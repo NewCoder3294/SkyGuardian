@@ -23,6 +23,7 @@ targets:
     platform: iOS
     sources:
       - path: Sources
+      - path: Vendor/apriltag        # vendored AprilTag C lib, compiled in-target for iOS
     dependencies:
       - framework: Frameworks/cactus.xcframework
         embed: true
@@ -33,6 +34,11 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.nicolasdossantos.skyguardian
         TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SWIFT_OBJC_BRIDGING_HEADER: Sources/SkyGuardian-Bridging-Header.h
+        HEADER_SEARCH_PATHS:
+          - $(SRCROOT)/Vendor/apriltag
+        # Vendored C emits many benign warnings; don't let them drown the build log.
+        GCC_WARN_INHIBIT_ALL_WARNINGS: "YES"
     info:
       path: Sources/Info.plist
       properties:

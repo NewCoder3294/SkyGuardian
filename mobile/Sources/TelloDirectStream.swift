@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import Network
+import VideoToolbox
 
 /// Direct phone↔Tello video — no laptop. The phone joins the Tello's WiFi, sends
 /// the SDK `command`/`streamon` over UDP, receives the raw H.264 stream on UDP
@@ -15,11 +16,16 @@ final class TelloDirectStream: ObservableObject {
 
     let displayLayer = AVSampleBufferDisplayLayer()
 
+    /// Optional tap: decoded frames as CVPixelBuffers (Y-plane = grayscale) for the
+    /// follow loop's AprilTag detection. Called on a VideoToolbox thread — hop off it.
+    var onPixelBuffer: ((CVPixelBuffer) -> Void)?
+
     private let videoPort: UInt16 = 11111
 
     private let q = DispatchQueue(label: "tello.video")
     private var video: NWListener?
     private var formatDesc: CMVideoFormatDescription?
+    private var decoder: VTDecompressionSession?
     private var sps: Data?
     private var pps: Data?
     private var assembly = Data()
@@ -37,6 +43,7 @@ final class TelloDirectStream: ObservableObject {
         // Leave the command channel up — voice may still control the drone after the
         // video tab is dismissed. Only the video listener is torn down here.
         video?.cancel(); video = nil
+        if let d = decoder { VTDecompressionSessionInvalidate(d); decoder = nil }
         setState(.idle)
     }
 
@@ -126,7 +133,31 @@ final class TelloDirectStream: ObservableObject {
                     nalUnitHeaderLength: 4, formatDescriptionOut: &desc)
             }
         }
-        if r == noErr { formatDesc = desc }
+        if r == noErr, let desc {
+            formatDesc = desc
+            makeDecoder(desc)
+        }
+    }
+
+    /// VideoToolbox session that decodes to a 420 pixel buffer (Y = grayscale) for
+    /// AprilTag detection. Recreated whenever the H.264 parameter sets change.
+    private func makeDecoder(_ fmt: CMVideoFormatDescription) {
+        if let d = decoder { VTDecompressionSessionInvalidate(d); decoder = nil }
+        let attrs: [CFString: Any] = [
+            kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
+        ]
+        var callback = VTDecompressionOutputCallbackRecord(
+            decompressionOutputCallback: { refcon, _, status, _, imageBuffer, _, _ in
+                guard status == noErr, let imageBuffer, let refcon else { return }
+                let me = Unmanaged<TelloDirectStream>.fromOpaque(refcon).takeUnretainedValue()
+                me.onPixelBuffer?(imageBuffer)
+            },
+            decompressionOutputRefCon: Unmanaged.passUnretained(self).toOpaque())
+        var session: VTDecompressionSession?
+        VTDecompressionSessionCreate(allocator: kCFAllocatorDefault, formatDescription: fmt,
+                                     decoderSpecification: nil, imageBufferAttributes: attrs as CFDictionary,
+                                     outputCallback: &callback, decompressionSessionOut: &session)
+        decoder = session
     }
 
     private func enqueue(picture nal: Data) {
@@ -162,6 +193,13 @@ final class TelloDirectStream: ObservableObject {
         DispatchQueue.main.async {
             self.displayLayer.enqueue(sample)
             if self.state != .streaming { self.state = .streaming }
+        }
+
+        // Tee the same frame to the decoder for follow-loop detection (only when tapped).
+        if onPixelBuffer != nil, let dec = decoder {
+            VTDecompressionSessionDecodeFrame(dec, sampleBuffer: sample,
+                                              flags: [._EnableAsynchronousDecompression],
+                                              frameRefcon: nil, infoFlagsOut: nil)
         }
     }
 }
