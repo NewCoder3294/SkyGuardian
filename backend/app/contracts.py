@@ -11,7 +11,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Literal, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ---------------------------------------------------------------------------
@@ -142,12 +142,19 @@ class FollowState(BaseModel):
     and bearing relative to the soldier, never absolute map coordinates.
     """
 
+    # Reject NaN/inf so a malformed payload can't poison the dashboard render.
+    model_config = ConfigDict(allow_inf_nan=False)
+
     type: Literal["follow_state"] = "follow_state"
     active: bool = False           # drone airborne under follow control
-    phase: str = "disarmed"        # disarmed | searching | following | lost | manual
-    distance_m: float = 0.0        # soldier → Tello range, metres
-    bearing_deg: float = 0.0       # Tello bearing relative to the soldier, degrees
-    source: str = "phone"
+    # "stale" is server-injected when the phone's stream ages out; the phone only
+    # ever sends the five live phases.
+    phase: Literal[
+        "disarmed", "searching", "following", "lost", "manual", "stale"
+    ] = "disarmed"
+    distance_m: float = Field(default=0.0, ge=0.0, le=200.0)   # metres, bounded
+    bearing_deg: float = Field(default=0.0, ge=-360.0, le=360.0)
+    source: str = "phone"          # advisory only; not trusted for any decision
     t: float
 
 

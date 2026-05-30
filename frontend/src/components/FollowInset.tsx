@@ -12,14 +12,19 @@ import type { FollowState } from "@/lib/contracts";
 export function FollowInset({ state }: { state: FollowState | null }) {
   if (!state) return null;
 
+  // "stale" = the laptop hasn't heard from the phone recently (link dead/wedged);
+  // surfaced in red so a frozen reading can't be mistaken for a live follow.
   const phaseColor =
     state.phase === "following"
       ? "text-ok"
-      : state.phase === "lost"
+      : state.phase === "lost" || state.phase === "stale"
         ? "text-fail"
         : state.phase === "manual"
           ? "text-accent"
           : "text-text-dim";
+
+  const subtitle =
+    state.phase === "stale" ? "link lost" : state.active ? null : "on deck";
 
   // Radar geometry. Bearing 0° = soldier's facing (straight up); +deg clockwise.
   const R = 46; // px radius of the outer ring
@@ -71,7 +76,9 @@ export function FollowInset({ state }: { state: FollowState | null }) {
             {state.distance_m.toFixed(1)} m · {Math.round(state.bearing_deg)}°
           </span>
         ) : (
-          <span className="text-[11px] text-text-dim">on deck</span>
+          <span className={`text-[11px] ${state.phase === "stale" ? "text-fail" : "text-text-dim"}`}>
+            {subtitle}
+          </span>
         )}
       </div>
     </div>
