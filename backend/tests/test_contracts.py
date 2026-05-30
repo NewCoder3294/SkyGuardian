@@ -53,3 +53,12 @@ def test_buildings_updated_serializes():
     assert dumped["radius_m"] == 400
     assert dumped["count"] == 12
     assert dumped["t"] == 3.5
+
+
+def test_geopoint_rejects_out_of_range():
+    from app.contracts import GeoPoint
+
+    with pytest.raises(ValidationError):
+        GeoPoint(lat=91.0, lng=0.0)
+    with pytest.raises(ValidationError):
+        GeoPoint(lat=0.0, lng=-181.0)
