@@ -26,3 +26,9 @@ captures/**/*.avi
 .DS_Store
 .idea/
 .vscode/
+
+# Xcode / iOS
+mobile/*.xcodeproj
+mobile/DerivedData/
+xcuserdata/
+*.xcuserstate

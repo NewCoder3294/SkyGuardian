@@ -1,0 +1,59 @@
+name: ReconCompanion
+options:
+  bundleIdPrefix: com.strvx.reconcompanion
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGNING_ALLOWED: "NO"   # simulator builds need no signing; flip for device
+
+targets:
+  ReconCompanion:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.strvx.reconcompanion
+        TARGETED_DEVICE_FAMILY: "1"
+    info:
+      path: Sources/Info.plist
+      properties:
+        CFBundleDisplayName: Recon Companion
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # Plain ws:// to the laptop on the local network needs both of these.
+        NSLocalNetworkUsageDescription: "Connects to the mission laptop on your local network."
+        NSLocationWhenInUseUsageDescription: "Shares your relative position with the laptop for follow-me context."
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+
+  ReconCompanionTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: ReconCompanion
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.strvx.reconcompanion.tests
+        GENERATE_INFOPLIST_FILE: "YES"
+
+schemes:
+  ReconCompanion:
+    build:
+      targets:
+        ReconCompanion: all
+        ReconCompanionTests: [test]
+    test:
+      targets:
+        - ReconCompanionTests
