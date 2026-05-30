@@ -111,4 +111,11 @@ export interface DeviceLocation {
   t: number;
 }
 
-export type ClientMessage = IntentMessage | DeviceLocation;
+export interface EntityReport {
+  type: "entity_report";
+  entities: Entity[];
+  source: "phone";
+  t: number;
+}
+
+export type ClientMessage = IntentMessage | DeviceLocation | EntityReport;
