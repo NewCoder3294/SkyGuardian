@@ -43,8 +43,8 @@ export function StatusBar({
 
         <span className="h-6 w-px bg-border" aria-hidden />
 
-        <CountChannel label="World" value={entityCount} />
-        <CountChannel label="Detections" value={detectionCount} />
+        <CountChannel label="Tracked" value={entityCount} />
+        <CountChannel label="In Frame" value={detectionCount} />
       </div>
       {lastError && (
         <div className="mt-2 inline-flex items-center gap-2 rounded-md border border-fail/60 bg-fail/10 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-fail">

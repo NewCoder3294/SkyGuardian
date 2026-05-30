@@ -2,6 +2,34 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+function RtmpIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden className={className}>
+      <circle cx="8" cy="8" r="1.6" fill="currentColor" />
+      <path
+        d="M5.2 5.2a4 4 0 0 0 0 5.6M10.8 5.2a4 4 0 0 1 0 5.6M3.5 3.5a6.4 6.4 0 0 0 0 9M12.5 3.5a6.4 6.4 0 0 1 0 9"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function UploadIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden className={className}>
+      <path
+        d="M8 2.5v8M4.5 6L8 2.5 11.5 6M3 12v1.5h10V12"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 interface UploadStatus {
   name: string | null;
   state: "idle" | "uploading" | "processing" | "ready" | "error";
@@ -143,27 +171,36 @@ export function SourceSelector({ apiBase, onState }: Props) {
       )}
 
       <div className="ml-auto flex items-center gap-2">
+        {/* RTMP — segmented-control style. Pressed when active. */}
         <button
           type="button"
           onClick={switchToRtmp}
           disabled={busy !== "" || kind === "rtmp"}
-          className={`rounded-full px-4 py-1.5 font-sans text-[11px] font-semibold uppercase tracking-[0.25em] transition ${
+          aria-pressed={kind === "rtmp"}
+          className={`group inline-flex items-center gap-2 rounded-md border px-4 py-2 font-sans text-[12px] font-bold uppercase tracking-[0.18em] transition-all duration-150 active:translate-y-px ${
             kind === "rtmp"
-              ? "bg-accent/15 text-accent shadow-glow-cyan"
-              : "border border-border-strong text-text hover:border-accent hover:text-accent"
-          } ${busy !== "" ? "cursor-not-allowed opacity-50" : ""}`}
+              ? "border-accent/60 bg-accent/15 text-accent shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_-1px_0_rgba(0,0,0,0.3),0_0_0_1px_rgba(34,211,238,0.25)] cursor-default"
+              : "border-border-strong bg-surface-elevated text-text shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_2px_0_rgba(0,0,0,0.35),0_2px_8px_rgba(0,0,0,0.35)] hover:border-accent/60 hover:text-accent hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_2px_0_rgba(0,0,0,0.35),0_4px_14px_rgba(34,211,238,0.2)] active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]"
+          } ${busy !== "" ? "cursor-not-allowed opacity-60" : ""}`}
         >
+          <RtmpIcon
+            className={`h-3.5 w-3.5 ${
+              kind === "rtmp" ? "text-accent" : "text-text-muted group-hover:text-accent"
+            }`}
+          />
           {busy === "rtmp" ? "Switching…" : "RTMP"}
         </button>
 
+        {/* Upload Video — primary CTA. Solid blue, raised, hover lift, click depress. */}
         <label
-          className={`group flex cursor-pointer items-center gap-2 rounded-full px-4 py-1.5 font-sans text-[11px] font-semibold uppercase tracking-[0.25em] transition ${
+          className={`inline-flex select-none items-center gap-2 rounded-md border border-cta-active px-5 py-2 font-sans text-[12px] font-bold uppercase tracking-[0.18em] transition-all duration-150 active:translate-y-px ${
             busy !== "" || showProcessing
-              ? "cursor-not-allowed bg-cta/40 text-white/80"
-              : "bg-cta text-white shadow-glow-blue hover:bg-cta-hover"
+              ? "cursor-not-allowed bg-cta/50 text-white/80 shadow-[inset_0_2px_4px_rgba(0,0,0,0.3)]"
+              : "cursor-pointer bg-cta text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.2),inset_0_-1px_0_rgba(0,0,0,0.25),0_2px_0_#1d4ed8,0_4px_18px_rgba(59,130,246,0.4)] hover:bg-cta-hover hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.25),inset_0_-1px_0_rgba(0,0,0,0.25),0_2px_0_#1d4ed8,0_6px_22px_rgba(59,130,246,0.55)] active:bg-cta-active active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]"
           }`}
         >
-          {busy === "upload" || showProcessing ? "Uploading…" : "Upload video"}
+          <UploadIcon className="h-3.5 w-3.5" />
+          {busy === "upload" || showProcessing ? "Uploading…" : "Upload Video"}
           <input
             ref={fileRef}
             type="file"
