@@ -13,10 +13,11 @@ struct ContentView: View {
                 health: client.health
             )
 
-            ZStack(alignment: .topTrailing) {
-                LocalMapView(entities: client.entities, projection: MapProjection(spanMeters: 20))
+            ZStack(alignment: .topLeading) {
+                LocalMapView(entities: client.entities, trails: client.trails,
+                             projection: MapProjection(spanMeters: 24))
                 legend.padding(10)
-                if showConnect { connectPanel.padding(12) }
+                if showConnect { connectPanel.padding(12).frame(maxWidth: .infinity, alignment: .topTrailing) }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -24,6 +25,16 @@ struct ContentView: View {
         }
         .background(Theme.paper)
         .preferredColorScheme(.light)   // forced light mode
+        .onAppear(perform: maybeLoadDemo)
+    }
+
+    private func maybeLoadDemo() {
+        #if DEBUG
+        if CommandLine.arguments.contains("-demo") {
+            client.loadSampleData()
+            showConnect = false
+        }
+        #endif
     }
 
     private var isConnected: Bool { if case .connected = client.connection { return true }; return false }
