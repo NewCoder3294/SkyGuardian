@@ -35,19 +35,19 @@ export function StatusBar({
   const percT = perceptionTier(health?.perception);
 
   return (
-    <div className="border-b border-border bg-surface/50 px-5 py-3 backdrop-blur-sm">
-      <div className="flex flex-wrap items-center gap-3">
+    <div className="border-b border-border bg-surface/50 px-5 py-2.5 backdrop-blur-sm">
+      <div className="flex flex-wrap items-stretch gap-0">
         <SystemChannel label="Link" value={tierLabel(linkT)} tier={linkT} />
         <SystemChannel label="Leader" value={tierLabel(leaderT)} tier={leaderT} />
         <SystemChannel label="Perception" value={tierLabel(percT)} tier={percT} />
 
-        <span className="h-6 w-px bg-border" aria-hidden />
+        <span className="mx-3 my-1 w-px bg-border" aria-hidden />
 
         <CountChannel label="Tracked" value={entityCount} />
         <CountChannel label="In Frame" value={detectionCount} />
       </div>
       {lastError && (
-        <div className="mt-2 inline-flex items-center gap-2 rounded-md border border-fail/60 bg-fail/10 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-fail">
+        <div className="mt-2 inline-flex items-center gap-2 border border-fail/60 bg-fail/10 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-fail">
           ▲ Fault: {lastError}
         </div>
       )}
@@ -67,20 +67,18 @@ function SystemChannel({
   const isOk = tier === "ok";
   return (
     <div
-      className={`flex items-center gap-2.5 rounded-full border px-3 py-1.5 ${
-        isOk
-          ? "border-accent/40 bg-accent/5"
-          : "border-border-strong bg-surface-elevated"
+      className={`-ml-px flex items-center gap-2.5 border px-3 py-1.5 first:ml-0 ${
+        isOk ? "border-ok/40 bg-ok/[0.06]" : "border-fail/40 bg-fail/[0.06]"
       }`}
     >
       <Dot tier={tier} />
       <div className="flex flex-col leading-tight">
-        <span className="font-sans text-[9px] uppercase tracking-[0.25em] text-text-dim">
+        <span className="font-mono text-[9px] uppercase tracking-[0.25em] text-text-dim">
           {label}
         </span>
         <span
-          className={`font-sans text-[12px] font-semibold ${
-            isOk ? "text-accent" : "text-text"
+          className={`font-mono text-[12px] font-semibold tracking-wide ${
+            isOk ? "text-ok" : "text-fail"
           }`}
         >
           {value}
@@ -92,12 +90,12 @@ function SystemChannel({
 
 function CountChannel({ label, value }: { label: string; value: number }) {
   return (
-    <div className="flex items-center gap-2.5 rounded-full border border-border-strong bg-surface-elevated px-3 py-1.5">
+    <div className="-ml-px flex items-center gap-2.5 border border-border bg-surface-elevated px-3 py-1.5 first:ml-0">
       <div className="flex flex-col leading-tight">
-        <span className="font-sans text-[9px] uppercase tracking-[0.25em] text-text-dim">
+        <span className="font-mono text-[9px] uppercase tracking-[0.25em] text-text-dim">
           {label}
         </span>
-        <span className="font-mono text-[12px] font-semibold tabular-nums text-text">
+        <span className="font-mono text-[13px] font-semibold tabular-nums text-accent">
           {value.toString().padStart(2, "0")}
         </span>
       </div>

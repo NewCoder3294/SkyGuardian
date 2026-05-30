@@ -22,18 +22,18 @@ export function IntelPanel({ detections, detectionLog }: Props) {
 
   return (
     <div className="h-full overflow-auto bg-bg p-5">
-      <section className="overflow-hidden rounded-md border border-border bg-surface shadow-card">
+      <section className="tac-corners overflow-hidden border border-border bg-surface shadow-card">
         <header className="flex items-baseline justify-between border-b border-border bg-surface-elevated px-5 py-3">
-          <span className="font-sans text-[11px] font-semibold uppercase tracking-[0.3em] text-accent">
-            Threat board
+          <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.3em] text-accent">
+            ◢ Threat board
           </span>
-          <div className="flex items-baseline gap-3">
+          <div className="flex items-baseline gap-2">
             {activeThreats > 0 && (
-              <span className="rounded-full border border-fail/40 bg-fail/10 px-2.5 py-0.5 font-sans text-[10px] uppercase tracking-[0.25em] text-fail">
+              <span className="border border-fail/40 bg-fail/10 px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.25em] text-fail">
                 ▲ {activeThreats} threat{activeThreats > 1 ? "s" : ""} live
               </span>
             )}
-            <span className="rounded-full border border-border-strong bg-surface px-2.5 py-0.5 font-mono text-[10px] tabular-nums text-text-muted">
+            <span className="border border-border-strong bg-surface px-2.5 py-0.5 font-mono text-[10px] tabular-nums text-text-muted">
               {board.length.toString().padStart(2, "0")} classes
             </span>
           </div>
@@ -68,7 +68,7 @@ export function IntelPanel({ detections, detectionLog }: Props) {
                         row.visibleNow
                           ? row.isThreat
                             ? "bg-fail"
-                            : "bg-accent shadow-glow-cyan"
+                            : "bg-ok shadow-glow-cyan"
                           : "bg-text-dim"
                       }`}
                     />

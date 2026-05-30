@@ -68,7 +68,7 @@ export interface DetectionBox {
 
 export interface Detections {
   type: "detections";
-  source: string;     // "mavic" | "tello"
+  source: string;     // "leader" (recon Mavic) | "follower" (companion Tello)
   boxes: DetectionBox[];
   image_w: number;
   image_h: number;

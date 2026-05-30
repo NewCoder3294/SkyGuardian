@@ -20,6 +20,7 @@ final class VoiceController: ObservableObject {
     private let engine = AVAudioEngine()
     private var converter: AVAudioConverter?
     private var pcm = Data()
+    private let pcmLock = NSLock()   // pcm is written on the audio render thread, read on main
 
     private let targetFormat = AVAudioFormat(
         commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: true)
@@ -39,7 +40,7 @@ final class VoiceController: ObservableObject {
             guard await requestPermission() else { state = .error("MIC DENIED"); return }
             do {
                 try configureSession()
-                pcm.removeAll(keepingCapacity: true)
+                pcmLock.lock(); pcm.removeAll(keepingCapacity: true); pcmLock.unlock()
                 let input = engine.inputNode
                 let inFormat = input.outputFormat(forBus: 0)
                 guard let target = targetFormat else { state = .error("FORMAT"); return }
@@ -59,7 +60,7 @@ final class VoiceController: ObservableObject {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         try? AVAudioSession.sharedInstance().setActive(false)
-        let captured = pcm
+        pcmLock.lock(); let captured = pcm; pcmLock.unlock()
         state = .thinking
         let pilot = DronePilot(service: service)
         Task {
@@ -86,18 +87,18 @@ final class VoiceController: ObservableObject {
         guard let out = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: capacity) else { return }
         var consumed = false
         var err: NSError?
-        converter.convert(to: out, error: &err) { _, status in
+        let status = converter.convert(to: out, error: &err) { _, status in
             if consumed { status.pointee = .noDataNow; return nil }
             consumed = true
             status.pointee = .haveData
             return buffer
         }
-        if let ch = out.int16ChannelData {
-            let bytes = Int(out.frameLength) * MemoryLayout<Int16>.size
-            pcm.append(UnsafeBufferPointer(start: ch[0], count: Int(out.frameLength)).withMemoryRebound(to: UInt8.self) { _ in
-                Data(bytes: ch[0], count: bytes)
-            })
-        }
+        // Only append real converted audio — drop error/empty results rather than
+        // feeding garbage/stale samples to the recognizer.
+        guard status == .haveData, err == nil, out.frameLength > 0, let ch = out.int16ChannelData else { return }
+        let bytes = Int(out.frameLength) * MemoryLayout<Int16>.size
+        let chunk = Data(bytes: ch[0], count: bytes)
+        pcmLock.lock(); pcm.append(chunk); pcmLock.unlock()
     }
 
     private func configureSession() throws {

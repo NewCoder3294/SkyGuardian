@@ -45,20 +45,17 @@ export default function Page() {
   const { connection, lastError, health } = wsLive;
 
   // Persist the active tab so a Fast Refresh / hard reload doesn't snap the
-  // operator back to Feed every time. The localStorage read MUST happen in
-  // useEffect after mount — reading it inside the lazy initializer would
-  // cause SSR/CSR markup mismatch (server has no localStorage; renders
-  // "feed"; client renders the saved tab) and throw a React hydration error.
+  // operator back to Feed every time. Server and first client render both use
+  // "feed" so the markup matches; the persisted tab is restored after mount to
+  // avoid a hydration mismatch.
   const [tab, setTab] = useState<Tab>("feed");
   useEffect(() => {
-    if (typeof window === "undefined") return;
     const saved = window.localStorage.getItem("sg.tab");
     if (saved === "feed" || saved === "map" || saved === "intel") {
       setTab(saved as Tab);
     }
   }, []);
   useEffect(() => {
-    if (typeof window === "undefined") return;
     window.localStorage.setItem("sg.tab", tab);
   }, [tab]);
 
@@ -171,12 +168,13 @@ export default function Page() {
             className="logo-invert h-9 w-auto select-none"
             draggable={false}
           />
-          <span className="hidden rounded-full border border-border-strong bg-surface-elevated px-3 py-1 text-[10px] uppercase tracking-[0.4em] text-text-muted sm:inline">
+          <span className="hidden border-l border-border-strong pl-4 font-mono text-[10px] uppercase tracking-[0.45em] text-text-muted sm:inline">
             Operator
           </span>
         </div>
-        <div className="flex items-center gap-3 rounded-full border border-border-strong bg-surface-elevated px-4 py-1.5">
-          <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-glow-cyan" aria-hidden />
+        <div className="flex items-center gap-3 border border-border-strong bg-surface-elevated px-4 py-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-ok shadow-glow-cyan" aria-hidden />
+          <span className="font-mono text-[9px] uppercase tracking-[0.3em] text-text-dim">Z</span>
           <Clock />
         </div>
       </header>
@@ -189,18 +187,21 @@ export default function Page() {
         detectionCount={detectionCount}
       />
 
-      <nav className="flex items-center gap-1 border-b border-border bg-surface/60 px-4 py-2">
+      <nav className="flex items-stretch gap-0 border-b border-border bg-surface/60 px-4">
         {TABS.map((t) => (
           <button
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
-            className={`relative rounded-full px-5 py-1.5 font-sans text-[12px] font-semibold uppercase tracking-[0.25em] transition ${
+            className={`relative -mb-px border-b-2 px-5 py-2.5 font-sans text-[12px] font-semibold uppercase tracking-[0.25em] transition-colors ${
               tab === t.id
-                ? "bg-accent/15 text-accent shadow-glow-cyan"
-                : "text-text-dim hover:bg-surface-elevated hover:text-text-muted"
+                ? "border-accent text-accent"
+                : "border-transparent text-text-dim hover:text-text-muted"
             }`}
           >
+            {tab === t.id && (
+              <span aria-hidden className="mr-2 text-text-dim">▸</span>
+            )}
             {t.label}
           </button>
         ))}

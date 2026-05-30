@@ -32,22 +32,33 @@ final class TelloDirectStream: ObservableObject {
     private var started = false
 
     func start() {
-        guard !started else { return }   // may be started by the FEED view or the follow loop
-        started = true
+        DispatchQueue.main.async { self.displayLayer.videoGravity = .resizeAspect }   // CALayer → main
         setState(.connecting)
-        displayLayer.videoGravity = .resizeAspect
-        // The shared commander owns the control channel (command/streamon/keepalive),
-        // so voice flight control and the video stream share one socket to the Tello.
-        TelloCommander.shared.startVideo()
-        openVideo()
+        // Confine all stream state (started/video/decoder/sps/pps/...) to q.
+        q.async {
+            guard !self.started else { return }   // FEED view or follow loop may both start it
+            self.started = true
+            // The shared commander owns the control channel (command/streamon/keepalive),
+            // so voice flight control and the video stream share one socket to the Tello.
+            TelloCommander.shared.startVideo()
+            self.openVideo()
+        }
     }
 
     func stop() {
         // Leave the command channel up — voice may still control the drone after the
         // video tab is dismissed. Only the video listener is torn down here.
-        started = false
-        video?.cancel(); video = nil
-        if let d = decoder { VTDecompressionSessionInvalidate(d); decoder = nil }
+        q.async {
+            self.started = false
+            self.video?.cancel(); self.video = nil
+            if let d = self.decoder {
+                // Drain in-flight async decode callbacks before invalidating, so the
+                // unretained back-pointer in the callback can't fire post-teardown.
+                VTDecompressionSessionWaitForAsynchronousFrames(d)
+                VTDecompressionSessionInvalidate(d)
+                self.decoder = nil
+            }
+        }
         setState(.idle)
     }
 

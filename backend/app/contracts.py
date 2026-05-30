@@ -118,14 +118,14 @@ class DetectionBox(BaseModel):
 class Detections(BaseModel):
     """A snapshot of the most recent YOLO detections on one video source.
 
-    `source` identifies the video stream the boxes belong to (`mavic` or `tello`)
-    so the dashboard overlay knows which `<img>` to draw on top of. `image_w/h`
-    are the source frame dimensions in pixels (advisory — the boxes are already
-    normalised).
+    `source` identifies the video stream the boxes belong to (`leader` = recon
+    Mavic, `follower` = companion Tello) so the dashboard overlay knows which
+    `<img>` to draw on top of. `image_w/h` are the source frame dimensions in
+    pixels (advisory — the boxes are already normalised).
     """
 
     type: Literal["detections"] = "detections"
-    source: str  # "mavic" | "tello"
+    source: str  # "leader" (recon Mavic) | "follower" (companion Tello)
     boxes: list[DetectionBox]
     image_w: int = 0
     image_h: int = 0

@@ -150,57 +150,57 @@ export function SourceSelector({ apiBase, onState }: Props) {
   const live = state?.streaming || upload?.state === "ready";
 
   return (
-    <div className="flex flex-wrap items-center gap-3 border-b border-border bg-surface/60 px-4 py-3">
-      <div className="flex items-center gap-2 rounded-full border border-border-strong bg-surface-elevated px-3 py-1">
+    <div className="flex flex-wrap items-center gap-2 border-b border-border bg-surface/60 px-4 py-2.5">
+      <div className="flex items-center gap-2 border border-border bg-surface-elevated px-3 py-1.5">
         <span
           className={`inline-block h-1.5 w-1.5 rounded-full ${
-            live ? "bg-accent shadow-glow-cyan" : "bg-fail"
+            live ? "bg-ok shadow-glow-cyan" : "bg-fail"
           }`}
           aria-hidden
         />
-        <span className="font-sans text-[10px] uppercase tracking-[0.3em] text-text-dim">
-          Source
+        <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-text-dim">
+          SRC
         </span>
-        <span className="font-mono text-[12px] font-semibold text-text">{labelText}</span>
+        <span className="font-mono text-[12px] font-semibold tracking-wide text-text">{labelText}</span>
       </div>
 
       {upload?.state === "ready" && state?.kind === "file" && (
-        <span className="rounded-full border border-border bg-surface-elevated px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-text-muted">
-          {upload.frame_count} frames · {upload.detection_count} detections
+        <span className="border border-border bg-surface-elevated px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest text-text-muted">
+          {upload.frame_count} frames · {upload.detection_count} det
         </span>
       )}
 
-      <div className="ml-auto flex items-center gap-2">
-        {/* RTMP — segmented-control style. Pressed when active. */}
+      <div className="ml-auto flex items-stretch gap-0">
+        {/* RTMP — segmented-control style. Pressed (armed) when active. */}
         <button
           type="button"
           onClick={switchToRtmp}
           disabled={busy !== "" || kind === "rtmp"}
           aria-pressed={kind === "rtmp"}
-          className={`group inline-flex items-center gap-2 rounded-md border px-4 py-2 font-sans text-[12px] font-bold uppercase tracking-[0.18em] transition-all duration-150 active:translate-y-px ${
+          className={`group -mr-px inline-flex items-center gap-2 border px-4 py-2 font-mono text-[12px] font-bold uppercase tracking-[0.18em] transition-colors duration-100 ${
             kind === "rtmp"
-              ? "border-accent/60 bg-accent/15 text-accent shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_-1px_0_rgba(0,0,0,0.3),0_0_0_1px_rgba(34,211,238,0.25)] cursor-default"
-              : "border-border-strong bg-surface-elevated text-text shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_2px_0_rgba(0,0,0,0.35),0_2px_8px_rgba(0,0,0,0.35)] hover:border-accent/60 hover:text-accent hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_2px_0_rgba(0,0,0,0.35),0_4px_14px_rgba(34,211,238,0.2)] active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]"
+              ? "cursor-default border-accent/70 bg-accent/15 text-accent"
+              : "border-border-strong bg-surface-elevated text-text-muted hover:border-accent/60 hover:text-accent"
           } ${busy !== "" ? "cursor-not-allowed opacity-60" : ""}`}
         >
           <RtmpIcon
             className={`h-3.5 w-3.5 ${
-              kind === "rtmp" ? "text-accent" : "text-text-muted group-hover:text-accent"
+              kind === "rtmp" ? "text-accent" : "text-text-dim group-hover:text-accent"
             }`}
           />
           {busy === "rtmp" ? "Switching…" : "RTMP"}
         </button>
 
-        {/* Upload Video — primary CTA. Solid blue, raised, hover lift, click depress. */}
+        {/* Upload — primary action. Tactical green fill, hard corners, press depress. */}
         <label
-          className={`inline-flex select-none items-center gap-2 rounded-md border border-cta-active px-5 py-2 font-sans text-[12px] font-bold uppercase tracking-[0.18em] transition-all duration-150 active:translate-y-px ${
+          className={`inline-flex select-none items-center gap-2 border px-5 py-2 font-mono text-[12px] font-bold uppercase tracking-[0.18em] transition-colors duration-100 ${
             busy !== "" || showProcessing
-              ? "cursor-not-allowed bg-cta/50 text-white/80 shadow-[inset_0_2px_4px_rgba(0,0,0,0.3)]"
-              : "cursor-pointer bg-cta text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.2),inset_0_-1px_0_rgba(0,0,0,0.25),0_2px_0_#1d4ed8,0_4px_18px_rgba(59,130,246,0.4)] hover:bg-cta-hover hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.25),inset_0_-1px_0_rgba(0,0,0,0.25),0_2px_0_#1d4ed8,0_6px_22px_rgba(59,130,246,0.55)] active:bg-cta-active active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]"
+              ? "cursor-not-allowed border-cta-active bg-cta/50 text-text/70"
+              : "cursor-pointer border-cta-hover bg-cta text-text hover:bg-cta-hover active:bg-cta-active"
           }`}
         >
           <UploadIcon className="h-3.5 w-3.5" />
-          {busy === "upload" || showProcessing ? "Uploading…" : "Upload Video"}
+          {busy === "upload" || showProcessing ? "Uploading…" : "Upload"}
           <input
             ref={fileRef}
             type="file"
@@ -220,9 +220,9 @@ export function SourceSelector({ apiBase, onState }: Props) {
             </span>
             <span className="text-accent">{Math.round((upload.progress || 0) * 100)}%</span>
           </div>
-          <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-border">
+          <div className="mt-1 h-1 w-full overflow-hidden bg-border">
             <div
-              className="h-full rounded-full bg-accent shadow-glow-cyan transition-[width]"
+              className="h-full bg-accent transition-[width]"
               style={{ width: `${Math.round((upload.progress || 0) * 100)}%` }}
             />
           </div>
@@ -230,7 +230,7 @@ export function SourceSelector({ apiBase, onState }: Props) {
       )}
 
       {(error || upload?.error) && (
-        <div className="basis-full rounded-md border border-fail/60 bg-fail/10 px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest text-fail">
+        <div className="basis-full border border-fail/60 bg-fail/10 px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest text-fail">
           ▲ {error || upload?.error}
         </div>
       )}

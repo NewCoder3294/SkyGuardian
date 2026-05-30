@@ -112,12 +112,15 @@ final class AprilTagDetector {
                                              fx: intr.fx, fy: intr.fy, cx: intr.cx, cy: intr.cy)
         var pose = apriltag_pose_t()
         _ = estimate_tag_pose(&info, &pose)
-        let tz = matd_get(pose.t, 2, 0)
-        let tx = matd_get(pose.t, 0, 0)
-        let ty = matd_get(pose.t, 1, 0)
-        let distance = tz > 0 ? tz : sqrt(tx * tx + ty * ty + tz * tz)
-        matd_destroy(pose.R)
-        matd_destroy(pose.t)
+        // Only read translation if pose estimation populated it; a degenerate quad can
+        // leave pose.t NULL. distance == 0 means "unknown" (the controller skips fwd/back).
+        var distance = 0.0
+        if let t = pose.t {
+            let tz = matd_get(t, 2, 0), tx = matd_get(t, 0, 0), ty = matd_get(t, 1, 0)
+            distance = tz > 0 ? tz : sqrt(tx * tx + ty * ty + tz * tz)
+        }
+        if let r = pose.R { matd_destroy(r) }
+        if let t = pose.t { matd_destroy(t) }
 
         // Bearing/elevation from the center pixel (robust, doesn't depend on tag size).
         let bearing = atan2(Double(center.x) - intr.cx, intr.fx)

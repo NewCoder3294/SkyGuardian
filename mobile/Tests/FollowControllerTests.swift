@@ -58,4 +58,13 @@ final class FollowControllerTests: XCTestCase {
     func testSmallBearingInDeadbandYawsZero() {
         XCTAssertEqual(fc.command(for: tag(bearingDeg: 2)).yaw, 0)
     }
+
+    func testUnknownDistanceDoesNotDriveForwardBack() {
+        // distance <= 0 means pose estimation failed — never drive fwd/back on it.
+        XCTAssertEqual(fc.command(for: tag(distance: 0)).fb, 0)
+    }
+
+    func testUnknownDistanceStillYawsToCenter() {
+        XCTAssertGreaterThan(fc.command(for: tag(distance: 0, bearingDeg: 20)).yaw, 0)
+    }
 }

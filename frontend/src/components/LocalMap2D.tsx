@@ -72,7 +72,7 @@ export function LocalMap2D({ entities, apiBase, initialSpanM = 0 }: Props) {
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    ctx.fillStyle = "#06121f";
+    ctx.fillStyle = "#11140f";
     ctx.fillRect(0, 0, w, h);
 
     const v = viewRef.current;
@@ -234,8 +234,8 @@ export function LocalMap2D({ entities, apiBase, initialSpanM = 0 }: Props) {
         ref={canvasRef}
         className="block h-full w-full cursor-grab active:cursor-grabbing"
       />
-      <div className="pointer-events-none absolute left-4 top-4 space-y-1 rounded-md border border-border-strong bg-surface/80 px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-text-muted backdrop-blur-sm">
-        <div className="text-accent">Local frame · top-down</div>
+      <div className="tac-corners pointer-events-none absolute left-4 top-4 space-y-1 border border-border-strong bg-surface/80 px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-text-muted backdrop-blur-sm">
+        <div className="text-accent">◢ Local frame · top-down</div>
         <div className="text-text-dim">
           {buildingsState === "loading" && "loading buildings…"}
           {buildingsState === "ready" && "drag · scroll zoom"}
@@ -245,7 +245,7 @@ export function LocalMap2D({ entities, apiBase, initialSpanM = 0 }: Props) {
       <button
         type="button"
         onClick={fitToBuildings}
-        className="absolute right-4 top-4 rounded-md border border-border-strong bg-surface/80 px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest text-text-muted backdrop-blur-sm transition hover:border-accent/60 hover:text-accent"
+        className="absolute right-4 top-4 border border-border-strong bg-surface/80 px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest text-text-muted backdrop-blur-sm transition hover:border-accent/60 hover:text-accent"
       >
         Recenter
       </button>
@@ -304,7 +304,7 @@ function drawGrid(
   const bottom = v.cy - (h / 2) * v.scale;
 
   // Minor
-  ctx.strokeStyle = "rgba(34, 211, 238, 0.05)";
+  ctx.strokeStyle = "rgba(217, 164, 65, 0.05)";
   ctx.lineWidth = 1;
   ctx.beginPath();
   for (let x = Math.ceil(left / minor) * minor; x <= right; x += minor) {
@@ -320,7 +320,7 @@ function drawGrid(
   ctx.stroke();
 
   // Major
-  ctx.strokeStyle = "rgba(34, 211, 238, 0.14)";
+  ctx.strokeStyle = "rgba(217, 164, 65, 0.14)";
   ctx.beginPath();
   for (let x = Math.ceil(left / major) * major; x <= right; x += major) {
     const sx = w / 2 + (x - v.cx) / v.scale;
@@ -336,7 +336,7 @@ function drawGrid(
 
   // Cardinal axes through origin (slightly brighter).
   const [ox, oy] = worldToScreen(0, 0, w, h, v);
-  ctx.strokeStyle = "rgba(34, 211, 238, 0.22)";
+  ctx.strokeStyle = "rgba(217, 164, 65, 0.22)";
   ctx.beginPath();
   ctx.moveTo(0, oy);
   ctx.lineTo(w, oy);
@@ -378,12 +378,14 @@ function drawBuildings(
     if (bxMax < left || bxMin > right || byMax < bottom || byMin > top) continue;
 
     // Taller building → slightly hotter fill so the campus has visual depth.
+    // Olive-green base with a phosphor-amber hairline outline matches the
+    // teammate's Buildings.tsx (R3F) treatment.
     const t = Math.max(0, Math.min(1, (b.height_m - 4) / 40));
     const fillAlpha = 0.22 + t * 0.28;
-    const strokeAlpha = 0.45 + t * 0.35;
+    const strokeAlpha = 0.50 + t * 0.30;
 
-    ctx.fillStyle = `rgba(34, 211, 238, ${fillAlpha.toFixed(3)})`;
-    ctx.strokeStyle = `rgba(34, 211, 238, ${strokeAlpha.toFixed(3)})`;
+    ctx.fillStyle = `rgba(58, 71, 54, ${fillAlpha.toFixed(3)})`;
+    ctx.strokeStyle = `rgba(217, 164, 65, ${strokeAlpha.toFixed(3)})`;
 
     ctx.beginPath();
     const first = b.polygon[0];
@@ -409,8 +411,8 @@ function drawOrigin(
   const [x, y] = worldToScreen(0, 0, w, h, v);
   if (x < -50 || y < -50 || x > w + 50 || y > h + 50) return;
 
-  ctx.strokeStyle = "#22d3ee";
-  ctx.fillStyle = "#22d3ee";
+  ctx.strokeStyle = "#d9a441";
+  ctx.fillStyle = "#d9a441";
   ctx.lineWidth = 1.5;
 
   ctx.beginPath();
@@ -423,7 +425,7 @@ function drawOrigin(
   ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace";
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
-  ctx.fillStyle = "#22d3ee";
+  ctx.fillStyle = "#d9a441";
   ctx.fillText("LAUNCH", x + 16, y);
 }
 
@@ -448,7 +450,7 @@ function drawEntities(
       ctx.font = labelFont;
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
-      ctx.fillStyle = `rgba(34, 211, 238, ${(alpha * 0.9).toFixed(3)})`;
+      ctx.fillStyle = `rgba(217, 164, 65, ${(alpha * 0.9).toFixed(3)})`;
       ctx.fillText(label, x + 10, y - 10);
     }
   }
@@ -462,13 +464,19 @@ function drawEntityGlyph(
   alpha: number,
 ) {
   ctx.lineWidth = 1.5;
-  const stroke = `rgba(34, 211, 238, ${alpha.toFixed(3)})`;
-  const fill = `rgba(34, 211, 238, ${(alpha * 0.45).toFixed(3)})`;
-  ctx.strokeStyle = stroke;
-  ctx.fillStyle = fill;
+  // Colour discipline: green = friendly (soldier), red = threat (hazard),
+  // amber = neutral telemetry (drones, POIs, generic objects). Mirrors the
+  // NATO C2 palette in globals.css.
+  const amber = `rgba(217, 164, 65, ${alpha.toFixed(3)})`;
+  const amberFill = `rgba(217, 164, 65, ${(alpha * 0.4).toFixed(3)})`;
+  const green = `rgba(143, 178, 122, ${alpha.toFixed(3)})`;
+  const greenFill = `rgba(143, 178, 122, ${(alpha * 0.4).toFixed(3)})`;
+  const red = `rgba(196, 70, 47, ${alpha.toFixed(3)})`;
 
   switch (type) {
     case "soldier": {
+      ctx.strokeStyle = green;
+      ctx.fillStyle = greenFill;
       ctx.beginPath();
       ctx.arc(x, y, 6, 0, Math.PI * 2);
       ctx.fill();
@@ -476,7 +484,8 @@ function drawEntityGlyph(
       return;
     }
     case "drone": {
-      // Triangle pointing up.
+      ctx.strokeStyle = amber;
+      ctx.fillStyle = amberFill;
       ctx.beginPath();
       ctx.moveTo(x, y - 7);
       ctx.lineTo(x + 6, y + 5);
@@ -487,7 +496,8 @@ function drawEntityGlyph(
       return;
     }
     case "poi": {
-      // Diamond.
+      ctx.strokeStyle = amber;
+      ctx.fillStyle = amberFill;
       ctx.beginPath();
       ctx.moveTo(x, y - 7);
       ctx.lineTo(x + 7, y);
@@ -499,8 +509,8 @@ function drawEntityGlyph(
       return;
     }
     case "hazard": {
-      // Warn X.
-      ctx.strokeStyle = `rgba(245, 158, 11, ${alpha.toFixed(3)})`;
+      ctx.strokeStyle = red;
+      ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(x - 6, y - 6);
       ctx.lineTo(x + 6, y + 6);
@@ -510,6 +520,8 @@ function drawEntityGlyph(
       return;
     }
     default: {
+      ctx.strokeStyle = amber;
+      ctx.fillStyle = amberFill;
       ctx.beginPath();
       ctx.arc(x, y, 3.5, 0, Math.PI * 2);
       ctx.fill();
@@ -531,7 +543,7 @@ function drawScaleBar(
   const x1 = w - 24;
   const y = h - 24;
 
-  ctx.strokeStyle = "rgba(147, 177, 203, 0.7)";
+  ctx.strokeStyle = "rgba(190, 178, 145, 0.7)";
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.moveTo(x0, y);
@@ -545,7 +557,7 @@ function drawScaleBar(
   ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace";
   ctx.textAlign = "right";
   ctx.textBaseline = "bottom";
-  ctx.fillStyle = "rgba(147, 177, 203, 0.9)";
+  ctx.fillStyle = "rgba(217, 164, 65, 0.9)";
   ctx.fillText(formatMetres(metres), x1, y - 6);
 }
 

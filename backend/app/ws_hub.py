@@ -32,16 +32,21 @@ class Hub:
         return len(self._clients)
 
     async def broadcast(self, message: ServerMessage) -> None:
-        """Send to every client. Drops clients that error on send."""
+        """Send to every client concurrently. Drops clients that error on send.
+
+        Fan out with asyncio.gather so one slow/stalled client cannot head-of-line
+        block delivery to everyone else (the phone on a lossy link, etc.).
+        """
         payload = message.model_dump(mode="json")
         async with self._lock:
             targets = list(self._clients)
-        dead: list[Connection] = []
-        for conn in targets:
-            try:
-                await conn.send_json(payload)
-            except Exception:
-                dead.append(conn)
+        if not targets:
+            return
+        results = await asyncio.gather(
+            *(conn.send_json(payload) for conn in targets),
+            return_exceptions=True,
+        )
+        dead = [conn for conn, res in zip(targets, results) if isinstance(res, Exception)]
         if dead:
             async with self._lock:
                 for conn in dead:
