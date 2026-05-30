@@ -254,12 +254,18 @@ export default function Page() {
             </div>
           )}
           {tab === "intel" && (
-            <div className="min-h-0 flex-1 overflow-auto">
-              <div className="space-y-4 bg-bg p-5">
-                <IntelSummaryCard apiBase={apiBase} />
-                <IntelChat apiBase={apiBase} />
+            <div className="flex min-h-0 flex-1">
+              <div className="min-w-0 flex-1 overflow-auto">
+                <div className="bg-bg p-5">
+                  <IntelSummaryCard apiBase={apiBase} />
+                </div>
+                <IntelPanel detections={effectiveDetections} detectionLog={effectiveDetectionLog} />
               </div>
-              <IntelPanel detections={effectiveDetections} detectionLog={effectiveDetectionLog} />
+              <aside className="hidden w-96 shrink-0 border-l border-border bg-bg md:flex md:flex-col">
+                <div className="min-h-0 flex-1 overflow-auto p-4">
+                  <IntelChat apiBase={apiBase} />
+                </div>
+              </aside>
             </div>
           )}
         </section>
