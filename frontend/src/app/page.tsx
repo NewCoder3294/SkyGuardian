@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Clock } from "@/components/Clock";
 import { ConsolePanel } from "@/components/ConsolePanel";
+import { FollowInset } from "@/components/FollowInset";
 import { IntelChat } from "@/components/IntelChat";
 import { IntelPanel } from "@/components/IntelPanel";
 import { IntelSummaryCard } from "@/components/IntelSummaryCard";
@@ -288,6 +289,11 @@ export default function Page() {
               <div className="pointer-events-auto absolute left-3 bottom-3 right-3 md:right-auto md:max-w-md">
                 <IntelSummaryCard apiBase={apiBase} variant="compact" />
               </div>
+              {wsLive.followState && (
+                <div className="pointer-events-none absolute right-3 top-3">
+                  <FollowInset state={wsLive.followState} />
+                </div>
+              )}
             </div>
           )}
           {tab === "intel" && (

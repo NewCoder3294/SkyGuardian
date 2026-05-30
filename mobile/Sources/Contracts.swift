@@ -111,3 +111,16 @@ struct DeviceLocation: Encodable, Sendable {
     let source: String
     let t: Double
 }
+
+/// Relative follow geometry — the Tello's range/bearing from the soldier. The
+/// phone runs the follow loop, so it is the source of this; the laptop rebroadcasts
+/// it for the dashboard's follow inset. Not map coordinates (frames aren't shared).
+struct FollowStateMessage: Encodable, Sendable {
+    let type = "follow_state"
+    let active: Bool
+    let phase: String
+    let distance_m: Double
+    let bearing_deg: Double
+    let source: String
+    let t: Double
+}

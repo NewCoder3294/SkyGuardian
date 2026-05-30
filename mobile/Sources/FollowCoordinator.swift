@@ -7,7 +7,20 @@ import QuartzCore
 /// from the (slower, variable) detection rate. Safety first: explicit arm/takeoff,
 /// hover when the tag is lost, and an automatic land if it stays lost.
 final class FollowCoordinator: ObservableObject {
-    enum Phase: Equatable { case disarmed, searching, following, lost, manual }
+    enum Phase: Equatable {
+        case disarmed, searching, following, lost, manual
+
+        /// Lowercase wire label shared with the backend FollowState.phase contract.
+        var label: String {
+            switch self {
+            case .disarmed: return "disarmed"
+            case .searching: return "searching"
+            case .following: return "following"
+            case .lost: return "lost"
+            case .manual: return "manual"
+            }
+        }
+    }
 
     @Published private(set) var phase: Phase = .disarmed
     @Published private(set) var distance: Double = 0          // meters to the tag

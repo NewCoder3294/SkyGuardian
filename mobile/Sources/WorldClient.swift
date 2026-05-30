@@ -66,6 +66,20 @@ final class WorldClient: ObservableObject {
         }
     }
 
+    /// Publish the Tello's relative follow geometry (range/bearing from the soldier)
+    /// so the laptop can rebroadcast it to the dashboard's follow inset. Best-effort,
+    /// fire-and-forget — drops silently if the socket isn't up.
+    func sendFollowState(active: Bool, phase: String, distanceM: Double, bearingDeg: Double) {
+        guard let task else { return }
+        let msg = FollowStateMessage(active: active, phase: phase, distance_m: distanceM,
+                                     bearing_deg: bearingDeg, source: "phone",
+                                     t: Date().timeIntervalSince1970)
+        guard let data = try? encoder.encode(msg), let json = String(data: data, encoding: .utf8) else {
+            return
+        }
+        task.send(.string(json)) { _ in }
+    }
+
     private func receiveLoop() async {
         guard let task else { return }
         while connection == .connected {

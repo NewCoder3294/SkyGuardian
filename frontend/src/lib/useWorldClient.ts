@@ -6,6 +6,7 @@ import type {
   Command,
   DetectionBox,
   Entity,
+  FollowState,
   Health,
   IntentMessage,
   ServerMessage,
@@ -39,6 +40,7 @@ export interface WorldClientState {
   health: Health | null;
   detections: Record<string, DetectionLayer>;
   detectionLog: DetectionEvent[];
+  followState: FollowState | null;
   send: (cmd: Command) => void;
 }
 
@@ -56,6 +58,7 @@ export function useWorldClient(url: string): WorldClientState {
   const [health, setHealth] = useState<Health | null>(null);
   const [detections, setDetections] = useState<Record<string, DetectionLayer>>({});
   const [detectionLog, setDetectionLog] = useState<DetectionEvent[]>([]);
+  const [followState, setFollowState] = useState<FollowState | null>(null);
   const lastLoggedT = useRef<Record<string, number>>({});
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -115,6 +118,9 @@ export function useWorldClient(url: string): WorldClientState {
       case "health":
         setHealth(msg);
         break;
+      case "follow_state":
+        setFollowState(msg);
+        break;
       case "detections":
         setDetections((prev) => ({
           ...prev,
@@ -168,5 +174,5 @@ export function useWorldClient(url: string): WorldClientState {
     };
   }, [open]);
 
-  return { connection, entities, stage, lastError, health, detections, detectionLog, send };
+  return { connection, entities, stage, lastError, health, detections, detectionLog, followState, send };
 }

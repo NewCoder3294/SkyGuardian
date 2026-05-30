@@ -132,7 +132,26 @@ class Detections(BaseModel):
     t: float
 
 
-ServerMessage = Union[WorldSnapshot, MissionState, Health, Detections]
+class FollowState(BaseModel):
+    """Relative follow geometry between the soldier and the companion Tello.
+
+    Published by the PHONE (which runs the follow loop) and rebroadcast by the
+    laptop so the dashboard can render a self-contained 'follow' inset. This is
+    deliberately NOT in the SLAM map frame — the phone's follow frame and the
+    Mavic SLAM frame aren't co-registered — so it carries only the Tello's range
+    and bearing relative to the soldier, never absolute map coordinates.
+    """
+
+    type: Literal["follow_state"] = "follow_state"
+    active: bool = False           # drone airborne under follow control
+    phase: str = "disarmed"        # disarmed | searching | following | lost | manual
+    distance_m: float = 0.0        # soldier → Tello range, metres
+    bearing_deg: float = 0.0       # Tello bearing relative to the soldier, degrees
+    source: str = "phone"
+    t: float
+
+
+ServerMessage = Union[WorldSnapshot, MissionState, Health, Detections, FollowState]
 
 
 # --- clients -> server ---
@@ -151,7 +170,7 @@ class DeviceLocation(BaseModel):
     t: float
 
 
-ClientMessage = Union[IntentMessage, DeviceLocation]
+ClientMessage = Union[IntentMessage, DeviceLocation, FollowState]
 
 
 def parse_client_message(raw: dict) -> ClientMessage:
@@ -163,4 +182,6 @@ def parse_client_message(raw: dict) -> ClientMessage:
         return IntentMessage.model_validate(raw)
     if kind == "device_location":
         return DeviceLocation.model_validate(raw)
+    if kind == "follow_state":
+        return FollowState.model_validate(raw)
     raise ValueError(f"unknown client message type: {kind!r}")

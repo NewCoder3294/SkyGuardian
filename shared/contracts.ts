@@ -75,7 +75,26 @@ export interface Detections {
   t: number;
 }
 
-export type ServerMessage = WorldSnapshot | MissionState | Health | Detections;
+/**
+ * Relative follow geometry between the soldier and the companion Tello. Reported
+ * by the phone (which runs the follow loop) and rebroadcast by the laptop. NOT in
+ * the SLAM map frame — range + bearing only, for a self-contained follow inset.
+ */
+export interface FollowState {
+  type: "follow_state";
+  active: boolean;       // drone airborne under follow control
+  phase: string;         // "disarmed" | "searching" | "following" | "lost" | "manual"
+  distance_m: number;    // soldier → Tello range, metres
+  bearing_deg: number;   // Tello bearing relative to the soldier, degrees
+  t: number;
+}
+
+export type ServerMessage =
+  | WorldSnapshot
+  | MissionState
+  | Health
+  | Detections
+  | FollowState;
 
 // --- clients -> server ---
 export interface IntentMessage {

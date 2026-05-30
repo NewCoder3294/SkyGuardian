@@ -51,6 +51,7 @@ struct ContentView: View {
         .task { await startModelIfNeeded() }
         .onReceive(location.$coordinate) { _ in updateLocalizer() }
         .onReceive(follow.$distance) { _ in updateLocalizer() }
+        .onReceive(follow.$phase) { _ in publishFollow() }
     }
 
     /// Drive the map's phone-side localization from the AprilTag follow + GPS/heading.
@@ -59,6 +60,18 @@ struct ContentView: View {
         localizer.update(operatorCoord: here, distance: follow.distance,
                          bearingRad: follow.bearingDeg * .pi / 180, headingDeg: location.headingDeg,
                          active: follow.phase == .following)
+        publishFollow()   // distance/bearing moved → keep the laptop's follow inset live
+    }
+
+    /// Publish the Tello's relative follow geometry to the laptop so its dashboard
+    /// can render the follow inset. Relative range/bearing only — never map coords
+    /// (the phone follow frame and the Mavic SLAM frame aren't co-registered).
+    private func publishFollow() {
+        guard isConnected else { return }
+        client.sendFollowState(active: follow.phase != .disarmed,
+                               phase: follow.phase.label,
+                               distanceM: follow.distance,
+                               bearingDeg: follow.bearingDeg)
     }
 
     // MARK: first-launch model setup
