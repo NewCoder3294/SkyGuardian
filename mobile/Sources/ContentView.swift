@@ -30,7 +30,7 @@ struct ContentView: View {
                 if center == .map {
                     mapBody
                 } else {
-                    TelloDirectView(stream: stream, follow: follow)   // direct phone↔Tello, no laptop
+                    TelloDirectView(stream: stream, follow: follow, onCommand: handle)   // direct phone↔Tello, no laptop
                 }
                 if center == .map {
                     legend.padding(10)

@@ -34,8 +34,11 @@ struct SampleLayerView: UIViewRepresentable {
 struct TelloDirectView: View {
     @ObservedObject var stream: TelloDirectStream
     @ObservedObject var follow: FollowCoordinator
+    @ObservedObject private var tello = TelloCommander.shared
+    var onCommand: (DroneAction) -> Void = { _ in }
     @State private var confirmArm = false
     @State private var confirmTrack = false
+    @State private var showManual = false
 
     private let videoAspect: CGFloat = 4.0 / 3.0   // Tello stream is 4:3
 
@@ -55,13 +58,25 @@ struct TelloDirectView: View {
 
             VStack {
                 HStack(alignment: .top) {
-                    Text(badge).font(Theme.mono(10, weight: .semibold))
-                        .foregroundColor(stream.state == .streaming ? Theme.olive : Theme.faint)
-                        .padding(6).background(Color.black.opacity(0.5))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(badge).font(Theme.mono(10, weight: .semibold))
+                            .foregroundColor(stream.state == .streaming ? Theme.olive : Theme.faint)
+                            .padding(6).background(Color.black.opacity(0.5))
+                        if tello.battery >= 0 { telemetryHUD }
+                    }
                     Spacer()
                     if follow.isArmed { followHUD }
                 }
                 Spacer()
+                if showManual { manualPad }
+                HStack {
+                    Spacer()
+                    Button { showManual.toggle() } label: {
+                        Text(showManual ? "HIDE MANUAL" : "MANUAL").font(Theme.mono(10, weight: .semibold))
+                            .foregroundColor(Theme.ink).padding(.horizontal, 10).padding(.vertical, 6)
+                            .background(Theme.panel.opacity(0.9)).overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
+                    }
+                }
                 followControls
             }
             .padding(8)
@@ -117,6 +132,54 @@ struct TelloDirectView: View {
                 }
                 .disabled(stream.state != .streaming)
             }
+        }
+    }
+
+    private var telemetryHUD: some View {
+        HStack(spacing: 10) {
+            Text("BAT \(tello.battery)%").foregroundColor(tello.battery < 20 ? Theme.danger : Theme.olive)
+            Text("ALT \(tello.heightCm)cm").foregroundColor(Theme.faint)
+            Text("\(tello.tempC)°C").foregroundColor(Theme.faint)
+            Text("\(tello.flightTimeS)s").foregroundColor(Theme.faint)
+        }
+        .font(Theme.mono(9, weight: .semibold))
+        .padding(.horizontal, 6).padding(.vertical, 4).background(Color.black.opacity(0.55))
+    }
+
+    // Full manual SDK control — every command routes through the same arbiter as voice
+    // (pauses follow if active, then executes). Moves 30 cm, yaw 45°.
+    private var manualPad: some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 4) {
+                padButton("TAKEOFF", DroneAction(.takeoff), Theme.olive)
+                padButton("LAND", DroneAction(.land), Theme.brown)
+                padButton("FLIP", DroneAction(.flip))
+            }
+            HStack(spacing: 4) {
+                padButton("⟲ CCW", DroneAction(.rotateCCW, 45))
+                padButton("FWD", DroneAction(.forward, 30))
+                padButton("⟳ CW", DroneAction(.rotateCW, 45))
+            }
+            HStack(spacing: 4) {
+                padButton("LEFT", DroneAction(.left, 30))
+                padButton("BACK", DroneAction(.back, 30))
+                padButton("RIGHT", DroneAction(.right, 30))
+            }
+            HStack(spacing: 4) {
+                padButton("UP", DroneAction(.up, 30))
+                padButton("DOWN", DroneAction(.down, 30))
+                padButton("EMERGENCY", DroneAction(.emergency), Theme.danger)
+            }
+        }
+        .padding(6).background(Color.black.opacity(0.45))
+    }
+
+    private func padButton(_ label: String, _ action: DroneAction, _ bg: Color = Theme.panel) -> some View {
+        Button { onCommand(action) } label: {
+            Text(label).font(Theme.mono(11, weight: .bold))
+                .foregroundColor(bg == Theme.danger || bg == Theme.brown ? .white : Theme.ink)
+                .frame(maxWidth: .infinity, minHeight: 40).background(bg.opacity(0.92))
+                .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
         }
     }
 

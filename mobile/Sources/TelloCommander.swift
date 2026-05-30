@@ -14,10 +14,19 @@ final class TelloCommander: ObservableObject {
     @Published private(set) var link: Link = .down
     @Published private(set) var lastSent: String = ""
 
+    // Telemetry from the Tello's state broadcast (UDP 8890). -1 = unknown.
+    @Published private(set) var battery: Int = -1     // percent
+    @Published private(set) var heightCm: Int = 0     // height above takeoff
+    @Published private(set) var tofCm: Int = 0        // distance to ground (time-of-flight)
+    @Published private(set) var flightTimeS: Int = 0  // motor-on seconds
+    @Published private(set) var tempC: Int = 0        // board temperature
+
     private let host = "192.168.10.1"
     private let port: UInt16 = 8889
+    private let statePort: UInt16 = 8890
     private let q = DispatchQueue(label: "tello.cmd")
     private var conn: NWConnection?
+    private var stateListener: NWListener?
     private var keepalive: DispatchSourceTimer?
 
     private init() {}
@@ -37,6 +46,7 @@ final class TelloCommander: ObservableObject {
                 case .ready:
                     self.rawSend("command")        // enter SDK mode
                     self.startKeepalive()
+                    self.openState()               // listen for battery/height/etc.
                     self.setLink(.up)
                 case .failed(let e):
                     self.setLink(.error(e.localizedDescription))
@@ -82,7 +92,53 @@ final class TelloCommander: ObservableObject {
         q.async {
             self.keepalive?.cancel(); self.keepalive = nil
             self.conn?.cancel(); self.conn = nil
+            self.stateListener?.cancel(); self.stateListener = nil
             self.setLink(.down)
+        }
+    }
+
+    // MARK: telemetry (Tello state broadcast → UDP 8890)
+
+    private func openState() {
+        guard stateListener == nil else { return }
+        let params = NWParameters.udp
+        params.allowLocalEndpointReuse = true
+        guard let listener = try? NWListener(using: params, on: .init(rawValue: statePort)!) else { return }
+        stateListener = listener
+        listener.newConnectionHandler = { [weak self] conn in
+            guard let self else { return }
+            conn.start(queue: self.q)
+            self.receiveState(on: conn)
+        }
+        listener.start(queue: q)
+    }
+
+    private func receiveState(on conn: NWConnection) {
+        conn.receiveMessage { [weak self] data, _, _, err in
+            guard let self else { return }
+            if let data, let s = String(data: data, encoding: .utf8) { self.parseState(s) }
+            if err == nil { self.receiveState(on: conn) }
+        }
+    }
+
+    /// State string looks like: "...;bat:85;h:0;tof:10;time:0;templ:60;..."
+    private func parseState(_ s: String) {
+        var bat = battery, h = heightCm, tof = tofCm, time = flightTimeS, temp = tempC
+        for field in s.split(separator: ";") {
+            let kv = field.split(separator: ":")
+            guard kv.count == 2, let v = Int(kv[1]) else { continue }
+            switch kv[0] {
+            case "bat": bat = v
+            case "h": h = v
+            case "tof": tof = v
+            case "time": time = v
+            case "templ": temp = v
+            default: break
+            }
+        }
+        DispatchQueue.main.async {
+            self.battery = bat; self.heightCm = h; self.tofCm = tof
+            self.flightTimeS = time; self.tempC = temp
         }
     }
 

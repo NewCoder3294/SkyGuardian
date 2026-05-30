@@ -24,7 +24,10 @@ func localToCoordinate(_ origin: CLLocationCoordinate2D, _ p: Vec3) -> CLLocatio
 final class OSMTileOverlay: MKTileOverlay {
     init() {
         super.init(urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png")
-        canReplaceMapContent = true
+        // Keep a basemap underneath: OSM tiles are opaque and cover it at z≤19, but
+        // past OSM's max zoom (or any missing tile) MapKit falls back to the basemap
+        // instead of rendering the grey grid.
+        canReplaceMapContent = false
         maximumZ = 19
     }
     override func loadTile(at path: MKTileOverlayPath, result: @escaping (Data?, Error?) -> Void) {
@@ -97,9 +100,6 @@ struct OSMMapView: UIViewRepresentable {
         map.pointOfInterestFilter = .excludingAll
         map.isPitchEnabled = true
         map.isRotateEnabled = true
-        // OSM tiles stop at z19; cap the closest zoom so we never request tiles that
-        // don't exist (which renders as the grey grid).
-        map.setCameraZoomRange(MKMapView.CameraZoomRange(minCenterCoordinateDistance: 150), animated: false)
         return map
     }
 
