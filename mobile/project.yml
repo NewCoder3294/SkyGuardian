@@ -1,6 +1,6 @@
 name: ReconCompanion
 options:
-  bundleIdPrefix: com.strvx.reconcompanion
+  bundleIdPrefix: com.nicolasdossantos
   deploymentTarget:
     iOS: "17.0"
   createIntermediateGroups: true
@@ -19,12 +19,12 @@ targets:
       - path: Sources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.strvx.reconcompanion
+        PRODUCT_BUNDLE_IDENTIFIER: com.nicolasdossantos.skyguardian
         TARGETED_DEVICE_FAMILY: "1"
     info:
       path: Sources/Info.plist
       properties:
-        CFBundleDisplayName: Recon Companion
+        CFBundleDisplayName: SkyGuardian
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
@@ -45,7 +45,7 @@ targets:
       - target: ReconCompanion
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.strvx.reconcompanion.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.nicolasdossantos.skyguardian.tests
         GENERATE_INFOPLIST_FILE: "YES"
 
 schemes:
