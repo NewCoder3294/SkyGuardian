@@ -2,7 +2,6 @@ import CoreLocation
 import SwiftUI
 
 enum CenterView { case map, feed }
-enum MapMode: String, CaseIterable { case twoD = "2D", threeD = "3D", tac = "TAC" }
 
 struct ContentView: View {
     @StateObject private var client = WorldClient()
@@ -12,9 +11,9 @@ struct ContentView: View {
     @StateObject private var stream = TelloDirectStream()
     @StateObject private var follow = FollowCoordinator()
     @StateObject private var localizer = Localizer()
+    @StateObject private var buildingsStore = BuildingsStore()
     @State private var showConnect = true
     @State private var center: CenterView = .map
-    @State private var mapMode: MapMode = .twoD
     @State private var setupStarted = false
     @State private var pendingArm: PendingArm?
 
@@ -37,7 +36,6 @@ struct ContentView: View {
                 }
                 if center == .map {
                     legend.padding(10)
-                    VStack { Spacer(); HStack { Spacer(); mapModePicker; Spacer() } }.padding(.bottom, 8)
                 }
                 viewToggle.frame(maxWidth: .infinity, alignment: .top).padding(.top, 8)
                 if showConnect { connectPanel.padding(12).frame(maxWidth: .infinity, alignment: .topTrailing) }
@@ -70,13 +68,18 @@ struct ContentView: View {
             Text("The drone will launch and \(pendingArm == .track ? "track the centered object" : "follow the tag"). Keep clear; STOP lands it.")
         }
         .onReceive(follow.$phase) { _ in publishFollow() }
+        .onReceive(client.$connection) { _ in
+            if isConnected { buildingsStore.load(from: httpBase) }   // offline basemap from the laptop
+        }
     }
 
     /// Drive the map's phone-side localization from the AprilTag follow + GPS/heading.
     private func updateLocalizer() {
-        guard let here = location.coordinate else { return }
-        localizer.update(operatorCoord: here, distance: follow.distance,
-                         bearingRad: follow.bearingDeg * .pi / 180, headingDeg: location.headingDeg,
+        // GPS-free: operator fixed at the launch origin, drone placed relative via the
+        // AprilTag + compass heading (magnetometer, a local sensor — not GPS).
+        localizer.update(distance: follow.distance,
+                         bearingRad: follow.bearingDeg * .pi / 180,
+                         headingDeg: location.headingDeg,
                          active: follow.phase == .following)
         publishFollow()   // distance/bearing moved → keep the laptop's follow inset live
     }
@@ -165,6 +168,16 @@ struct ContentView: View {
     }
 
     private var isConnected: Bool { if case .connected = client.connection { return true }; return false }
+
+    /// HTTP base for the laptop, derived from the WS serverURL
+    /// (ws://host:8000/ws → http://host:8000). Used to fetch the offline buildings.
+    private var httpBase: String {
+        var s = client.serverURL
+            .replacingOccurrences(of: "ws://", with: "http://")
+            .replacingOccurrences(of: "wss://", with: "https://")
+        if let r = s.range(of: "/ws") { s = String(s[s.startIndex..<r.lowerBound]) }
+        return s
+    }
 
     private var connectPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -304,58 +317,20 @@ struct ContentView: View {
 
     // MARK: map
 
-    /// 2D/3D ride on the OpenStreetMap basemap (free/open); TAC is the offline
-    /// GPS-less tactical map. All render only real world-model entities — no mock.
+    /// Offline + GPS-free relative map (mirrors the laptop dashboard): the operator is
+    /// the launch origin, the drone is placed relative via the on-device AprilTag
+    /// follow, and pre-cached buildings (from the laptop's `/map/buildings`) are the
+    /// basemap. No GPS, no live tiles — drag to pan, pinch to zoom.
     @ViewBuilder private var mapBody: some View {
-        switch mapMode {
-        case .twoD, .threeD:
-            ZStack(alignment: .bottomTrailing) {
-                if mapOrigin != nil {
-                    OSMMapView(entities: mapEntities, trails: mapTrails,
-                               origin: mapOrigin,
-                               dimension: mapMode == .threeD ? .tilted : .flat)
-                } else {
-                    locationWait
-                }
-                Text("© OpenStreetMap").font(Theme.mono(8)).foregroundColor(Theme.ink)
-                    .padding(.horizontal, 4).padding(.vertical, 2)
-                    .background(Theme.panel.opacity(0.85)).padding(6)
-            }
-        case .tac:
-            LocalMapView(entities: mapEntities, trails: mapTrails,
-                         projection: MapProjection(spanMeters: 24))
-        }
+        LocalMapView(entities: mapEntities, trails: mapTrails,
+                     projection: MapProjection(spanMeters: 40),
+                     buildings: buildingsStore.buildings)
     }
 
     // Map data: phone-side AprilTag localization (operator + drone + trails), plus any
     // laptop world-model entities when connected.
     private var mapEntities: [Entity] { localizer.entities + client.entities }
     private var mapTrails: [String: [Vec3]] { localizer.trails.merging(client.trails) { a, _ in a } }
-    private var mapOrigin: CLLocationCoordinate2D? { localizer.origin ?? location.coordinate }
-
-    private var locationWait: some View {
-        VStack(spacing: 6) {
-            Text("ACQUIRING LOCATION…").font(Theme.mono(11, weight: .semibold)).foregroundColor(Theme.ink)
-            Text("enable location to anchor the map").font(Theme.mono(9)).foregroundColor(Theme.inkSecondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.paper)
-    }
-
-    private var mapModePicker: some View {
-        HStack(spacing: 0) {
-            ForEach(MapMode.allCases, id: \.self) { mode in
-                Button { mapMode = mode } label: {
-                    Text(mode.rawValue).font(Theme.mono(11, weight: .semibold))
-                        .foregroundColor(mapMode == mode ? Theme.panel : Theme.ink)
-                        .padding(.horizontal, 16).padding(.vertical, 7)
-                        .background(mapMode == mode ? Theme.olive : Color.clear)
-                }
-            }
-        }
-        .background(Theme.panel.opacity(0.95))
-        .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
-    }
 
     private var voiceStatus: String {
         switch model.state {
