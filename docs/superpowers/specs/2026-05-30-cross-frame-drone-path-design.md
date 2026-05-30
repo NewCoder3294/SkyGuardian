@@ -103,7 +103,10 @@ the phone at the **same** anchor AprilTag the Mavic uses to set the map origin.
   trail logic: dedupe movements under ~0.2 m, cap history (~80–240 points).
 - Draw polyline trails beneath the entity glyphs (existing `drawEntities`), styled to
   match the phone (`LocalMapView.drawTrails`) so both maps look identical.
-- Trail clears when its entity goes stale/absent.
+- Trail clears when its entity goes **absent** from the snapshot (id no longer
+  present). A *stale* entity keeps its trail until the world model GCs it (~5×ttl_s),
+  so a brief phone dropout doesn't wipe the accumulated path — chosen over
+  clearing on `stale` for resilience.
 
 ## Data flow
 
