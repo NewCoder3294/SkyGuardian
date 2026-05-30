@@ -35,6 +35,8 @@
 	<string>Voice commands to the companion drone, processed on-device.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Recognizes your spoken drone commands on-device, fully offline.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Reads the launch anchor marker to align the map with the mission laptop.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

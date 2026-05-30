@@ -11,6 +11,8 @@ struct ContentView: View {
     @StateObject private var stream = TelloDirectStream()
     @StateObject private var follow = FollowCoordinator()
     @StateObject private var localizer = Localizer()
+    @StateObject private var aligner = FrameAligner()
+    @StateObject private var anchorCam = AnchorCamera()
     @StateObject private var buildingsStore = BuildingsStore()
     @State private var showConnect = true
     @State private var center: CenterView = .map
@@ -78,6 +80,13 @@ struct ContentView: View {
         .onReceive(client.$connection) { _ in
             if isConnected { buildingsStore.load(from: httpBase) }   // offline basemap from the laptop
         }
+        // Each time the phone camera sees the launch anchor tag, refresh the
+        // launch→world transform (continuous drift correction while aligning).
+        .onReceive(anchorCam.$latest) { fix in
+            guard let fix else { return }
+            aligner.observe(distance: fix.distance, bearingRad: fix.bearingRad,
+                            headingDeg: location.headingDeg)
+        }
     }
 
     /// Drive the map's phone-side localization from the AprilTag follow + GPS/heading.
@@ -89,6 +98,14 @@ struct ContentView: View {
                          headingDeg: location.headingDeg,
                          active: follow.phase == .following)
         publishFollow()   // distance/bearing moved → keep the laptop's follow inset live
+
+        // Co-registered map: once aligned to the launch anchor, re-express the
+        // operator + drone in the world frame and publish so the dashboard map
+        // shows the same track. Pre-alignment, worldEntities is empty (nothing sent).
+        localizer.project(through: aligner)
+        if isConnected, !localizer.worldEntities.isEmpty {
+            client.sendEntityReport(localizer.worldEntities)
+        }
     }
 
     /// Publish the Tello's relative follow geometry to the laptop so its dashboard
@@ -100,6 +117,17 @@ struct ContentView: View {
                                phase: follow.phase.label,
                                distanceM: follow.distance,
                                bearingDeg: follow.bearingDeg)
+    }
+
+    private var alignLabel: String {
+        if anchorCam.isRunning { return "ALIGNING" }
+        return aligner.isAligned ? "RE-ALIGN" : "ALIGN"
+    }
+
+    /// Toggle the launch-anchor camera. While running, each anchor-tag sighting
+    /// refreshes the launch→world transform (see the onReceive in `body`).
+    private func toggleAlign() {
+        if anchorCam.isRunning { anchorCam.stop() } else { anchorCam.start() }
     }
 
     // MARK: first-launch model setup
@@ -230,6 +258,16 @@ struct ContentView: View {
                 Text(voiceStatus).font(Theme.mono(11, weight: .semibold)).foregroundColor(Theme.ink)
             }
             Spacer()
+            // Map co-registration: point the phone at the launch anchor tag and tap
+            // to align the phone's frame with the laptop world frame (toggles the
+            // anchor camera; auto-refreshes while it sees the tag).
+            Button { toggleAlign() } label: {
+                Text(alignLabel).font(Theme.mono(11, weight: .semibold))
+                    .foregroundColor(anchorCam.isRunning ? Theme.panel : Theme.ink)
+                    .padding(.horizontal, 12).padding(.vertical, 12)
+                    .background(anchorCam.isRunning ? Theme.olive : Color.clear)
+                    .overlay(Rectangle().stroke(Theme.ink, lineWidth: 1.4))
+            }
             // Hard safety control — always available, not voice-only.
             Button { hardStop() } label: {
                 Text("LAND").font(Theme.mono(12, weight: .bold))

@@ -15,6 +15,15 @@ struct CameraIntrinsics {
         let fx = (w / 2.0) / tan(hfov / 2.0)
         return CameraIntrinsics(fx: fx, fy: fx, cx: w / 2.0, cy: h / 2.0)
     }
+
+    /// Estimate from image size using the iPhone main (wide) camera's ~68° horizontal
+    /// FOV. Approximate — calibrate for tighter anchor-distance accuracy if needed.
+    static func phone(width: Int, height: Int) -> CameraIntrinsics {
+        let w = Double(width), h = Double(height)
+        let hfov = 68.0 * .pi / 180.0
+        let fx = (w / 2.0) / tan(hfov / 2.0)
+        return CameraIntrinsics(fx: fx, fy: fx, cx: w / 2.0, cy: h / 2.0)
+    }
 }
 
 /// One detected tag, with everything the follow controller needs.

@@ -68,6 +68,7 @@ targets:
         NSLocationWhenInUseUsageDescription: "Shares your relative position with the laptop for follow-me context."
         NSMicrophoneUsageDescription: "Voice commands to the companion drone, processed on-device."
         NSSpeechRecognitionUsageDescription: "Recognizes your spoken drone commands on-device, fully offline."
+        NSCameraUsageDescription: "Reads the launch anchor marker to align the map with the mission laptop."
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         # Only standard/exempt encryption (plain local ws) — avoids the TestFlight compliance prompt.
