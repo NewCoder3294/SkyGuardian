@@ -232,14 +232,14 @@ export default function LandingPage() {
                 className="object-cover object-center"
               />
               <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_0%,oklch(0.965_0.010_95_/_0.03)_60%,oklch(0.965_0.010_95_/_0.40)_100%)]" />
-              <div className="absolute bottom-4 left-4 right-4 grid grid-cols-3 border border-border-strong bg-bg/88 backdrop-blur-sm">
+              <div className="absolute bottom-4 left-4 right-4 grid grid-cols-3 border border-border-strong bg-bg">
                 {[
                   ["MISSION", "TRACK"],
                   ["ASSETS", "02"],
                   ["CONTACTS", "17"],
                 ].map(([label, value]) => (
                   <div key={label} className="border-r border-border px-3 py-3 last:border-r-0">
-                    <p className="font-mono text-[9px] uppercase tracking-[0.28em] text-text-dim">{label}</p>
+                    <p className="font-mono text-[9px] uppercase tracking-[0.28em] text-text-muted">{label}</p>
                     <p className="mt-1 font-mono text-sm font-semibold uppercase tracking-[0.16em] text-text">{value}</p>
                   </div>
                 ))}
@@ -363,7 +363,15 @@ export default function LandingPage() {
       </section>
 
       {/* CTA */}
-      <section id="demo" className="relative overflow-hidden bg-surface">
+      <section id="demo" className="relative overflow-hidden">
+        <Image
+          src="/hero-drone-city.png"
+          alt="Drone over city skyline"
+          fill
+          sizes="100vw"
+          className="object-cover"
+        />
+        <div className="absolute inset-0 bg-[linear-gradient(90deg,var(--bg)_0%,oklch(0.965_0.010_95_/_0.88)_30%,oklch(0.965_0.010_95_/_0.75)_60%,oklch(0.965_0.010_95_/_0.50)_100%)]" />
         <div className="relative mx-auto max-w-7xl px-5 py-20 md:px-8">
           <div className="max-w-4xl">
             <p className="font-mono text-[11px] uppercase tracking-[0.42em] text-accent">
