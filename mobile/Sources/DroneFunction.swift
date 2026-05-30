@@ -12,6 +12,7 @@ enum DroneFunction: String, CaseIterable {
     case takeoff, land, up, down, left, right, forward, back
     case rotateCW = "rotate_cw", rotateCCW = "rotate_ccw"
     case emergency
+    case flip           // acrobatic forward flip
     case track          // tag-free visual object tracking ("track that boat")
     // mission intents (routed to the laptop when connected)
     case followMe = "follow_me", hold, recall, stop
@@ -59,6 +60,7 @@ enum DroneFunction: String, CaseIterable {
         case .rotateCW: return "yaw clockwise / right (value=degrees)"
         case .rotateCCW: return "yaw counter-clockwise / left (value=degrees)"
         case .emergency: return "cut motors immediately (failsafe)"
+        case .flip: return "perform a forward flip"
         case .track: return "visually track the object the operator has centered"
         case .followMe: return "follow the soldier"
         case .hold: return "hold position"
@@ -89,6 +91,7 @@ struct DroneAction: Equatable {
         case .takeoff: return "takeoff"
         case .land: return "land"
         case .emergency: return "emergency"
+        case .flip: return "flip f"
         case .up: return "up \(clampMove(m))"
         case .down: return "down \(clampMove(m))"
         case .left: return "left \(clampMove(m))"
@@ -159,10 +162,15 @@ enum DroneIntent {
         if has(t, ["land", "touch down", "set down"]) { return DroneAction(.land) }
         if has(t, ["recall", "come back", "return", "rtb"]) { return DroneAction(.recall) }
         if has(t, ["hold", "stay", "wait", "stand by"]) { return DroneAction(.hold) }
-        if has(t, ["track", "follow that", "follow the", "lock on", "lock onto", "follow it", "follow him", "follow her"]) { return DroneAction(.track) }
+        // Tracking is deliberate: require an explicit phrase, never the bare word
+        // "track" (it shows up in incidental speech). The UI track button is gated
+        // by an on-screen confirmation; the voice path should be confirmed too
+        // (see ContentView.handle) — this just stops accidental triggers at parse.
+        if has(t, ["track that", "track the", "start tracking", "lock on", "lock onto", "follow that", "follow it", "follow him", "follow her"]) { return DroneAction(.track) }
         if has(t, ["follow", "on me", "come with"]) { return DroneAction(.followMe) }
 
         // Movement.
+        if has(t, ["flip", "barrel roll", "do a flip", "backflip", "front flip"]) { return DroneAction(.flip) }
         if has(t, ["rotate left", "turn left", "spin left", "yaw left"]) { return DroneAction(.rotateCCW, n) }
         if has(t, ["rotate right", "turn right", "spin right", "yaw right"]) { return DroneAction(.rotateCW, n) }
         if has(t, ["ascend", "go up", "rise", "higher", "climb"]) { return DroneAction(.up, n) }
@@ -178,8 +186,25 @@ enum DroneIntent {
         return nil
     }
 
+    /// Phrase-boundary match: a needle fires only as a whole word or a contiguous
+    /// run of whole words, never as a substring inside a larger word ("track" must
+    /// not trigger on "racetrack", "land" must not trigger on "island"). Keeps
+    /// incidental speech from actuating the drone.
     private static func has(_ text: String, _ needles: [String]) -> Bool {
-        for n in needles where text.contains(n) { return true }
+        let tokens = text.split { !$0.isLetter && !$0.isNumber }.map(String.init)
+        for needle in needles {
+            let seq = needle.split(separator: " ").map(String.init)
+            if containsSequence(tokens, seq) { return true }
+        }
+        return false
+    }
+
+    /// True if `seq` appears as a contiguous run of whole tokens within `tokens`.
+    private static func containsSequence(_ tokens: [String], _ seq: [String]) -> Bool {
+        guard !seq.isEmpty, tokens.count >= seq.count else { return false }
+        for start in 0...(tokens.count - seq.count) {
+            if Array(tokens[start..<start + seq.count]) == seq { return true }
+        }
         return false
     }
 

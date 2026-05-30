@@ -24,7 +24,15 @@ final class VoiceController: ObservableObject {
     private var authorized = false
 
     var sourceLabel: String { available ? "ON-DEVICE STT" : "VOICE" }
-    var available: Bool { authorized && (recognizer?.isAvailable ?? false) }
+    /// Available only when on-device recognition is supported. SkyGuardian is
+    /// offline-only (no cloud calls at runtime), so cloud-backed STT does not
+    /// count as available — the operator must have the on-device dictation
+    /// model installed (iOS Settings → General → Keyboard → Dictation).
+    var available: Bool {
+        authorized
+            && (recognizer?.isAvailable ?? false)
+            && (recognizer?.supportsOnDeviceRecognition ?? false)
+    }
 
     /// Kept for API parity with the old Cactus-backed path; just re-checks auth.
     func reloadService() { Task { _ = await ensureAuth() } }
@@ -44,11 +52,18 @@ final class VoiceController: ObservableObject {
         Task {
             guard await ensureAuth() else { state = .error("MIC/STT DENIED"); return }
             guard let recognizer, recognizer.isAvailable else { state = .error("STT UNAVAILABLE"); return }
+            // Hard offline gate: refuse to listen unless the device can transcribe
+            // on-device. Without this, SFSpeech silently streams audio to Apple's
+            // servers — a cloud call this system is not allowed to make.
+            guard recognizer.supportsOnDeviceRecognition else {
+                state = .error("STT NEEDS ON-DEVICE MODEL")
+                return
+            }
             do {
                 try configureSession()
                 let req = SFSpeechAudioBufferRecognitionRequest()
                 req.shouldReportPartialResults = true
-                if recognizer.supportsOnDeviceRecognition { req.requiresOnDeviceRecognition = true }
+                req.requiresOnDeviceRecognition = true // offline-only: never use cloud STT
                 request = req
 
                 let input = engine.inputNode
