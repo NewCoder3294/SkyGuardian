@@ -57,6 +57,7 @@ final class ContractsTests: XCTestCase {
 
     func testCommandRawValues() {
         XCTAssertEqual(Command.followMe.rawValue, "follow_me")
-        XCTAssertEqual(Command.allCases.count, 4)
+        XCTAssertEqual(Command.approach.rawValue, "approach")
+        XCTAssertEqual(Command.allCases.count, 5)
     }
 }
