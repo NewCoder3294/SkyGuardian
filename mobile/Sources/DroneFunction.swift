@@ -115,12 +115,18 @@ struct DroneAction: Equatable {
         guard let obj = firstJSONObject(in: text),
               let name = obj["function"] as? String,
               let fn = DroneFunction(rawValue: name) else { return nil }
-        let mag: Int?
-        switch obj["value"] {
-        case let n as Int: mag = n
-        case let d as Double: mag = Int(d)
-        case let s as String: mag = Int(s)
-        default: mag = nil
+        // Distinguish "no value" (fine — use the default magnitude) from "value present
+        // but uncoercible" (reject, so we don't silently fly a default distance).
+        var mag: Int?
+        if let raw = obj["value"], !(raw is NSNull) {
+            switch raw {
+            case let n as Int: mag = n
+            case let d as Double: mag = Int(d)
+            case let s as String:
+                guard let i = Int(s) else { return nil }
+                mag = i
+            default: return nil
+            }
         }
         return DroneAction(fn, fn.takesMagnitude ? mag : nil)
     }

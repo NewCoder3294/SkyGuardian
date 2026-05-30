@@ -57,18 +57,23 @@ app = FastAPI(title="Recon & Companion — local brain")
 async def _broadcast_loop() -> None:
     interval = 1.0 / BROADCAST_HZ
     while True:
-        if mock is not None:
-            mock.step()
-        now = clock.now()
-        await hub.broadcast(WorldSnapshot(entities=world.snapshot(), t=now))
-        await hub.broadcast(MissionState(stage=mission.stage.value, last_error=mission.last_error, t=now))
-        # Honest health: report the configured real sources, not a mock label.
-        await hub.broadcast(Health(
-            tello=(os.environ.get("TELLO_SOURCE", "tello") or "disabled"),
-            mavic=(os.environ.get("MAVIC_SOURCE", "") or "disabled"),
-            perception="mock" if USE_MOCK else "off",
-            t=now,
-        ))
+        # One bad tick (e.g. a transient build/validation error) must not kill the
+        # single producer of world/mission/health for every client.
+        try:
+            if mock is not None:
+                mock.step()
+            now = clock.now()
+            await hub.broadcast(WorldSnapshot(entities=world.snapshot(), t=now))
+            await hub.broadcast(MissionState(stage=mission.stage.value, last_error=mission.last_error, t=now))
+            # Honest health: report the configured real sources, not a mock label.
+            await hub.broadcast(Health(
+                tello=(os.environ.get("TELLO_SOURCE", "tello") or "disabled"),
+                mavic=(os.environ.get("MAVIC_SOURCE", "") or "disabled"),
+                perception="mock" if USE_MOCK else "off",
+                t=now,
+            ))
+        except Exception as exc:  # noqa: BLE001 — keep the loop alive, log and continue
+            print(f"[broadcast] tick failed: {exc!r}")
         await asyncio.sleep(interval)
 
 
@@ -97,6 +102,12 @@ async def _shutdown() -> None:
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
+    # Release camera sockets/captures/threads (sources that support it).
+    for cam in (tello_camera, mavic_camera):
+        stop = getattr(cam, "stop", None)
+        if callable(stop):
+            with contextlib.suppress(Exception):
+                stop()
 
 
 @app.get("/health")

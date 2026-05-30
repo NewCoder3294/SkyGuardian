@@ -13,7 +13,10 @@ final class LocationProvider: NSObject, ObservableObject, CLLocationManagerDeleg
     override init() {
         super.init()
         manager.delegate = self
-        manager.desiredAccuracy = kCLLocationAccuracyBest
+        // A map anchor doesn't need best-accuracy GPS; coarser + a distance filter
+        // avoids re-anchoring the map (and its rebuild) on every tiny fix, saving battery.
+        manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+        manager.distanceFilter = 4
     }
 
     func start() {

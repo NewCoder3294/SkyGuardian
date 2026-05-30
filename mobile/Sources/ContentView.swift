@@ -208,9 +208,19 @@ struct ContentView: View {
             return
         }
 
-        if fn == .land || fn == .stop || fn == .emergency {
-            if follow.isArmed { follow.disarmAndLand() } else { TelloCommander.shared.execute(action) }
-            if fn == .stop, isConnected { client.send(.stop) }
+        if fn == .emergency {                               // failsafe: cut motors, no land
+            if follow.isArmed { follow.emergencyCut() } else { TelloCommander.shared.send("emergency") }
+            return
+        }
+
+        if fn == .land {
+            if follow.isArmed { follow.disarmAndLand() } else { TelloCommander.shared.send("land") }
+            return
+        }
+
+        if fn == .stop {                                    // halt: stop the loop / neutralize sticks
+            if follow.isArmed { follow.disarmAndLand() } else { TelloCommander.shared.rc(.hover) }
+            if isConnected { client.send(.stop) }
             return
         }
 
@@ -232,7 +242,9 @@ struct ContentView: View {
     /// Hard safety control — not voice-only (per spec): land the drone now and signal
     /// a mission stop to the laptop if connected.
     private func hardStop() {
-        TelloCommander.shared.send("land")
+        // Route through the arbiter so the follow rc loop is actually stopped — not
+        // left fighting the landing.
+        if follow.isArmed { follow.disarmAndLand() } else { TelloCommander.shared.send("land") }
         if isConnected { client.send(.stop) }
     }
 

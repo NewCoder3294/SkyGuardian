@@ -27,12 +27,17 @@ final class FollowCoordinator: ObservableObject {
 
     private let detLock = NSLock()
     private var busy = false                         // detection backpressure
+    private var lastDetect: CFTimeInterval = 0       // cadence cap (in addition to busy gate)
+    private let detectInterval: CFTimeInterval = 0.08  // ~12 Hz cap — leaves thermal headroom
 
     // Control state — only touched on rcQueue.
     private var latest: TagDetection?
     private var latestTime: CFTimeInterval = 0
     private var armed = false          // airborne under our control
     private var followActive = false   // running the follow loop (false = manual hover)
+    private var tookOff = false        // takeoff climb has settled (gate follow rc)
+    private var landing = false        // lost-land in progress (fire once)
+    private let takeoffSettle: CFTimeInterval = 4.0   // let the takeoff climb finish before follow rc
 
     private let rcInterval = 0.066                   // ~15 Hz stick updates
     private let staleTimeout: CFTimeInterval = 0.5   // older detection = no lock
@@ -50,16 +55,25 @@ final class FollowCoordinator: ObservableObject {
         guard phase == .disarmed else { return }
         self.stream = stream
         stream.start()   // make sure video/detection is flowing (idempotent)
-        detector.tagSizeMeters = tagSizeMeters
         controller.config = config
+        let size = tagSizeMeters
+        detectQueue.async { self.detector.tagSizeMeters = size }   // mutate detector only on its queue
         stream.onPixelBuffer = { [weak self] pb in self?.ingest(pb) }
 
         TelloCommander.shared.send("takeoff")
         rcQueue.async {
             self.armed = true
             self.followActive = true
+            self.tookOff = false
+            self.landing = false
             self.latest = nil
             self.latestTime = CACurrentMediaTime()   // grace period before lost-land
+            // Hold off follow rc until the multi-second takeoff climb settles, so
+            // autonomous sticks never fight the takeoff.
+            self.rcQueue.asyncAfter(deadline: .now() + self.takeoffSettle) {
+                self.tookOff = true
+                self.latestTime = CACurrentMediaTime()
+            }
         }
         setPhase(.searching)
         startRCLoop()
@@ -79,6 +93,8 @@ final class FollowCoordinator: ObservableObject {
         guard isArmed else { return }
         rcQueue.async {
             self.followActive = true
+            self.landing = false
+            self.tookOff = true            // already airborne — no settle delay needed
             self.latest = nil
             self.latestTime = CACurrentMediaTime()  // fresh grace before lost-land
         }
@@ -88,10 +104,25 @@ final class FollowCoordinator: ObservableObject {
     /// Stop following and land. Safe to call any time.
     func disarmAndLand() {
         stream?.onPixelBuffer = nil
-        rcTimer?.cancel(); rcTimer = nil
-        rcQueue.async { self.armed = false; self.followActive = false }
+        rcQueue.async {                    // rcTimer + control state are rcQueue-owned
+            self.rcTimer?.cancel(); self.rcTimer = nil
+            self.armed = false; self.followActive = false
+        }
         TelloCommander.shared.rc(.hover)
         TelloCommander.shared.send("land")
+        setPhase(.disarmed)
+        DispatchQueue.main.async { self.normalizedCorners = [] }
+    }
+
+    /// Emergency motor cut — stop the loop and cut motors immediately, with NO
+    /// graceful land. Use for a real failsafe, not a normal stop.
+    func emergencyCut() {
+        stream?.onPixelBuffer = nil
+        rcQueue.async {
+            self.rcTimer?.cancel(); self.rcTimer = nil
+            self.armed = false; self.followActive = false
+        }
+        TelloCommander.shared.send("emergency")
         setPhase(.disarmed)
         DispatchQueue.main.async { self.normalizedCorners = [] }
     }
@@ -99,9 +130,11 @@ final class FollowCoordinator: ObservableObject {
     // MARK: detection (backpressured — drop frames while busy)
 
     private func ingest(_ pixelBuffer: CVPixelBuffer) {
+        let now = CACurrentMediaTime()
         detLock.lock()
-        if busy { detLock.unlock(); return }
+        if busy || now - lastDetect < detectInterval { detLock.unlock(); return }
         busy = true
+        lastDetect = now
         detLock.unlock()
 
         detectQueue.async { [weak self] in
@@ -150,21 +183,23 @@ final class FollowCoordinator: ObservableObject {
     }
 
     private func tick() {
-        guard armed else { return }
-        guard followActive else { return }   // manual takeover — operator flies, no follow rc
+        guard armed, followActive, !landing else { return }   // manual takeover / landing → no follow rc
+        guard tookOff else { return }                         // takeoff climb still settling
         let now = CACurrentMediaTime()
         let age = now - latestTime
         let fresh = age < staleTimeout && latest != nil
         let tag = fresh ? latest : nil
 
-        TelloCommander.shared.rc(controller.command(for: tag))
-
         if fresh {
+            TelloCommander.shared.rc(controller.command(for: tag))
             setPhase(.following)
         } else if age > lostLandTimeout {
-            // Lost too long — land for safety and disarm.
+            // Lost too long — land once for safety (stop the loop on this very tick).
+            landing = true
+            rcTimer?.cancel(); rcTimer = nil
             DispatchQueue.main.async { self.disarmAndLand() }
         } else {
+            TelloCommander.shared.rc(controller.command(for: nil))   // hover while searching
             setPhase(.lost)
         }
     }

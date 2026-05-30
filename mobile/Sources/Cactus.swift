@@ -51,6 +51,7 @@ public func cactusComplete(_ model: CactusModelT, _ messagesJson: String,
         return cactus_complete(model, messagesJson, buf.baseAddress, buf.count, optionsJson, nil, nil, nil, nil, 0)
     }
     if result < 0 { throw _err("completion failed") }
+    buffer[buffer.count - 1] = 0   // guarantee NUL-termination before String(cString:)
     return String(cString: buffer)
 }
 
@@ -64,6 +65,7 @@ public func cactusTranscribe(_ model: CactusModelT, _ pcmData: Data, _ optionsJs
         }
     }
     if result < 0 { throw _err("transcription failed") }
+    buffer[buffer.count - 1] = 0   // guarantee NUL-termination before String(cString:)
     return String(cString: buffer)
 }
 #endif

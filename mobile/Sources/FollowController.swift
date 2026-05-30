@@ -50,8 +50,9 @@ struct FollowController {
         // elevation + = tag below center → descend (negative ud).
         let ud = abs(elevationDeg) < config.elevationDeadbandDeg
             ? 0 : clamp(-config.kUpPerDeg * elevationDeg, config.maxUp)
-        // distance error + = too far → move forward (positive fb).
-        let fb = abs(distanceError) < config.distanceDeadband
+        // distance error + = too far → move forward (positive fb). distance <= 0 means
+        // pose estimation failed (unknown range) → don't drive forward/back.
+        let fb = (tag.distance <= 0 || abs(distanceError) < config.distanceDeadband)
             ? 0 : clamp(config.kFwdPerMeter * distanceError, config.maxFwd)
 
         return RCCommand(lr: 0, fb: fb, ud: ud, yaw: yaw)

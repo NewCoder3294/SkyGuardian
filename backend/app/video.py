@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import os
 import socket
 import threading
 import time
@@ -134,16 +135,40 @@ class TelloVideoSource:
             self._sock.sendto(cmd.encode(), (self.TELLO_IP, self.CMD_PORT))
 
     def start(self) -> None:
-        self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._sock.bind(("", self.CMD_PORT))
-        self._send("command")
-        time.sleep(0.5)
-        self._send("streamon")
-        time.sleep(2.0)
-        self._cap = cv2.VideoCapture(self.VIDEO_URL, cv2.CAP_FFMPEG)
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            # Bind to the Tello-subnet interface IP when set (per CLAUDE.md routing),
+            # not 0.0.0.0. Defaults to "" for back-compat; set TELLO_BIND_IP to harden.
+            sock.bind((os.environ.get("TELLO_BIND_IP", ""), self.CMD_PORT))
+            self._sock = sock
+            self._send("command")
+            time.sleep(0.5)
+            self._send("streamon")
+            time.sleep(2.0)
+            self._cap = cv2.VideoCapture(self.VIDEO_URL, cv2.CAP_FFMPEG)
+        except Exception:
+            sock.close()
+            self._sock = None
+            raise
         self._running = True
         threading.Thread(target=self._reader, daemon=True).start()
         threading.Thread(target=self._keepalive, daemon=True).start()
+
+    def stop(self) -> None:
+        """Release the socket, capture, and stop the worker threads."""
+        self._running = False
+        if self._cap is not None:
+            try:
+                self._cap.release()
+            except Exception:
+                pass
+            self._cap = None
+        if self._sock is not None:
+            try:
+                self._sock.close()
+            except Exception:
+                pass
+            self._sock = None
 
     def _reader(self) -> None:
         while self._running and self._cap is not None:
@@ -151,6 +176,7 @@ class TelloVideoSource:
             if ok and frame is not None:
                 with self._lock:
                     self._frame = frame
+                time.sleep(0.005)  # cap the reader; we only need the latest frame
             else:
                 time.sleep(0.01)  # no keyframe yet; don't busy-spin
 
