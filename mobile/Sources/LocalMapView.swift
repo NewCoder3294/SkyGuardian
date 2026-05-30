@@ -9,6 +9,8 @@ struct LocalMapView: View {
     let entities: [Entity]
     let trails: [String: [Vec3]]
     var projection: MapProjection
+    /// Pre-cached building footprints (local metres) drawn as the offline basemap.
+    var buildings: [Building] = []
 
     // Pan + pinch-zoom, baked into the drawing so panning reveals off-screen units.
     @State private var pan: CGSize = .zero
@@ -18,6 +20,7 @@ struct LocalMapView: View {
 
     var body: some View {
         Canvas { context, size in
+            drawBuildings(&context, size: size)
             drawRangeRings(&context, size: size)
             drawBearings(&context, size: size)
             drawTrails(&context, size: size)
@@ -60,6 +63,21 @@ struct LocalMapView: View {
         let cx = size.width / 2, cy = size.height / 2
         return CGPoint(x: cx + (base.x - cx) * zoom + pan.width,
                        y: cy + (base.y - cy) * zoom + pan.height)
+    }
+
+    // Pre-cached building footprints (offline basemap). Polygons are [east_m, north_m]
+    // in the same launch-anchored metre frame as everything else.
+    private func drawBuildings(_ ctx: inout GraphicsContext, size: CGSize) {
+        for b in buildings where b.polygon.count >= 3 {
+            var path = Path()
+            for (i, pt) in b.polygon.enumerated() where pt.count >= 2 {
+                let sp = screenPoint(Vec3(x: pt[0], y: pt[1], z: 0), size)
+                if i == 0 { path.move(to: sp) } else { path.addLine(to: sp) }
+            }
+            path.closeSubpath()
+            ctx.fill(path, with: .color(Theme.inkSecondary.opacity(0.16)))
+            ctx.stroke(path, with: .color(Theme.inkSecondary.opacity(0.4)), lineWidth: 0.6)
+        }
     }
 
     // Concentric distance rings every 5 m, faintly labelled.

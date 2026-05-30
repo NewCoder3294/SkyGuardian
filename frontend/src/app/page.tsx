@@ -57,6 +57,15 @@ const markets = [
   "Environmental monitoring",
 ];
 
+const marketNodes = [
+  { label: "Defense ISR", x: "18%", y: "24%", tone: "accent" },
+  { label: "Public safety", x: "50%", y: "16%", tone: "ok" },
+  { label: "Port security", x: "82%", y: "26%", tone: "accent" },
+  { label: "Emergency response", x: "20%", y: "72%", tone: "ok" },
+  { label: "Infrastructure inspection", x: "52%", y: "80%", tone: "muted" },
+  { label: "Environmental monitoring", x: "83%", y: "68%", tone: "muted" },
+];
+
 const trackNodes = [
   { label: "Leader", x: "18%", y: "72%", tone: "dark" },
   { label: "Vessel", x: "64%", y: "34%", tone: "accent" },
@@ -122,7 +131,6 @@ export default function LandingPage() {
         <div className="absolute inset-0 bg-[linear-gradient(90deg,var(--bg)_0%,oklch(0.965_0.010_95_/_0.94)_34%,oklch(0.965_0.010_95_/_0.54)_72%,transparent_100%)]" />
         <div className="absolute inset-0 hud-grid opacity-60" />
         <div className="scanline-field absolute inset-0" />
-        <DroneFlight />
 
         <div className="relative z-10 mx-auto flex min-h-[calc(82vh-6rem)] max-w-7xl flex-col justify-center px-5 pb-8 md:min-h-[calc(88vh-6rem)] md:px-8">
           <div className="grid items-center gap-10 lg:grid-cols-[0.9fr_0.8fr]">
@@ -294,16 +302,7 @@ export default function LandingPage() {
               Humans maintain command. SkyGuardian maintains awareness.
             </h2>
           </div>
-          <div className="grid grid-cols-2 border border-border-strong bg-surface md:grid-cols-3">
-            {markets.map((market) => (
-              <div key={market} className="market-tile relative min-h-32 overflow-hidden border-b border-r border-border px-4 py-5 last:border-r-0">
-                <div className="absolute inset-x-0 bottom-0 h-px bg-accent/40" />
-                <p className="relative font-mono text-[10px] uppercase tracking-[0.24em] text-text-muted">
-                  {market}
-                </p>
-              </div>
-            ))}
-          </div>
+          <MarketNetwork />
         </div>
       </section>
 
@@ -404,6 +403,7 @@ function HeroTelemetry() {
         <div className="absolute inset-0 hud-grid opacity-80" />
         <div className="radar-rings absolute inset-8" />
         <div className="radar-sweep absolute inset-8" />
+        <DroneFlight />
         <div className="absolute left-[49%] top-[49%] h-4 w-4 -translate-x-1/2 -translate-y-1/2 border border-text bg-text" />
         {trackNodes.map((node) => (
           <div
@@ -469,6 +469,43 @@ function DomainVisual({ index }: { index: number }) {
         {labels.map((label) => (
           <p key={label} className="border-r border-border px-2 py-2 font-mono text-[8px] uppercase tracking-[0.22em] text-text-muted last:border-r-0">
             {label}
+          </p>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MarketNetwork() {
+  return (
+    <div className="market-network tac-corners relative min-h-[34rem] overflow-hidden border border-border-strong bg-surface shadow-[0_24px_90px_oklch(0.12_0.03_130_/_0.08)]">
+      <div className="absolute inset-0 hud-grid opacity-70" />
+      <div className="market-network-radar" />
+      <div className="market-line market-line-a" />
+      <div className="market-line market-line-b" />
+      <div className="market-line market-line-c" />
+      <div className="market-line market-line-d" />
+      <div className="market-core">
+        <span>SG</span>
+        <strong>Common autonomy layer</strong>
+      </div>
+      {marketNodes.map((node, index) => (
+        <div
+          key={node.label}
+          className={`market-node market-node-${node.tone}`}
+          style={{ left: node.x, top: node.y }}
+        >
+          <span className="market-node-index">{String(index + 1).padStart(2, "0")}</span>
+          <span className="market-node-label">{node.label}</span>
+        </div>
+      ))}
+      <div className="absolute bottom-5 left-5 right-5 grid border border-border-strong bg-bg/88 backdrop-blur-sm md:grid-cols-3">
+        {["Same platform", "Mission changes", "Awareness persists"].map((item) => (
+          <p
+            key={item}
+            className="border-b border-border px-3 py-3 font-mono text-[9px] uppercase tracking-[0.24em] text-text-muted last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0"
+          >
+            {item}
           </p>
         ))}
       </div>
