@@ -22,12 +22,20 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
-import shutil
-import time
+import uuid
 from pathlib import Path
 from typing import AsyncIterator
 
-from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Header,
+    HTTPException,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import ValidationError
@@ -81,6 +89,32 @@ mavic_camera = SwitchableSource(
 
 # Uploaded video files live here. Gitignored; created on first upload.
 _UPLOADS_DIR = Path(__file__).resolve().parent.parent.parent / ".context" / "uploads"
+
+# --- control-plane hardening (LAN-only, offline) ---------------------------
+# The brain is a drone control plane. Even on a closed LAN, the state-mutating
+# endpoints (source swap, file upload) deserve a CSRF/DoS floor.
+#
+# CORS: only the browser dashboard origins may call us. The native mobile app
+# is not a browser, so CORS never applies to it. Override DASHBOARD_ORIGINS
+# (comma-separated) when serving the dashboard from a LAN IP rather than
+# localhost.
+_DASHBOARD_ORIGINS = [
+    o.strip()
+    for o in os.environ.get(
+        "DASHBOARD_ORIGINS", "http://localhost:3001,http://127.0.0.1:3001"
+    ).split(",")
+    if o.strip()
+]
+# Optional shared secret. When set, POST endpoints require header
+# `X-Operator-Key`; the custom header forces a CORS preflight that a malicious
+# cross-origin page can't satisfy, so this is the real CSRF defense. Unset =
+# open, so local demos keep working without configuring a key.
+_OPERATOR_KEY = os.environ.get("OPERATOR_KEY") or ""
+# Upload guards: cap size (DoS) and restrict to video container extensions.
+_MAX_UPLOAD_BYTES = int(float(os.environ.get("MAX_UPLOAD_MB", "500")) * 1_000_000)
+_ALLOWED_VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"}
+# Strong refs to in-flight background tasks so they aren't GC'd mid-run.
+_bg_tasks: set = set()
 
 
 def _detections_path_for(video_name: str) -> Path:
@@ -185,15 +219,24 @@ follow = FollowController(
 )
 
 app = FastAPI(title="SkyGuardian — local brain")
-# Dashboard runs on a different port (3001) and pulls MJPEG via <img src>.
-# Browsers enforce CORS even on streaming responses; allow any origin since this
-# server is on a local LAN only.
+# Dashboard runs on a different port (3001) and pulls MJPEG/JPEG via <img src>.
+# Browsers enforce CORS even on streaming responses; restrict to the known
+# dashboard origin(s) rather than "*" so a random page can't read our feeds or
+# drive the state-mutating POSTs. See _DASHBOARD_ORIGINS above.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_DASHBOARD_ORIGINS,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+
+def _require_operator(x_operator_key: str | None = Header(default=None)) -> None:
+    """Gate state-mutating endpoints behind an optional shared secret. No-op
+    when OPERATOR_KEY is unset (local demos stay frictionless); when set,
+    rejects any POST that can't supply the matching `X-Operator-Key` header."""
+    if _OPERATOR_KEY and x_operator_key != _OPERATOR_KEY:
+        raise HTTPException(status_code=401, detail="invalid or missing X-Operator-Key")
 
 
 def _mavic_health() -> str:
@@ -382,7 +425,7 @@ async def get_upload_status() -> dict:
 
 
 @app.post("/video/source/rtmp")
-async def use_rtmp_source() -> dict:
+async def use_rtmp_source(_: None = Depends(_require_operator)) -> dict:
     """Switch the leader source back to the env-configured RTMP feed.
     Clears any upload-in-progress status so the dashboard exits playback mode."""
     if not _MAVIC_SOURCE_ENV:
@@ -402,8 +445,32 @@ async def use_rtmp_source() -> dict:
     return {"ok": True, "kind": "rtmp", "label": _MAVIC_SOURCE_ENV}
 
 
+def _save_upload_capped(upload_file, dest: Path, max_bytes: int) -> int:
+    """Stream an upload to disk in 1 MiB chunks, aborting if it exceeds
+    max_bytes. Runs in a worker thread (synchronous file IO). Removes the
+    partial file and raises ValueError if the cap is tripped. Returns the byte
+    count on success."""
+    written = 0
+    with dest.open("wb") as out:
+        while True:
+            chunk = upload_file.read(1 << 20)
+            if not chunk:
+                break
+            written += len(chunk)
+            if written > max_bytes:
+                out.close()
+                dest.unlink(missing_ok=True)
+                raise ValueError(
+                    f"file exceeds max upload size ({max_bytes // 1_000_000} MB)"
+                )
+            out.write(chunk)
+    return written
+
+
 @app.post("/video/source/upload")
-async def upload_source_video(file: UploadFile = File(...)) -> dict:
+async def upload_source_video(
+    file: UploadFile = File(...), _: None = Depends(_require_operator),
+) -> dict:
     """Accept a pre-recorded video and run perception over the entire clip
     *before* returning the dashboard to playback. The browser then plays the
     raw file natively (HTML5 <video controls>) and overlays detections by
@@ -420,19 +487,44 @@ async def upload_source_video(file: UploadFile = File(...)) -> dict:
     The leader's SwitchableSource flips to NullSource so the live perception
     loop goes idle while a file is loaded — the dashboard reads detections
     from JSON, not from the WS stream, in this mode.
+
+    Guards (single-operator control plane): reject a second upload while one is
+    in flight, restrict to video container extensions, cap the size, and write
+    to a unique on-disk name so a re-upload can't clobber a clip the dashboard
+    is still scrubbing.
     """
-    name = file.filename or f"upload-{int(time.time())}.mp4"
-    safe_name = Path(name).name
+    if _upload_status["state"] in ("uploading", "processing"):
+        raise HTTPException(
+            status_code=409, detail="an upload is already in progress",
+        )
+
+    raw_name = Path(file.filename or "").name
+    ext = Path(raw_name).suffix.lower()
+    if ext not in _ALLOWED_VIDEO_EXTS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"unsupported file type {ext or '(none)'}; "
+                f"allowed: {', '.join(sorted(_ALLOWED_VIDEO_EXTS))}"
+            ),
+        )
+    # Unique name: the dashboard keys file/detections URLs off the server-
+    # returned label, so a uuid prefix is transparent to it.
+    safe_name = f"{uuid.uuid4().hex[:8]}-{raw_name}"
     _UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     dest = _UPLOADS_DIR / safe_name
 
-    # Save synchronously (small payload typical for a demo clip).
     _upload_status.update({
         "name": safe_name, "state": "uploading", "progress": 0.0,
         "error": None, "duration_s": 0.0, "frame_count": 0, "detection_count": 0,
     })
-    with dest.open("wb") as out:
-        await asyncio.to_thread(shutil.copyfileobj, file.file, out)
+    try:
+        await asyncio.to_thread(
+            _save_upload_capped, file.file, dest, _MAX_UPLOAD_BYTES,
+        )
+    except ValueError as exc:
+        _upload_status.update({"state": "error", "error": str(exc)})
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
 
     # Park the live source — the dashboard will switch to playback UI on the
     # next /video/source poll.
@@ -440,9 +532,12 @@ async def upload_source_video(file: UploadFile = File(...)) -> dict:
     perception.reset()
 
     # Run perception async so the upload POST returns immediately. The
-    # dashboard polls /video/upload/status until state == "ready".
+    # dashboard polls /video/upload/status until state == "ready". Hold a strong
+    # ref so the task isn't garbage-collected before it finishes.
     _upload_status["state"] = "processing"
-    asyncio.create_task(_process_uploaded_file(safe_name, dest))
+    task = asyncio.create_task(_process_uploaded_file(safe_name, dest))
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
 
     return {"ok": True, "kind": "file", "label": safe_name, "status_url": "/video/upload/status"}
 
