@@ -70,6 +70,7 @@ class Command(str, Enum):
     HOLD = "hold"
     RECALL = "recall"
     STOP = "stop"
+    APPROACH = "approach"
 
 
 # stop/recall are always-live and highest priority, honored from any stage.

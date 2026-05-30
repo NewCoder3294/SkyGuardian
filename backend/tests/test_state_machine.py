@@ -47,3 +47,22 @@ def test_fail_records_reason_and_stops():
     sm.fail("lost_tag")
     assert sm.stage is Stage.STOPPED
     assert sm.last_error == "lost_tag"
+
+
+def test_approach_command_enters_approach_stage():
+    from app.contracts import Command
+    from app.state_machine import MissionStateMachine, Stage
+    m = MissionStateMachine()
+    m.apply(Command.FOLLOW_ME)     # IDLE -> FOLLOWING (verified earlier)
+    m.apply(Command.APPROACH)
+    assert m.stage is Stage.APPROACH
+
+
+def test_stop_aborts_approach():
+    from app.contracts import Command
+    from app.state_machine import MissionStateMachine, Stage
+    m = MissionStateMachine()
+    m.apply(Command.FOLLOW_ME)
+    m.apply(Command.APPROACH)
+    m.apply(Command.STOP)
+    assert m.stage is Stage.STOPPED
