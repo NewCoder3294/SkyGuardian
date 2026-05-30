@@ -65,9 +65,6 @@ export function LocalMap2D({
 
   // Keep entities visible to imperative draw() without re-binding the effect.
   entitiesRef.current = entities;
-  trailsRef.current.update(
-    entities.map((e) => ({ id: e.id, type: e.type, x: e.position.x, y: e.position.y })),
-  );
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -154,6 +151,9 @@ export function LocalMap2D({
 
   // Redraw whenever entities change.
   useEffect(() => {
+    trailsRef.current.update(
+      entities.map((e) => ({ id: e.id, type: e.type, x: e.position.x, y: e.position.y })),
+    );
     draw();
   }, [entities, draw]);
 

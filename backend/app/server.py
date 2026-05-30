@@ -998,7 +998,15 @@ def _apply_entity_report(msg: EntityReport) -> None:
     """Phone-localized entities (operator + drone), already in the shared world
     frame. The phone co-registers against the launch anchor tag, so these upsert
     straight into the world model. TTL on each entity ages them out if the phone
-    link drops (no frozen drone left on the map)."""
+    link drops (no frozen drone left on the map).
+
+    Trust note: the phone is a trusted local peer on the offline network, so the
+    client-supplied id/timestamp/ttl_s are taken as-is. The TTL-staleness guarantee
+    therefore depends on the phone sending honest timestamps; a stuck/future
+    timestamp would keep an entity ACTIVE. Acceptable under the offline threat
+    model; namespacing phone ids / clamping timestamp to receipt time is a
+    future hardening step.
+    """
     for entity in msg.entities:
         world.upsert(entity)
 
