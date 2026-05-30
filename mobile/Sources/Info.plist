@@ -31,6 +31,8 @@
 	<string>Connects to the mission laptop on your local network.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Shares your relative position with the laptop for follow-me context.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Voice commands to the companion drone, processed on-device.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

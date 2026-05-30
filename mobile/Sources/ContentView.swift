@@ -4,6 +4,7 @@ enum CenterView { case map, feed }
 
 struct ContentView: View {
     @StateObject private var client = WorldClient()
+    @StateObject private var voice = VoiceController()
     @State private var showConnect = true
     @State private var center: CenterView = .map
 
@@ -29,6 +30,7 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
+            voiceBar
             ControlBar(onCommand: { client.send($0) }, enabled: isConnected)
         }
         .background(Theme.paper)
@@ -78,6 +80,39 @@ struct ContentView: View {
         .background(Theme.panel.opacity(0.96))
         .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
         .frame(maxWidth: 260)
+    }
+
+    private var voiceBar: some View {
+        HStack(spacing: 10) {
+            Button { voice.toggle(onCommand: { client.send($0) }) } label: {
+                Text(micGlyph).font(Theme.mono(16, weight: .bold))
+                    .frame(width: 46, height: 46)
+                    .foregroundColor(isListening ? Theme.panel : Theme.ink)
+                    .background(isListening ? Theme.danger : Color.clear)
+                    .overlay(Rectangle().stroke(Theme.ink, lineWidth: 1.4))
+            }
+            .disabled(!isConnected)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("VOICE · \(voice.sourceLabel)").font(Theme.mono(9))
+                    .foregroundColor(voice.available ? Theme.olive : Theme.inkSecondary)
+                Text(voiceStatus).font(Theme.mono(11, weight: .semibold)).foregroundColor(Theme.ink)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 14).padding(.vertical, 8)
+        .background(Theme.panel)
+        .overlay(Rectangle().frame(height: 1).foregroundColor(Theme.hairline), alignment: .top)
+    }
+
+    private var isListening: Bool { voice.state == .listening }
+    private var micGlyph: String { isListening ? "■" : "🎙" }
+    private var voiceStatus: String {
+        switch voice.state {
+        case .idle: return voice.lastCommand.map { "→ \($0.rawValue.uppercased())" } ?? "TAP TO SPEAK"
+        case .listening: return "● LISTENING…"
+        case .thinking: return "PROCESSING…"
+        case .error(let e): return e
+        }
     }
 
     private var viewToggle: some View {
