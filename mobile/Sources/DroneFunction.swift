@@ -12,6 +12,7 @@ enum DroneFunction: String, CaseIterable {
     case takeoff, land, up, down, left, right, forward, back
     case rotateCW = "rotate_cw", rotateCCW = "rotate_ccw"
     case emergency
+    case track          // tag-free visual object tracking ("track that boat")
     // mission intents (routed to the laptop when connected)
     case followMe = "follow_me", hold, recall, stop
 
@@ -58,6 +59,7 @@ enum DroneFunction: String, CaseIterable {
         case .rotateCW: return "yaw clockwise / right (value=degrees)"
         case .rotateCCW: return "yaw counter-clockwise / left (value=degrees)"
         case .emergency: return "cut motors immediately (failsafe)"
+        case .track: return "visually track the object the operator has centered"
         case .followMe: return "follow the soldier"
         case .hold: return "hold position"
         case .recall: return "return to the soldier"
@@ -157,6 +159,7 @@ enum DroneIntent {
         if has(t, ["land", "touch down", "set down"]) { return DroneAction(.land) }
         if has(t, ["recall", "come back", "return", "rtb"]) { return DroneAction(.recall) }
         if has(t, ["hold", "stay", "wait", "stand by"]) { return DroneAction(.hold) }
+        if has(t, ["track", "follow that", "follow the", "lock on", "lock onto", "follow it", "follow him", "follow her"]) { return DroneAction(.track) }
         if has(t, ["follow", "on me", "come with"]) { return DroneAction(.followMe) }
 
         // Movement.

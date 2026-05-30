@@ -19,6 +19,10 @@ final class FollowCoordinator: ObservableObject {
     var config = FollowConfig()
 
     private let detector = AprilTagDetector()
+    private let tracker = ObjectTracker()
+    enum Mode { case tag, track }
+    private var mode: Mode = .tag
+
     private var controller = FollowController()
 
     private let detectQueue = DispatchQueue(label: "follow.detect", qos: .userInitiated)
@@ -28,7 +32,7 @@ final class FollowCoordinator: ObservableObject {
     private let detLock = NSLock()
     private var busy = false                         // detection backpressure
     private var lastDetect: CFTimeInterval = 0       // cadence cap (in addition to busy gate)
-    private let detectInterval: CFTimeInterval = 0.08  // ~12 Hz cap — leaves thermal headroom
+    private let detectInterval: CFTimeInterval = 0.10  // ~10 Hz cap — frees CPU for smooth video
 
     // Control state — only touched on rcQueue.
     private var latest: TagDetection?
@@ -40,8 +44,8 @@ final class FollowCoordinator: ObservableObject {
     private let takeoffSettle: CFTimeInterval = 4.0   // let the takeoff climb finish before follow rc
 
     private let rcInterval = 0.066                   // ~15 Hz stick updates
-    private let staleTimeout: CFTimeInterval = 0.5   // older detection = no lock
-    private let lostLandTimeout: CFTimeInterval = 8  // hover this long w/o tag, then land
+    private let staleTimeout: CFTimeInterval = 1.5   // ride through tag losses for continuity (loose)
+    private let lostLandTimeout: CFTimeInterval = 45 // hover (don't land) this long w/o tag — generous
 
     private weak var stream: TelloDirectStream?
 
@@ -79,6 +83,38 @@ final class FollowCoordinator: ObservableObject {
         startRCLoop()
     }
 
+    /// Take off and visually track whatever the operator has centered ("track that
+    /// boat") — no AprilTag. Same loop/arbiter; the on-device tracker replaces the tag
+    /// detector as the source of the target.
+    func armTrack(stream: TelloDirectStream) {
+        guard phase == .disarmed else { return }
+        self.stream = stream
+        stream.start()
+        controller.config = config
+        mode = .track
+        detectQueue.async { self.tracker.reset() }
+        stream.onPixelBuffer = { [weak self] pb in self?.ingest(pb) }
+
+        TelloCommander.shared.send("takeoff")
+        rcQueue.async {
+            self.armed = true
+            self.followActive = true
+            self.tookOff = false
+            self.landing = false
+            self.latest = nil
+            self.latestTime = CACurrentMediaTime()
+            self.rcQueue.asyncAfter(deadline: .now() + self.takeoffSettle) {
+                self.tookOff = true
+                self.latestTime = CACurrentMediaTime()
+            }
+        }
+        setPhase(.searching)
+        startRCLoop()
+    }
+
+    /// Re-acquire the centered object (operator re-frames and says "track" again).
+    func relock() { detectQueue.async { self.tracker.reset() } }
+
     /// Operator took manual control by voice — pause the follow loop and hover. The
     /// drone stays airborne; "follow me" resumes. (Pause-and-hold model.)
     func pauseToManual() {
@@ -110,6 +146,8 @@ final class FollowCoordinator: ObservableObject {
         }
         TelloCommander.shared.rc(.hover)
         TelloCommander.shared.send("land")
+        mode = .tag
+        detectQueue.async { self.tracker.reset() }
         setPhase(.disarmed)
         DispatchQueue.main.async { self.normalizedCorners = [] }
     }
@@ -123,6 +161,8 @@ final class FollowCoordinator: ObservableObject {
             self.armed = false; self.followActive = false
         }
         TelloCommander.shared.send("emergency")
+        mode = .tag
+        detectQueue.async { self.tracker.reset() }
         setPhase(.disarmed)
         DispatchQueue.main.async { self.normalizedCorners = [] }
     }
@@ -139,16 +179,50 @@ final class FollowCoordinator: ObservableObject {
 
         detectQueue.async { [weak self] in
             guard let self else { return }
-            let best = self.pickTarget(self.detector.detect(pixelBuffer))
+            let synth: TagDetection?
+            if self.mode == .track {
+                synth = self.trackStep(pixelBuffer)         // publishes its own box
+            } else {
+                let best = self.pickTarget(self.detector.detect(pixelBuffer))
+                self.publish(best)
+                synth = best
+            }
             self.rcQueue.async {
-                if let best {
-                    self.latest = best
+                if let synth {
+                    self.latest = synth
                     self.latestTime = CACurrentMediaTime()
                 }
             }
-            self.publish(best)
             self.detLock.lock(); self.busy = false; self.detLock.unlock()
         }
+    }
+
+    /// Run the visual tracker and synthesize a TagDetection so the existing controller
+    /// (gains/deadbands/clamps/lost handling) drives the drone unchanged. Apparent box
+    /// size is the standoff proxy — hold the size it had at lock.
+    private func trackStep(_ pb: CVPixelBuffer) -> TagDetection? {
+        if !tracker.isLocked { tracker.lock(in: pb) }
+        guard let (box, conf) = tracker.update(in: pb) else {
+            DispatchQueue.main.async { self.normalizedCorners = [] }
+            return nil
+        }
+        // Vision box: bottom-left origin, normalized → top-left corners for the overlay.
+        let x0 = box.minX, x1 = box.maxX, yTop = 1 - box.maxY, yBot = 1 - box.minY
+        let corners = [CGPoint(x: x0, y: yTop), CGPoint(x: x1, y: yTop),
+                       CGPoint(x: x1, y: yBot), CGPoint(x: x0, y: yBot)]
+        let bearingDeg = (Double(box.midX) - 0.5) * 72.0     // HFOV ~72°
+        let elevationDeg = (0.5 - Double(box.midY)) * 54.0   // +up in Vision → climb
+        let h = max(Double(box.height), 0.02)
+        let lockedH = max(Double(tracker.lockedHeight), 0.02)
+        let distance = min(max(config.targetDistance * (lockedH / h), 0.5), 10.0)
+        DispatchQueue.main.async {
+            self.normalizedCorners = corners
+            self.distance = distance
+            self.bearingDeg = bearingDeg
+        }
+        return TagDetection(id: -1, center: .zero, corners: [], distance: distance,
+                            bearingRad: bearingDeg * .pi / 180, elevationRad: elevationDeg * .pi / 180,
+                            decisionMargin: Float(conf * 100), imageSize: .zero)
     }
 
     /// Strongest detection wins (highest decision margin) above the confidence floor.

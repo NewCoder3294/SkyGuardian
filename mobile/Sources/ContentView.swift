@@ -1,3 +1,4 @@
+import CoreLocation
 import SwiftUI
 
 enum CenterView { case map, feed }
@@ -10,6 +11,7 @@ struct ContentView: View {
     @StateObject private var location = LocationProvider()
     @StateObject private var stream = TelloDirectStream()
     @StateObject private var follow = FollowCoordinator()
+    @StateObject private var localizer = Localizer()
     @State private var showConnect = true
     @State private var center: CenterView = .map
     @State private var mapMode: MapMode = .twoD
@@ -47,6 +49,16 @@ struct ContentView: View {
         .onAppear { applyDebugLaunchArgs(); location.start() }
         .overlay { if needsSetup { setupOverlay } }
         .task { await startModelIfNeeded() }
+        .onReceive(location.$coordinate) { _ in updateLocalizer() }
+        .onReceive(follow.$distance) { _ in updateLocalizer() }
+    }
+
+    /// Drive the map's phone-side localization from the AprilTag follow + GPS/heading.
+    private func updateLocalizer() {
+        guard let here = location.coordinate else { return }
+        localizer.update(operatorCoord: here, distance: follow.distance,
+                         bearingRad: follow.bearingDeg * .pi / 180, headingDeg: location.headingDeg,
+                         active: follow.phase == .following)
     }
 
     // MARK: first-launch model setup
@@ -208,6 +220,11 @@ struct ContentView: View {
             return
         }
 
+        if fn == .track {   // "track that boat" — tag-free visual tracking
+            if follow.phase == .disarmed { startTrack() } else { follow.relock() }
+            return
+        }
+
         if fn == .emergency {                               // failsafe: cut motors, no land
             if follow.isArmed { follow.emergencyCut() } else { TelloCommander.shared.send("emergency") }
             return
@@ -239,6 +256,11 @@ struct ContentView: View {
         follow.arm(stream: stream)
     }
 
+    private func startTrack() {
+        stream.start()
+        follow.armTrack(stream: stream)
+    }
+
     /// Hard safety control — not voice-only (per spec): land the drone now and signal
     /// a mission stop to the laptop if connected.
     private func hardStop() {
@@ -256,9 +278,9 @@ struct ContentView: View {
         switch mapMode {
         case .twoD, .threeD:
             ZStack(alignment: .bottomTrailing) {
-                if location.coordinate != nil {
-                    OSMMapView(entities: client.entities, trails: client.trails,
-                               origin: location.coordinate,
+                if mapOrigin != nil {
+                    OSMMapView(entities: mapEntities, trails: mapTrails,
+                               origin: mapOrigin,
                                dimension: mapMode == .threeD ? .tilted : .flat)
                 } else {
                     locationWait
@@ -268,10 +290,16 @@ struct ContentView: View {
                     .background(Theme.panel.opacity(0.85)).padding(6)
             }
         case .tac:
-            LocalMapView(entities: client.entities, trails: client.trails,
+            LocalMapView(entities: mapEntities, trails: mapTrails,
                          projection: MapProjection(spanMeters: 24))
         }
     }
+
+    // Map data: phone-side AprilTag localization (operator + drone + trails), plus any
+    // laptop world-model entities when connected.
+    private var mapEntities: [Entity] { localizer.entities + client.entities }
+    private var mapTrails: [String: [Vec3]] { localizer.trails.merging(client.trails) { a, _ in a } }
+    private var mapOrigin: CLLocationCoordinate2D? { localizer.origin ?? location.coordinate }
 
     private var locationWait: some View {
         VStack(spacing: 6) {

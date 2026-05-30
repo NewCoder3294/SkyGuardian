@@ -10,7 +10,7 @@ settings:
     SWIFT_VERSION: "5.0"
     DEVELOPMENT_TEAM: "9KHR566436"
     MARKETING_VERSION: "1.0"
-    CURRENT_PROJECT_VERSION: "6"
+    CURRENT_PROJECT_VERSION: "13"
 
 packages:
   ZIPFoundation:
@@ -57,6 +57,7 @@ targets:
         NSLocalNetworkUsageDescription: "Connects to the mission laptop on your local network."
         NSLocationWhenInUseUsageDescription: "Shares your relative position with the laptop for follow-me context."
         NSMicrophoneUsageDescription: "Voice commands to the companion drone, processed on-device."
+        NSSpeechRecognitionUsageDescription: "Recognizes your spoken drone commands on-device, fully offline."
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         # Only standard/exempt encryption (plain local ws) — avoids the TestFlight compliance prompt.

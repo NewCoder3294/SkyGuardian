@@ -1,10 +1,13 @@
 import AVFoundation
 import Foundation
+import Speech
 
-/// Push-to-talk voice control. Captures mic audio, resamples to 16 kHz mono PCM,
-/// runs on-device transcription (Gemma 3n via Cactus), maps the transcript to the
-/// closed Command vocabulary, and emits the intent. Honest about availability:
-/// with no model/framework the state goes to .error (never a fake command).
+/// Push-to-talk voice control. Speech→text runs on Apple's ON-DEVICE recognizer
+/// (`SFSpeechRecognizer`, fully offline) — NOT Cactus, because Gemma 3n's
+/// `cactus_transcribe` path null-derefs (it has no STT backend). The transcript is
+/// mapped to the closed drone-command vocabulary by `DroneIntent`. Gemma is still
+/// used for vision elsewhere; this path is deterministic and can't crash the C lib.
+/// Honest about availability: with speech denied/unavailable the state goes to .error.
 @MainActor
 final class VoiceController: ObservableObject {
     enum State: Equatable { case idle, listening, thinking, error(String) }
@@ -13,93 +16,113 @@ final class VoiceController: ObservableObject {
     @Published private(set) var lastTranscript: String = ""
     @Published private(set) var lastAction: DroneAction?
 
-    private var service: CactusService = CactusFactory.make()
-
-    /// Rebuild the backend (e.g. after the model finishes downloading).
-    func reloadService() { service = CactusFactory.make() }
     private let engine = AVAudioEngine()
-    private var converter: AVAudioConverter?
-    private var pcm = Data()
-    private let pcmLock = NSLock()   // pcm is written on the audio render thread, read on main
+    private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+    private var request: SFSpeechAudioBufferRecognitionRequest?
+    private var task: SFSpeechRecognitionTask?
+    private var onAction: ((DroneAction) -> Void)?
+    private var authorized = false
 
-    private let targetFormat = AVAudioFormat(
-        commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: true)
+    var sourceLabel: String { available ? "ON-DEVICE STT" : "VOICE" }
+    var available: Bool { authorized && (recognizer?.isAvailable ?? false) }
 
-    var sourceLabel: String { service.sourceLabel }
-    var available: Bool { service.isAvailable }
+    /// Kept for API parity with the old Cactus-backed path; just re-checks auth.
+    func reloadService() { Task { _ = await ensureAuth() } }
 
     func toggle(onAction: @escaping (DroneAction) -> Void) {
         switch state {
-        case .listening: stopAndProcess(onAction: onAction)
-        default: startListening()
+        case .listening: stopAndProcess()
+        default: start(onAction: onAction)
         }
     }
 
-    private func startListening() {
+    // MARK: listen
+
+    private func start(onAction: @escaping (DroneAction) -> Void) {
+        self.onAction = onAction
+        lastTranscript = ""
         Task {
-            guard await requestPermission() else { state = .error("MIC DENIED"); return }
+            guard await ensureAuth() else { state = .error("MIC/STT DENIED"); return }
+            guard let recognizer, recognizer.isAvailable else { state = .error("STT UNAVAILABLE"); return }
             do {
                 try configureSession()
-                pcmLock.lock(); pcm.removeAll(keepingCapacity: true); pcmLock.unlock()
+                let req = SFSpeechAudioBufferRecognitionRequest()
+                req.shouldReportPartialResults = true
+                if recognizer.supportsOnDeviceRecognition { req.requiresOnDeviceRecognition = true }
+                request = req
+
                 let input = engine.inputNode
-                let inFormat = input.outputFormat(forBus: 0)
-                guard let target = targetFormat else { state = .error("FORMAT"); return }
-                converter = AVAudioConverter(from: inFormat, to: target)
-                input.installTap(onBus: 0, bufferSize: 2048, format: inFormat) { [weak self] buffer, _ in
-                    self?.capture(buffer)
+                let format = input.outputFormat(forBus: 0)
+                input.installTap(onBus: 0, bufferSize: 2048, format: format) { [weak self] buffer, _ in
+                    self?.request?.append(buffer)
                 }
+                engine.prepare()
                 try engine.start()
+
+                task = recognizer.recognitionTask(with: req) { [weak self] result, error in
+                    Task { @MainActor in self?.handle(result: result, error: error) }
+                }
                 state = .listening
             } catch {
+                cleanup()
                 state = .error("AUDIO")
             }
         }
     }
 
-    private func stopAndProcess(onAction: @escaping (DroneAction) -> Void) {
+    /// Stop capture and let the recognizer deliver its final transcript (→ handle()).
+    private func stopAndProcess() {
+        guard state == .listening else { return }
+        state = .thinking
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
-        try? AVAudioSession.sharedInstance().setActive(false)
-        pcmLock.lock(); let captured = pcm; pcmLock.unlock()
-        state = .thinking
-        let pilot = DronePilot(service: service)
-        Task {
-            do {
-                let transcript = try await service.transcribe(pcm16k: captured)
-                lastTranscript = transcript
-                if let action = await pilot.resolve(transcript) {
-                    lastAction = action
-                    onAction(action)
-                    state = .idle
-                } else {
-                    state = .error("NO INTENT")
-                }
-            } catch {
-                state = .error(sourceLabel == "UNAVAILABLE" ? "NO MODEL" : "STT FAIL")
-            }
+        request?.endAudio()
+    }
+
+    private var silenceTimer: Timer?
+
+    private func handle(result: SFSpeechRecognitionResult?, error: Error?) {
+        if let result {
+            lastTranscript = result.bestTranscription.formattedString
+            if result.isFinal { finalize(lastTranscript); return }
+            // Heard something → auto-finish after a short pause (no second tap needed).
+            if state == .listening, !lastTranscript.isEmpty { restartSilenceTimer() }
+            return
+        }
+        // No result + error/end. If we were processing, decide on whatever we heard.
+        if state == .thinking { finalize(lastTranscript) }
+        else if state == .listening, error != nil { cleanup(); state = .error("STT FAIL") }
+    }
+
+    private func restartSilenceTimer() {
+        silenceTimer?.invalidate()
+        silenceTimer = Timer.scheduledTimer(withTimeInterval: 1.2, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.stopAndProcess() }
         }
     }
 
-    private func capture(_ buffer: AVAudioPCMBuffer) {
-        guard let converter, let target = targetFormat else { return }
-        let ratio = target.sampleRate / buffer.format.sampleRate
-        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 16
-        guard let out = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: capacity) else { return }
-        var consumed = false
-        var err: NSError?
-        let status = converter.convert(to: out, error: &err) { _, status in
-            if consumed { status.pointee = .noDataNow; return nil }
-            consumed = true
-            status.pointee = .haveData
-            return buffer
+    private func finalize(_ transcript: String) {
+        cleanup()
+        let cleaned = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { state = .error("NO SPEECH"); return }
+        if let action = DroneIntent.match(cleaned) {
+            lastAction = action
+            onAction?(action)
+            state = .idle
+        } else {
+            state = .error("NO INTENT")
         }
-        // Only append real converted audio — drop error/empty results rather than
-        // feeding garbage/stale samples to the recognizer.
-        guard status == .haveData, err == nil, out.frameLength > 0, let ch = out.int16ChannelData else { return }
-        let bytes = Int(out.frameLength) * MemoryLayout<Int16>.size
-        let chunk = Data(bytes: ch[0], count: bytes)
-        pcmLock.lock(); pcm.append(chunk); pcmLock.unlock()
     }
+
+    private func cleanup() {
+        silenceTimer?.invalidate(); silenceTimer = nil
+        task?.cancel(); task = nil
+        request = nil
+        if engine.isRunning { engine.inputNode.removeTap(onBus: 0); engine.stop() }
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
+    // MARK: session + auth
 
     private func configureSession() throws {
         let session = AVAudioSession.sharedInstance()
@@ -107,9 +130,14 @@ final class VoiceController: ObservableObject {
         try session.setActive(true, options: .notifyOthersOnDeactivation)
     }
 
-    private func requestPermission() async -> Bool {
-        await withCheckedContinuation { cont in
-            AVAudioApplication.requestRecordPermission { granted in cont.resume(returning: granted) }
+    private func ensureAuth() async -> Bool {
+        let speech = await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
+            SFSpeechRecognizer.requestAuthorization { c.resume(returning: $0 == .authorized) }
         }
+        let mic = await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
+            AVAudioApplication.requestRecordPermission { c.resume(returning: $0) }
+        }
+        authorized = speech && mic
+        return authorized
     }
 }

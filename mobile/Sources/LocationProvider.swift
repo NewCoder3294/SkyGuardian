@@ -6,6 +6,7 @@ import Foundation
 /// the origin for converting local-frame entity positions (meters) to coordinates.
 final class LocationProvider: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published private(set) var coordinate: CLLocationCoordinate2D?
+    @Published private(set) var headingDeg: Double = 0   // true heading, for placing the drone relative to the operator
     @Published private(set) var authorized = false
 
     private let manager = CLLocationManager()
@@ -22,6 +23,12 @@ final class LocationProvider: NSObject, ObservableObject, CLLocationManagerDeleg
     func start() {
         manager.requestWhenInUseAuthorization()
         manager.startUpdatingLocation()
+        if CLLocationManager.headingAvailable() { manager.startUpdatingHeading() }
+    }
+
+    func locationManager(_ m: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
+        let h = newHeading.trueHeading >= 0 ? newHeading.trueHeading : newHeading.magneticHeading
+        if h >= 0 { headingDeg = h }
     }
 
     func locationManagerDidChangeAuthorization(_ m: CLLocationManager) {

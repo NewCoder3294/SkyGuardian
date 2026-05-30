@@ -35,6 +35,7 @@ struct TelloDirectView: View {
     @ObservedObject var stream: TelloDirectStream
     @ObservedObject var follow: FollowCoordinator
     @State private var confirmArm = false
+    @State private var confirmTrack = false
 
     private let videoAspect: CGFloat = 4.0 / 3.0   // Tello stream is 4:3
 
@@ -75,6 +76,12 @@ struct TelloDirectView: View {
         } message: {
             Text("The Tello will launch and station-keep on the tag. Keep clear; STOP lands it.")
         }
+        .confirmationDialog("Take off and track the centered object?", isPresented: $confirmTrack, titleVisibility: .visible) {
+            Button("TAKE OFF & TRACK", role: .destructive) { follow.armTrack(stream: stream) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Center the object first. The Tello will launch and visually track it. Keep clear; STOP lands it.")
+        }
     }
 
     // MARK: follow HUD + controls
@@ -98,9 +105,15 @@ struct TelloDirectView: View {
                 }
             } else {
                 Button { confirmArm = true } label: {
-                    Text("START FOLLOW").font(Theme.mono(13, weight: .bold))
+                    Text("FOLLOW TAG").font(Theme.mono(13, weight: .bold))
                         .foregroundColor(.black).frame(maxWidth: .infinity).padding(.vertical, 14)
                         .background(stream.state == .streaming ? Theme.olive : Theme.faint)
+                }
+                .disabled(stream.state != .streaming)
+                Button { confirmTrack = true } label: {
+                    Text("TRACK").font(Theme.mono(13, weight: .bold))
+                        .foregroundColor(.white).frame(maxWidth: .infinity).padding(.vertical, 14)
+                        .background(stream.state == .streaming ? Theme.brown : Theme.faint)
                 }
                 .disabled(stream.state != .streaming)
             }

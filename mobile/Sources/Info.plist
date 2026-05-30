@@ -33,6 +33,8 @@
 	<string>Shares your relative position with the laptop for follow-me context.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Voice commands to the companion drone, processed on-device.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Recognizes your spoken drone commands on-device, fully offline.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

@@ -52,31 +52,72 @@ final class ModelDownloader: NSObject, ObservableObject, URLSessionDownloadDeleg
     }()
     private var task: URLSessionDownloadTask?
     private var continuation: CheckedContinuation<URL, Error>?
+    private var isWorking = false   // single-flight: never run two downloads at once
+
+    enum DownloadError: LocalizedError {
+        case integrity
+        case diskFull(neededGB: Double)
+        var errorDescription: String? {
+            switch self {
+            case .integrity: return "integrity check failed (hash mismatch)"
+            case .diskFull(let gb): return String(format: "low storage — free up ~%.0f GB and retry", gb)
+            }
+        }
+    }
 
     /// Idempotent: download (resuming if a partial exists), verify, unzip. Safe to call
-    /// again after a failure to retry.
+    /// again after a failure to retry. Single-flight — a second call while one is in
+    /// progress is ignored (so the URLSession continuation can't be clobbered).
     func ensureModel() async {
         if Self.isPresent { setState(.ready); return }
+        if isWorking { return }
+        isWorking = true
+        defer { isWorking = false }
         do {
             setState(.downloading(0))
             let zip = try await runDownload()
-
-            setState(.verifying)
-            let digest = try Self.sha256(ofFileAt: zip)
-            guard digest == Self.expectedSHA256 else {
-                try? FileManager.default.removeItem(at: zip)
-                setState(.failed("integrity check failed (hash mismatch)"))
-                return
-            }
-
-            setState(.unzipping)
-            try unzip(zip, to: Self.modelDir)
-            try? FileManager.default.removeItem(at: zip)
-            try? FileManager.default.removeItem(at: Self.resumeURL)
+            // Verify + unzip are CPU/IO heavy over multi-GB; run them on a dedicated
+            // background queue inside an autoreleasepool so they neither block the UI
+            // nor spike memory (jetsam) the way the cooperative pool could.
+            try await verifyAndInstall(zip)
             setState(Self.isPresent ? .ready : .failed("unzip produced no files"))
         } catch {
             setState(.failed(error.localizedDescription))
         }
+    }
+
+    private func verifyAndInstall(_ zip: URL) async throws {
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+            DispatchQueue.global(qos: .utility).async {
+                autoreleasepool {
+                    do {
+                        self.setState(.verifying)
+                        let digest = try Self.sha256(ofFileAt: zip)
+                        guard digest == Self.expectedSHA256 else {
+                            try? FileManager.default.removeItem(at: zip)
+                            throw DownloadError.integrity
+                        }
+                        // Disk preflight: extraction needs room for a second full copy
+                        // alongside the zip. Fail clearly instead of crashing mid-unzip.
+                        if let free = Self.freeDiskBytes(), free < Self.expectedBytes + 600_000_000 {
+                            throw DownloadError.diskFull(neededGB: Double(Self.expectedBytes) / 1e9)
+                        }
+                        self.setState(.unzipping)
+                        try self.unzip(zip, to: Self.modelDir)
+                        try? FileManager.default.removeItem(at: zip)
+                        try? FileManager.default.removeItem(at: Self.resumeURL)
+                        cont.resume()
+                    } catch {
+                        cont.resume(throwing: error)
+                    }
+                }
+            }
+        }
+    }
+
+    private static func freeDiskBytes() -> Int64? {
+        (try? cachesDir.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?
+            .volumeAvailableCapacityForImportantUsage
     }
 
     func cancel() { task?.cancel() }
@@ -138,13 +179,21 @@ final class ModelDownloader: NSObject, ObservableObject, URLSessionDownloadDeleg
 
     // MARK: integrity + unzip
 
-    /// Streaming SHA-256 over the downloaded file (chunked, constant memory).
+    /// Streaming SHA-256 over the downloaded file (chunked, constant memory). Uses the
+    /// throwing `read(upToCount:)` API (the older `readData(ofLength:)` is deprecated and
+    /// can raise an uncatchable ObjC exception), with a per-chunk autoreleasepool.
     private static func sha256(ofFileAt url: URL) throws -> String {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         var hasher = SHA256()
-        while case let chunk = handle.readData(ofLength: 1 << 20), !chunk.isEmpty {
-            hasher.update(data: chunk)
+        while true {
+            let done: Bool = try autoreleasepool {
+                let chunk = try handle.read(upToCount: 1 << 20) ?? Data()
+                if chunk.isEmpty { return true }
+                hasher.update(data: chunk)
+                return false
+            }
+            if done { break }
         }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }

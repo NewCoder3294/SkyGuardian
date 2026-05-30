@@ -97,6 +97,9 @@ struct OSMMapView: UIViewRepresentable {
         map.pointOfInterestFilter = .excludingAll
         map.isPitchEnabled = true
         map.isRotateEnabled = true
+        // OSM tiles stop at z19; cap the closest zoom so we never request tiles that
+        // don't exist (which renders as the grey grid).
+        map.setCameraZoomRange(MKMapView.CameraZoomRange(minCenterCoordinateDistance: 150), animated: false)
         return map
     }
 
