@@ -28,29 +28,39 @@ const domains = [
     label: "Sea",
     mission: "Maritime vessel monitoring",
     value: "Harbor security, coastal monitoring, vessel observation, and search and rescue coordination.",
-    image: "https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=800&q=80",
-    alt: "Aerial view of coastline and harbor from drone",
+    image: "https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=1200&q=85",
+    alt: "Drone aerial view of coastline and harbor operations",
   },
   {
     label: "Land",
     mission: "Perimeter security and force protection",
     value: "Route observation, missing person search, disaster response, and small unit overwatch.",
-    image: "https://images.unsplash.com/photo-1473968512647-3e447244af8f?w=800&q=80",
-    alt: "Aerial drone view of terrain and landscape",
+    image: "/desert-canyon-aerial.png",
+    alt: "Aerial drone surveillance of desert canyon terrain",
   },
   {
     label: "Air",
     mission: "Installation and infrastructure awareness",
     value: "Airfield security, wildfire assessment, utility inspection, and large-area monitoring.",
-    image: "https://images.unsplash.com/photo-1506947411487-a56738571f73?w=800&q=80",
-    alt: "Aerial view of infrastructure from drone altitude",
+    image: "https://images.unsplash.com/photo-1473968512647-3e447244af8f?w=1200&q=85",
+    alt: "Drone flying over terrain during aerial reconnaissance",
   },
 ];
 
 export default function LandingPage() {
   return (
     <main className="min-h-screen overflow-x-hidden bg-bg text-text">
-      <header className="fixed left-0 right-0 top-0 z-30 border-b border-border bg-bg/88 backdrop-blur">
+      {/* Hackathon banner */}
+      <div className="fixed left-0 right-0 top-0 z-40 border-b border-border bg-surface">
+        <div className="mx-auto flex items-center justify-center gap-2 px-5 py-1.5">
+          <span className="inline-flex h-5 w-5 items-center justify-center bg-accent text-[10px] font-bold text-bg">B</span>
+          <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-text-muted">
+            Built at UCSD &middot; Bow Capital Hackathon
+          </p>
+        </div>
+      </div>
+
+      <header className="fixed left-0 right-0 top-[29px] z-30 border-b border-border bg-bg/88 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-6 px-5 py-4 md:px-8">
           <a href="#top" className="flex items-center gap-3" aria-label="SkyGuardian home">
             <Image
@@ -94,18 +104,18 @@ export default function LandingPage() {
       </header>
 
       {/* Hero */}
-      <section id="top" className="relative min-h-[82vh] overflow-hidden border-b border-border pt-24 md:min-h-[88vh]">
+      <section id="top" className="relative min-h-[82vh] overflow-hidden border-b border-border pt-32 md:min-h-[88vh]">
         <Image
-          src="https://images.unsplash.com/photo-1508614589041-895b88991e3e?w=1920&q=80"
-          alt="Professional drone flying over landscape at sunset"
+          src="/hero-drone-city.png"
+          alt="DJI Mavic drone flying over city skyline at dusk"
           fill
           priority
           sizes="100vw"
           className="object-cover object-center"
         />
-        <div className="absolute inset-0 bg-[linear-gradient(90deg,var(--bg)_0%,oklch(0.965_0.010_95_/_0.92)_30%,oklch(0.965_0.010_95_/_0.60)_65%,oklch(0.965_0.010_95_/_0.30)_100%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(90deg,var(--bg)_0%,oklch(0.965_0.010_95_/_0.82)_25%,oklch(0.965_0.010_95_/_0.35)_55%,transparent_100%)]" />
 
-        <div className="relative z-10 mx-auto flex min-h-[calc(82vh-6rem)] max-w-7xl flex-col justify-center px-5 pb-8 md:min-h-[calc(88vh-6rem)] md:px-8">
+        <div className="relative z-10 mx-auto flex min-h-[calc(82vh-8rem)] max-w-7xl flex-col justify-center px-5 pb-8 md:min-h-[calc(88vh-8rem)] md:px-8">
           <div className="max-w-3xl">
             <p className="mb-6 font-mono text-[11px] uppercase tracking-[0.42em] text-accent">
               Sea / Land / Air
@@ -200,7 +210,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Operator view */}
+      {/* Operator view — single featured image */}
       <section className="relative overflow-hidden border-b border-border bg-surface">
         <div className="relative mx-auto grid max-w-7xl gap-10 px-5 py-20 md:grid-cols-[0.9fr_1.1fr] md:px-8">
           <div className="self-center">
@@ -217,13 +227,13 @@ export default function LandingPage() {
           <div className="tac-corners relative overflow-hidden border border-border-strong bg-bg p-2 shadow-[0_26px_90px_oklch(0.12_0.03_130_/_0.12)]">
             <div className="relative aspect-[16/10] overflow-hidden border border-border bg-surface">
               <Image
-                src="https://images.unsplash.com/photo-1527977966376-1c8408f9f108?w=1200&q=80"
-                alt="Drone operator monitoring aerial surveillance feed"
+                src="/desert-canyon-aerial.png"
+                alt="Drone reconnaissance feed showing terrain surveillance"
                 fill
                 sizes="(min-width: 768px) 50vw, 100vw"
                 className="object-cover object-center"
               />
-              <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_0%,oklch(0.965_0.010_95_/_0.05)_55%,oklch(0.965_0.010_95_/_0.55)_100%)]" />
+              <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_0%,oklch(0.965_0.010_95_/_0.03)_60%,oklch(0.965_0.010_95_/_0.40)_100%)]" />
               <div className="absolute bottom-4 left-4 right-4 grid grid-cols-3 border border-border-strong bg-bg/88 backdrop-blur-sm">
                 {[
                   ["MISSION", "TRACK"],
@@ -241,8 +251,8 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Mission domains */}
-      <section id="missions" className="border-b border-border bg-surface">
+      {/* Mission domains — image cards */}
+      <section id="missions" className="border-b border-border">
         <div className="mx-auto max-w-7xl px-5 py-20 md:px-8">
           <div className="flex flex-col justify-between gap-6 md:flex-row md:items-end">
             <div>
@@ -269,7 +279,7 @@ export default function LandingPage() {
                     sizes="(min-width: 768px) 33vw, 100vw"
                     className="object-cover transition-transform duration-500 group-hover:scale-105"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-bg/40 to-transparent" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-bg/20 to-transparent" />
                   <div className="absolute left-5 top-4 border border-border-strong bg-bg/85 px-3 py-2 backdrop-blur-sm">
                     <p className="font-mono text-[11px] uppercase tracking-[0.36em] text-accent">
                       Domain {domain.label}
@@ -286,9 +296,9 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Markets */}
-      <section className="border-b border-border">
-        <div className="mx-auto grid max-w-7xl gap-10 px-5 py-20 md:grid-cols-[0.8fr_1.2fr] md:px-8">
+      {/* Markets — text only, no image */}
+      <section className="border-b border-border bg-surface">
+        <div className="mx-auto grid max-w-7xl gap-10 px-5 py-20 md:grid-cols-[1fr_1fr] md:px-8">
           <div>
             <p className="font-mono text-[11px] uppercase tracking-[0.42em] text-accent">
               Dual-use market
@@ -296,26 +306,16 @@ export default function LandingPage() {
             <h2 className="mt-5 text-4xl font-semibold leading-none md:text-6xl">
               Humans maintain command. SkyGuardian maintains awareness.
             </h2>
-            <p className="mt-8 max-w-md text-base leading-7 text-text-muted">
+          </div>
+          <div className="self-end">
+            <p className="max-w-lg text-lg leading-8 text-text-muted">
               One autonomy platform across defense ISR, public safety, port security, emergency response, infrastructure inspection, and environmental monitoring.
             </p>
-          </div>
-          <div className="tac-corners relative overflow-hidden border border-border-strong bg-bg shadow-[0_24px_90px_oklch(0.12_0.03_130_/_0.08)]">
-            <div className="relative aspect-[16/10] overflow-hidden">
-              <Image
-                src="https://images.unsplash.com/photo-1579829366248-204fe8413f31?w=1200&q=80"
-                alt="Drone fleet deployed for large-scale aerial monitoring"
-                fill
-                sizes="(min-width: 768px) 60vw, 100vw"
-                className="object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-bg/70 via-bg/20 to-transparent" />
-            </div>
-            <div className="grid border-t border-border-strong bg-bg/88 backdrop-blur-sm md:grid-cols-3">
+            <div className="mt-8 grid grid-cols-3 border border-border-strong bg-bg">
               {["Same platform", "Mission changes", "Awareness persists"].map((item) => (
                 <p
                   key={item}
-                  className="border-b border-border px-4 py-3.5 font-mono text-[9px] uppercase tracking-[0.24em] text-text-muted last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0"
+                  className="border-r border-border px-4 py-3.5 font-mono text-[9px] uppercase tracking-[0.24em] text-text-muted last:border-r-0"
                 >
                   {item}
                 </p>
@@ -325,58 +325,47 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Roadmap */}
-      <section id="roadmap" className="border-b border-border bg-surface">
-        <div className="mx-auto grid max-w-7xl gap-4 px-5 py-20 md:grid-cols-3 md:px-8">
-          {[
-            {
-              label: "Today",
-              body: "Leader drone detects, designates, deploys, tracks, and maintains situational awareness.",
-              image: "https://images.unsplash.com/photo-1524143986875-3b098d78b363?w=600&q=80",
-              alt: "Single reconnaissance drone in flight",
-            },
-            {
-              label: "Tomorrow",
-              body: "Multiple coordinated assets hand off observation and keep teams oriented across larger areas.",
-              image: "https://images.unsplash.com/photo-1487887235947-a955ef187fcc?w=600&q=80",
-              alt: "Drone surveying expansive terrain",
-            },
-            {
-              label: "Future",
-              body: "Mission-aware swarms form persistent observation networks with specialized autonomous roles.",
-              image: "https://images.unsplash.com/photo-1534996858221-380b92700493?w=600&q=80",
-              alt: "Advanced drone technology in operation",
-            },
-          ].map((item) => (
-            <article key={item.label} className="group border border-border-strong bg-bg transition-all duration-200 hover:border-accent hover:-translate-y-0.5 hover:shadow-[0_20px_70px_oklch(0.12_0.03_130_/_0.10)]">
-              <div className="relative h-40 overflow-hidden border-b border-border">
-                <Image
-                  src={item.image}
-                  alt={item.alt}
-                  fill
-                  sizes="(min-width: 768px) 33vw, 100vw"
-                  className="object-cover transition-transform duration-500 group-hover:scale-105"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-bg/30 to-transparent" />
-              </div>
-              <div className="p-6">
-                <p className="font-mono text-[11px] uppercase tracking-[0.42em] text-accent">{item.label}</p>
-                <p className="mt-8 text-2xl font-semibold leading-tight">{item.body}</p>
-              </div>
-            </article>
-          ))}
+      {/* Roadmap — text only, no images */}
+      <section id="roadmap" className="border-b border-border">
+        <div className="mx-auto max-w-7xl px-5 py-20 md:px-8">
+          <p className="font-mono text-[11px] uppercase tracking-[0.42em] text-accent">
+            Roadmap
+          </p>
+          <h2 className="mt-5 max-w-3xl text-4xl font-semibold leading-none md:text-6xl">
+            From single asset to persistent network.
+          </h2>
+
+          <div className="mt-12 grid gap-4 md:grid-cols-3">
+            {[
+              {
+                label: "Today",
+                body: "Leader drone detects, designates, deploys, tracks, and maintains situational awareness.",
+              },
+              {
+                label: "Tomorrow",
+                body: "Multiple coordinated assets hand off observation and keep teams oriented across larger areas.",
+              },
+              {
+                label: "Future",
+                body: "Mission-aware swarms form persistent observation networks with specialized autonomous roles.",
+              },
+            ].map((item, index) => (
+              <article key={item.label} className="tac-corners border border-border-strong bg-surface p-6">
+                <div className="flex items-center gap-4">
+                  <span className="font-mono text-[11px] uppercase tracking-[0.28em] text-accent">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <p className="font-mono text-[11px] uppercase tracking-[0.42em] text-accent">{item.label}</p>
+                </div>
+                <p className="mt-6 text-2xl font-semibold leading-tight">{item.body}</p>
+              </article>
+            ))}
+          </div>
         </div>
       </section>
 
       {/* CTA */}
-      <section id="demo" className="relative overflow-hidden">
-        <Image
-          src="https://images.unsplash.com/photo-1473968512647-3e447244af8f?w=1920&q=80"
-          alt="Aerial drone perspective over landscape"
-          fill
-          sizes="100vw"
-          className="object-cover opacity-[0.12]"
-        />
+      <section id="demo" className="relative overflow-hidden bg-surface">
         <div className="relative mx-auto max-w-7xl px-5 py-20 md:px-8">
           <div className="max-w-4xl">
             <p className="font-mono text-[11px] uppercase tracking-[0.42em] text-accent">
@@ -397,7 +386,7 @@ export default function LandingPage() {
               </a>
               <a
                 href="#top"
-                className="border border-border-strong bg-surface/85 px-5 py-3 text-center font-mono text-[11px] uppercase tracking-[0.28em] text-text transition-colors hover:border-text"
+                className="border border-border-strong bg-bg px-5 py-3 text-center font-mono text-[11px] uppercase tracking-[0.28em] text-text transition-colors hover:border-text"
               >
                 Back to top
               </a>
