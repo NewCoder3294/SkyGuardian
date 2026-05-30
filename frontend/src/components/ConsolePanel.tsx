@@ -20,10 +20,10 @@ export function ConsolePanel({ log }: { log: DetectionEvent[] }) {
   return (
     <aside className="flex h-full min-h-0 flex-col border-l border-border bg-surface/60">
       <header className="flex items-center justify-between border-b border-border bg-surface px-4 py-3">
-        <span className="font-sans text-[10px] font-semibold uppercase tracking-[0.3em] text-accent">
-          Detection log
+        <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.3em] text-accent">
+          ◢ Detection log
         </span>
-        <span className="rounded-full border border-border-strong bg-surface-elevated px-2 py-0.5 font-mono text-[10px] tabular-nums text-text-muted">
+        <span className="border border-border-strong bg-surface-elevated px-2 py-0.5 font-mono text-[10px] tabular-nums text-text-muted">
           {log.length.toString().padStart(2, "0")}
         </span>
       </header>
@@ -40,7 +40,7 @@ export function ConsolePanel({ log }: { log: DetectionEvent[] }) {
             >
               <div className="mb-1 flex items-baseline justify-between font-mono text-[10px] uppercase tracking-[0.25em] text-text-dim">
                 <span className="tabular-nums text-text-muted">{fmtTime(ev.t)}</span>
-                <span className="rounded-full bg-accent/10 px-1.5 py-0.5 text-accent">
+                <span className="border border-accent/30 bg-accent/10 px-1.5 py-0.5 text-accent">
                   {ev.boxes.length} det
                 </span>
               </div>

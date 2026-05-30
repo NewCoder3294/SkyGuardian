@@ -42,7 +42,7 @@ export function ThreatAlert({ detections }: Props) {
   return (
     <div
       role="alert"
-      className="pointer-events-none fixed bottom-5 right-5 z-50 w-80 overflow-hidden rounded-md border border-fail/70 bg-surface/95 shadow-[0_0_0_1px_rgba(239,68,68,0.4),0_10px_30px_rgba(0,0,0,0.6),0_0_40px_rgba(239,68,68,0.15)] backdrop-blur-md"
+      className="tac-corners pointer-events-none fixed bottom-5 right-5 z-50 w-80 overflow-hidden border border-fail/70 bg-surface/95 shadow-[0_0_0_1px_oklch(0.60_0.205_27_/_0.45),0_10px_30px_oklch(0.10_0.01_140_/_0.6)] backdrop-blur-md"
     >
       <div className="flex items-center gap-2 bg-fail/15 px-4 py-2 text-fail">
         <span className="relative inline-flex h-2.5 w-2.5">

@@ -46,17 +46,20 @@ const config: Config = {
         ],
       },
       borderRadius: {
+        // Hard tactical corners. Containers are square; only true LED dots
+        // keep `full`. Nothing softer than a 2px tick anywhere else.
         none: "0",
-        sm: "4px",
-        DEFAULT: "6px",
-        md: "8px",
-        lg: "12px",
+        sm: "0px",
+        DEFAULT: "1px",
+        md: "1px",
+        lg: "2px",
         full: "9999px",
       },
       boxShadow: {
-        "glow-cyan": "0 0 0 1px rgba(34,211,238,0.35), 0 0 24px rgba(34,211,238,0.12)",
-        "glow-blue": "0 0 0 1px rgba(59,130,246,0.4), 0 0 24px rgba(59,130,246,0.18)",
-        "card": "0 4px 14px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.03) inset",
+        // Etched hairline rings, no neon bloom.
+        "glow-cyan": "0 0 0 1px oklch(0.74 0.105 142 / 0.55)",
+        "glow-blue": "0 0 0 1px oklch(0.77 0.125 82 / 0.5)",
+        "card": "0 1px 0 oklch(0.46 0.03 138 / 0.25) inset, 0 6px 18px oklch(0.10 0.01 140 / 0.55)",
       },
     },
   },

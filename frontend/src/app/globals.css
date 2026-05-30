@@ -2,31 +2,40 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Dark tactical HUD palette inspired by mission-control UIs.
- * Deep navy bg, cyan/teal accents for live state, bright blue for CTA
- * actions. White-on-dark text. */
+/* NATO desaturated C2 palette — built for a dismounted operator reading a
+ * tactical command surface, not a SaaS dashboard. Near-black olive-tinted
+ * base, foliage-green for system-OK, phosphor-amber for live data, and a
+ * single signal-red reserved strictly for threats / link loss. Hard corners,
+ * hairline borders, no glow. All neutrals are tinted toward the olive hue so
+ * nothing reads as pure #000/#fff.
+ *
+ * Colour discipline (do not break):
+ *   green  (--ok)     = a system is doing its job
+ *   amber  (--accent) = telemetry, values, the operator's reading line
+ *   red    (--fail)   = threat or loss of a channel; nothing else is ever red
+ */
 :root {
-  --bg: #06121f;            /* deep navy, almost black */
-  --surface: #0c1c2d;        /* card surfaces */
-  --surface-elevated: #122939; /* nested cards / inputs */
-  --border: #1c3149;
-  --border-strong: #2a4660;
-  --text: #e6f1fb;
-  --text-muted: #93b1cb;
-  --text-dim: #5b7a96;
-  --invert: #06121f;
+  --bg: oklch(0.16 0.008 140);              /* near-black, faint olive */
+  --surface: oklch(0.205 0.010 140);        /* panel surfaces */
+  --surface-elevated: oklch(0.25 0.012 140);/* inputs / nested readouts */
+  --border: oklch(0.34 0.018 140);          /* hairline */
+  --border-strong: oklch(0.46 0.030 138);   /* framing ticks, dividers */
+  --text: oklch(0.93 0.012 120);            /* warm off-white */
+  --text-muted: oklch(0.72 0.020 132);
+  --text-dim: oklch(0.52 0.020 136);
+  --invert: oklch(0.16 0.008 140);
 
-  /* Status tier colors */
-  --ok: #2dd4bf;            /* teal-cyan = live/online */
-  --warn: #f59e0b;
-  --fail: #ef4444;
+  /* Status tiers */
+  --ok: oklch(0.74 0.105 142);              /* foliage / NATO green = online */
+  --warn: oklch(0.78 0.130 80);             /* amber */
+  --fail: oklch(0.60 0.205 27);             /* signal red — threat / offline */
 
-  /* Brand accents */
-  --accent: #22d3ee;         /* cyan accent for highlights, grid, rings */
-  --accent-dim: #0e7490;
-  --cta: #3b82f6;            /* blue CTA buttons */
-  --cta-hover: #60a5fa;
-  --cta-active: #2563eb;
+  /* Brand + data accents */
+  --accent: oklch(0.77 0.125 82);           /* phosphor amber — data, grid, reticle */
+  --accent-dim: oklch(0.55 0.080 85);
+  --cta: oklch(0.55 0.090 142);             /* tactical green action */
+  --cta-hover: oklch(0.63 0.105 142);
+  --cta-active: oklch(0.47 0.080 142);
 }
 
 html,
@@ -46,15 +55,12 @@ body {
     "Segoe UI",
     Roboto,
     sans-serif;
+  /* Faint top vignette + a barely-there scan tint. No coloured glow blooms —
+     a command surface is lit, not neon. */
   background:
     radial-gradient(
-      1200px 600px at 50% -20%,
-      rgba(34, 211, 238, 0.06),
-      transparent 60%
-    ),
-    radial-gradient(
-      800px 400px at 100% 100%,
-      rgba(59, 130, 246, 0.06),
+      1400px 700px at 50% -30%,
+      oklch(0.30 0.020 140 / 0.35),
       transparent 60%
     ),
     var(--bg);
@@ -73,26 +79,53 @@ button:focus-visible {
   outline-offset: 2px;
 }
 
-/* The logo file is black on white. Invert it for the dark dispatcher surface
-   so the wordmark becomes white. */
+/* The logo file is black on white. Invert it for the dark surface so the
+   wordmark becomes the warm off-white text colour. */
 .logo-invert {
-  filter: invert(1) brightness(1.05);
+  filter: invert(1) brightness(1.05) sepia(0.12) saturate(0.7);
 }
 
-/* Subtle glow utility for HUD-style elements. */
+/* Hairline status ring for live indicators. Tight, no bloom — reads as an
+   etched outline, not a glow. Name kept for call-site compatibility. */
 .glow-cyan {
-  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.35),
-    0 0 24px rgba(34, 211, 238, 0.12);
+  box-shadow: 0 0 0 1px oklch(0.74 0.105 142 / 0.55);
 }
 .glow-blue {
-  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.4),
-    0 0 24px rgba(59, 130, 246, 0.18);
+  box-shadow: 0 0 0 1px oklch(0.77 0.125 82 / 0.5);
 }
 
-/* Faint grid backdrop for surfaces meant to feel like a HUD pane. */
+/* Faint grid backdrop — survey graticule, amber at very low alpha. */
 .hud-grid {
   background-image:
-    linear-gradient(rgba(34, 211, 238, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(34, 211, 238, 0.04) 1px, transparent 1px);
-  background-size: 40px 40px;
+    linear-gradient(oklch(0.77 0.125 82 / 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(0.77 0.125 82 / 0.05) 1px, transparent 1px);
+  background-size: 36px 36px;
+}
+
+/* Opposing corner brackets — the framing tick used on real C2 panes. Apply to
+   a relatively-positioned element; draws a hairline L at top-left and an L at
+   bottom-right in amber. Purely decorative, pointer-transparent. */
+.tac-corners {
+  position: relative;
+}
+.tac-corners::before,
+.tac-corners::after {
+  content: "";
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-color: var(--accent);
+  border-style: solid;
+  opacity: 0.7;
+  pointer-events: none;
+}
+.tac-corners::before {
+  top: -1px;
+  left: -1px;
+  border-width: 1px 0 0 1px;
+}
+.tac-corners::after {
+  bottom: -1px;
+  right: -1px;
+  border-width: 0 1px 1px 0;
 }

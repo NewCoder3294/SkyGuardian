@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PlaybackData, PlaybackBox } from "@/lib/playback";
 import { frameAt } from "@/lib/playback";
+import { isThreat } from "@/lib/threats";
 
 interface Props {
   /** http origin of the backend (used to build /video/file and /video/detections URLs). */
@@ -99,25 +100,36 @@ export function VideoPlayer({ apiBase, name, onTimeUpdate }: Props) {
       offX = (containerW - dispW) / 2;
     }
 
+    // Match the live feed reticle: amber corner brackets, signal-red on threats.
+    const AMBER = "#d9a441";
+    const RED = "#e0483a";
     ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, monospace";
     for (const b of frame.boxes as PlaybackBox[]) {
       const x = offX + (b.cx - b.w / 2) * dispW;
       const y = offY + (b.cy - b.h / 2) * dispH;
       const bw = b.w * dispW;
       const bh = b.h * dispH;
-      ctx.strokeStyle = "rgba(34,211,238,0.22)";
-      ctx.lineWidth = 3;
+      const threat = isThreat(b.label);
+      const stroke = threat ? RED : AMBER;
+      ctx.strokeStyle = threat ? "rgba(224,72,58,0.28)" : "rgba(217,164,65,0.24)";
+      ctx.lineWidth = 1;
       ctx.strokeRect(x, y, bw, bh);
-      ctx.strokeStyle = "#22d3ee";
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(x, y, bw, bh);
+      const c = Math.max(7, Math.min(bw, bh) * 0.22);
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x, y + c); ctx.lineTo(x, y); ctx.lineTo(x + c, y);
+      ctx.moveTo(x + bw - c, y); ctx.lineTo(x + bw, y); ctx.lineTo(x + bw, y + c);
+      ctx.moveTo(x + bw, y + bh - c); ctx.lineTo(x + bw, y + bh); ctx.lineTo(x + bw - c, y + bh);
+      ctx.moveTo(x + c, y + bh); ctx.lineTo(x, y + bh); ctx.lineTo(x, y + bh - c);
+      ctx.stroke();
       const tag = `${b.label.toUpperCase()} ${(b.confidence * 100).toFixed(0)}`;
       const pad = 4;
       const tw = ctx.measureText(tag).width + pad * 2;
       const th = 14;
-      ctx.fillStyle = "rgba(6,18,31,0.92)";
+      ctx.fillStyle = "rgba(10,14,9,0.92)";
       ctx.fillRect(x, Math.max(offY, y - th), tw, th);
-      ctx.fillStyle = "#22d3ee";
+      ctx.fillStyle = stroke;
       ctx.fillText(tag, x + pad, Math.max(offY + th - 4, y - 4));
     }
   }, [data]);
@@ -171,9 +183,9 @@ export function VideoPlayer({ apiBase, name, onTimeUpdate }: Props) {
         className="pointer-events-none absolute inset-0 m-auto h-full w-full"
       />
 
-      <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2 rounded-full border border-border-strong bg-surface/85 px-3 py-1 font-sans text-[10px] uppercase tracking-[0.3em] text-text-muted backdrop-blur-sm">
+      <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2 border border-border-strong bg-surface/85 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.3em] text-text-muted backdrop-blur-sm">
         <span aria-hidden className="relative inline-flex h-2 w-2">
-          <span className={`relative inline-block h-2 w-2 rounded-full ${data ? "bg-accent shadow-glow-cyan" : "bg-fail"}`} />
+          <span className={`relative inline-block h-2 w-2 rounded-full ${data ? "bg-ok shadow-glow-cyan" : "bg-fail"}`} />
         </span>
         <span className="text-text">Playback · {name}</span>
       </div>
