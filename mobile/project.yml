@@ -37,6 +37,16 @@ targets:
         SWIFT_OBJC_BRIDGING_HEADER: Sources/SkyGuardian-Bridging-Header.h
         HEADER_SEARCH_PATHS:
           - $(SRCROOT)/Vendor/apriltag
+        # Also pass the AprilTag include path straight to the Swift driver's clang
+        # importer. Xcode 16/26's bridging-header dependency scanner does not honor
+        # HEADER_SEARCH_PATHS for the bridging header's quoted sub-path includes
+        # (e.g. #import "common/image_u8.h"), so CLI `xcodebuild test` fails to find
+        # it without this. Redundant for the IDE; required for command-line test runs.
+        OTHER_SWIFT_FLAGS: -Xcc -I$(SRCROOT)/Vendor/apriltag
+        # The explicit-module bridging-header dependency scanner ignores the
+        # include path above and fails on the quoted sub-path import; disable it
+        # so the bridging header compiles with normal search paths.
+        SWIFT_ENABLE_EXPLICIT_MODULES: "NO"
         # Vendored C emits many benign warnings; don't let them drown the build log.
         GCC_WARN_INHIBIT_ALL_WARNINGS: "YES"
     info:
