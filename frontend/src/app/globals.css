@@ -161,21 +161,19 @@ button:focus-visible {
 
 .drone-flight {
   position: absolute;
-  right: 4%;
-  top: 15%;
+  inset: 0;
   z-index: 1;
-  display: none;
-  width: min(38vw, 520px);
-  height: min(34vw, 440px);
+  display: block;
+  overflow: hidden;
   pointer-events: none;
 }
 
 .drone-unit {
   position: absolute;
   left: 12%;
-  top: 58%;
-  width: 118px;
-  height: 118px;
+  top: 68%;
+  width: 96px;
+  height: 96px;
   animation: sg-drone-flight 11s ease-in-out infinite;
   filter: drop-shadow(0 18px 34px oklch(0.12 0.03 130 / 0.18));
 }
@@ -184,8 +182,8 @@ button:focus-visible {
   position: absolute;
   left: 50%;
   top: 38%;
-  width: 86px;
-  height: 86px;
+  width: 78px;
+  height: 78px;
   transform: translate(-50%, -50%) rotate(-10deg);
 }
 
@@ -216,7 +214,7 @@ button:focus-visible {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 82px;
+  width: 76px;
   height: 1px;
   transform-origin: center;
   background: var(--text);
@@ -267,8 +265,8 @@ button:focus-visible {
   position: absolute;
   left: 50%;
   top: 42%;
-  width: 92px;
-  height: 190px;
+  width: 86px;
+  height: 150px;
   transform: translateX(-50%);
   clip-path: polygon(42% 0, 58% 0, 100% 100%, 0 100%);
   background: linear-gradient(180deg, oklch(0.58 0.150 75 / 0.28), oklch(0.58 0.150 75 / 0));
@@ -278,7 +276,7 @@ button:focus-visible {
 .drone-shadow {
   position: absolute;
   left: 50%;
-  bottom: -62px;
+  bottom: -42px;
   width: 86px;
   height: 18px;
   transform: translateX(-50%);
@@ -289,9 +287,9 @@ button:focus-visible {
 
 .drone-label {
   position: absolute;
-  left: 82px;
-  top: 18px;
-  min-width: 150px;
+  left: 72px;
+  top: 14px;
+  min-width: 128px;
   border: 1px solid var(--border-strong);
   background: oklch(0.985 0.008 95 / 0.84);
   padding: 8px 10px;
@@ -324,17 +322,17 @@ button:focus-visible {
 }
 
 .drone-path-a {
-  left: 0;
-  right: 5%;
-  top: 55%;
-  transform: rotate(-17deg);
+  left: 8%;
+  right: 8%;
+  top: 58%;
+  transform: rotate(-22deg);
 }
 
 .drone-path-b {
-  left: 10%;
-  right: 0;
-  top: 36%;
-  transform: rotate(10deg);
+  left: 16%;
+  right: 6%;
+  top: 40%;
+  transform: rotate(8deg);
   opacity: 0.45;
 }
 
@@ -348,18 +346,18 @@ button:focus-visible {
 }
 
 .drone-waypoint-1 {
-  left: 18%;
-  top: 58%;
+  left: 17%;
+  top: 64%;
 }
 
 .drone-waypoint-2 {
-  left: 55%;
-  top: 34%;
+  left: 52%;
+  top: 28%;
   animation-delay: 0.45s;
 }
 
 .drone-waypoint-3 {
-  left: 83%;
+  left: 82%;
   top: 48%;
   animation-delay: 0.9s;
 }
@@ -557,6 +555,148 @@ button:focus-visible {
   opacity: 1;
 }
 
+.market-network {
+  background:
+    radial-gradient(circle at 50% 48%, oklch(0.58 0.150 75 / 0.12), transparent 25%),
+    radial-gradient(circle at 72% 35%, oklch(0.52 0.135 142 / 0.10), transparent 24%),
+    var(--surface);
+}
+
+.market-network-radar {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  width: min(58%, 30rem);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border: 1px solid oklch(0.58 0.150 75 / 0.34);
+  border-radius: 9999px;
+  background:
+    radial-gradient(circle, transparent 0 31%, oklch(0.58 0.150 75 / 0.14) 31.2% 31.7%, transparent 32% 62%, oklch(0.58 0.150 75 / 0.12) 62.2% 62.7%, transparent 63%),
+    conic-gradient(from 18deg, transparent, oklch(0.58 0.150 75 / 0.20), transparent 23%);
+  animation: sg-spin 16s linear infinite;
+}
+
+.market-core {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  display: grid;
+  width: 118px;
+  height: 118px;
+  place-items: center;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--text);
+  background: oklch(0.985 0.008 95 / 0.90);
+  box-shadow: 0 18px 70px oklch(0.12 0.03 130 / 0.10);
+  text-align: center;
+}
+
+.market-core span {
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 25px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  line-height: 1;
+}
+
+.market-core strong {
+  display: block;
+  max-width: 76px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  line-height: 1.45;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.market-node {
+  position: absolute;
+  display: grid;
+  min-width: 160px;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--border-strong);
+  background: oklch(0.965 0.010 95 / 0.88);
+  padding: 12px 13px;
+  box-shadow: 0 14px 40px oklch(0.12 0.03 130 / 0.06);
+  backdrop-filter: blur(8px);
+}
+
+.market-node::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  transform: translateY(-50%);
+  border: 1px solid currentColor;
+  background: var(--bg);
+}
+
+.market-node-accent {
+  color: var(--accent);
+}
+
+.market-node-ok {
+  color: var(--ok);
+}
+
+.market-node-muted {
+  color: var(--text-muted);
+}
+
+.market-node-index {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 9px;
+  letter-spacing: 0.28em;
+  color: currentColor;
+}
+
+.market-node-label {
+  margin-top: 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  line-height: 1.45;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.market-line {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  width: 42%;
+  height: 1px;
+  transform-origin: left center;
+  background: linear-gradient(90deg, oklch(0.58 0.150 75 / 0.56), transparent);
+  animation: sg-signal 4s ease-in-out infinite;
+}
+
+.market-line-a {
+  transform: rotate(-35deg);
+}
+
+.market-line-b {
+  transform: rotate(28deg);
+  animation-delay: 0.7s;
+}
+
+.market-line-c {
+  transform: rotate(142deg);
+  animation-delay: 1.4s;
+}
+
+.market-line-d {
+  transform: rotate(-152deg);
+  animation-delay: 2.1s;
+}
+
 .roadmap-line {
   position: absolute;
   left: 14%;
@@ -607,10 +747,10 @@ button:focus-visible {
     transform: translate(0, 0) rotate(-4deg);
   }
   34% {
-    transform: translate(125%, -62%) rotate(5deg);
+    transform: translate(155%, -165%) rotate(5deg);
   }
   68% {
-    transform: translate(238%, -26%) rotate(-2deg);
+    transform: translate(308%, -92%) rotate(-2deg);
   }
 }
 
@@ -738,13 +878,24 @@ button:focus-visible {
   .orbit,
   .domain-sweep,
   .roadmap-line::after,
+  .market-network-radar,
+  .market-line,
   .orbital-backdrop {
     animation: none;
   }
 }
 
-@media (min-width: 768px) {
-  .drone-flight {
-    display: block;
+@media (max-width: 767px) {
+  .market-network {
+    min-height: 42rem;
+  }
+
+  .market-node {
+    min-width: 132px;
+  }
+
+  .market-core {
+    width: 96px;
+    height: 96px;
   }
 }
