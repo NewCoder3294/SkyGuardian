@@ -37,12 +37,12 @@ export function LocalMap3D({
     <div className="relative h-full w-full bg-bg">
       <Canvas
         camera={{ position: [spanMeters * 0.8, spanMeters * 0.8, spanMeters * 0.8], fov: 45 }}
-        style={{ background: "#ffffff" }}
+        style={{ background: "#06121f" }}
         dpr={[1, 2]}
       >
-        <ambientLight intensity={0.55} />
-        <directionalLight position={[10, 20, 10]} intensity={0.35} />
-        <directionalLight position={[-10, 15, -10]} intensity={0.2} />
+        <ambientLight intensity={0.45} />
+        <directionalLight position={[10, 20, 10]} intensity={0.45} color="#22d3ee" />
+        <directionalLight position={[-10, 15, -10]} intensity={0.25} color="#3b82f6" />
 
         <SceneFloor span={spanMeters} />
         <OriginMarker />
@@ -80,19 +80,19 @@ function SceneFloor({ span }: { span: number }) {
         args={[span * 4, span * 4]}
         position={[0, 0, 0]}
         cellSize={1}
-        cellThickness={0.7}
-        cellColor="#dcdcdc"
+        cellThickness={0.6}
+        cellColor="#1c3149"
         sectionSize={5}
-        sectionThickness={1.1}
-        sectionColor="#b0b0b0"
+        sectionThickness={1.2}
+        sectionColor="#22d3ee"
         fadeDistance={span * 3}
-        fadeStrength={1}
+        fadeStrength={1.2}
         followCamera={false}
         infiniteGrid
       />
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.001, 0]} receiveShadow>
         <planeGeometry args={[span * 8, span * 8]} />
-        <meshBasicMaterial color="#ffffff" transparent opacity={0} />
+        <meshBasicMaterial color="#06121f" transparent opacity={0} />
       </mesh>
     </>
   );
@@ -102,11 +102,15 @@ function OriginMarker() {
   return (
     <group position={[0, 0.01, 0]}>
       <mesh>
-        <cylinderGeometry args={[0.08, 0.08, 0.02, 24]} />
-        <meshBasicMaterial color="#0a0a0a" />
+        <cylinderGeometry args={[0.12, 0.12, 0.02, 24]} />
+        <meshBasicMaterial color="#22d3ee" />
       </mesh>
-      <Html position={[0, 0.45, 0]} center distanceFactor={8} zIndexRange={[0, 0]}>
-        <div className="pointer-events-none whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.3em] text-text">
+      <mesh position={[0, 0.05, 0]}>
+        <ringGeometry args={[0.18, 0.22, 32]} />
+        <meshBasicMaterial color="#22d3ee" transparent opacity={0.5} side={2} />
+      </mesh>
+      <Html position={[0, 0.55, 0]} center distanceFactor={8} zIndexRange={[0, 0]}>
+        <div className="pointer-events-none whitespace-nowrap rounded-full border border-accent/60 bg-surface/85 px-2 py-0.5 font-sans text-[10px] uppercase tracking-[0.3em] text-accent backdrop-blur-sm">
           Launch
         </div>
       </Html>
@@ -129,7 +133,7 @@ function EntityMarker({ entity }: { entity: Entity }) {
         zIndexRange={[0, 0]}
       >
         <div
-          className="pointer-events-none whitespace-nowrap rounded-sm border border-border bg-white px-1 py-0.5 font-mono text-[10px] uppercase tracking-wider text-text"
+          className="pointer-events-none whitespace-nowrap rounded-full border border-accent/40 bg-surface/85 px-2 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wider text-accent backdrop-blur-sm"
           style={{ opacity: alpha }}
         >
           {label}
@@ -159,16 +163,16 @@ function LandmarkCloud({ landmarks }: { landmarks: Entity[] }) {
           args={[positions, 3]}
         />
       </bufferGeometry>
-      <pointsMaterial color="#525252" size={0.06} sizeAttenuation transparent opacity={0.5} />
+      <pointsMaterial color="#22d3ee" size={0.06} sizeAttenuation transparent opacity={0.5} />
     </points>
   );
 }
 
 function ViewLegend() {
   return (
-    <div className="pointer-events-none absolute left-3 top-3 space-y-0.5 font-mono text-[10px] uppercase tracking-widest text-text-dim">
-      <div>Local frame · 3D</div>
-      <div>Drag · orbit · scroll zoom</div>
+    <div className="pointer-events-none absolute left-4 top-4 space-y-1 rounded-md border border-border-strong bg-surface/80 px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-text-muted backdrop-blur-sm">
+      <div className="text-accent">Local frame · 3D</div>
+      <div className="text-text-dim">Drag · orbit · scroll zoom</div>
     </div>
   );
 }
@@ -180,11 +184,13 @@ function ViewLegend() {
 function renderShape(type: EntityType, alpha: number): JSX.Element {
   const mat = (
     <meshStandardMaterial
-      color="#0a0a0a"
+      color="#22d3ee"
+      emissive="#22d3ee"
+      emissiveIntensity={0.55}
       transparent
       opacity={alpha}
-      roughness={0.6}
-      metalness={0.05}
+      roughness={0.35}
+      metalness={0.2}
     />
   );
 

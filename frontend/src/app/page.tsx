@@ -163,20 +163,23 @@ export default function Page() {
 
   return (
     <div className="flex h-screen w-screen flex-col bg-bg text-text">
-      <header className="flex items-center justify-between gap-4 border-b border-border bg-surface px-5 py-3">
+      <header className="relative flex items-center justify-between gap-4 border-b border-border bg-surface/80 px-6 py-3 backdrop-blur-sm">
         <div className="flex items-center gap-4">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/skyguardian-logo.png"
             alt="SkyGuardian"
-            className="h-9 w-auto select-none"
+            className="logo-invert h-9 w-auto select-none"
             draggable={false}
           />
-          <span className="hidden text-[10px] uppercase tracking-[0.35em] text-text-dim sm:inline">
+          <span className="hidden rounded-full border border-border-strong bg-surface-elevated px-3 py-1 text-[10px] uppercase tracking-[0.4em] text-text-muted sm:inline">
             Operator
           </span>
         </div>
-        <Clock />
+        <div className="flex items-center gap-3 rounded-full border border-border-strong bg-surface-elevated px-4 py-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-glow-cyan" aria-hidden />
+          <Clock />
+        </div>
       </header>
 
       <StatusBar
@@ -187,20 +190,19 @@ export default function Page() {
         detectionCount={detectionCount}
       />
 
-      <nav className="flex border-b border-border bg-surface">
+      <nav className="flex items-center gap-1 border-b border-border bg-surface/60 px-4 py-2">
         {TABS.map((t) => (
           <button
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
-            className={`relative border-r border-border px-5 py-3 font-mono text-[11px] uppercase tracking-[0.3em] transition ${
-              tab === t.id ? "text-text" : "text-text-dim hover:text-text-muted"
+            className={`relative rounded-full px-5 py-1.5 font-sans text-[12px] font-semibold uppercase tracking-[0.25em] transition ${
+              tab === t.id
+                ? "bg-accent/15 text-accent shadow-glow-cyan"
+                : "text-text-dim hover:bg-surface-elevated hover:text-text-muted"
             }`}
           >
             {t.label}
-            {tab === t.id && (
-              <span className="absolute inset-x-0 -bottom-px h-[3px] bg-text" />
-            )}
           </button>
         ))}
       </nav>

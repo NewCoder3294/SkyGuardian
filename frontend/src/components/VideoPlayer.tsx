@@ -99,23 +99,26 @@ export function VideoPlayer({ apiBase, name, onTimeUpdate }: Props) {
       offX = (containerW - dispW) / 2;
     }
 
-    ctx.strokeStyle = "#0a0a0a";
-    ctx.lineWidth = 1.5;
     ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, monospace";
     for (const b of frame.boxes as PlaybackBox[]) {
       const x = offX + (b.cx - b.w / 2) * dispW;
       const y = offY + (b.cy - b.h / 2) * dispH;
       const bw = b.w * dispW;
       const bh = b.h * dispH;
+      ctx.strokeStyle = "rgba(34,211,238,0.22)";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x, y, bw, bh);
+      ctx.strokeStyle = "#22d3ee";
+      ctx.lineWidth = 1.5;
       ctx.strokeRect(x, y, bw, bh);
       const tag = `${b.label.toUpperCase()} ${(b.confidence * 100).toFixed(0)}`;
-      const pad = 3;
+      const pad = 4;
       const tw = ctx.measureText(tag).width + pad * 2;
-      const th = 13;
-      ctx.fillStyle = "#ffffff";
+      const th = 14;
+      ctx.fillStyle = "rgba(6,18,31,0.92)";
       ctx.fillRect(x, Math.max(offY, y - th), tw, th);
-      ctx.fillStyle = "#0a0a0a";
-      ctx.fillText(tag, x + pad, Math.max(offY + th - 3, y - 3));
+      ctx.fillStyle = "#22d3ee";
+      ctx.fillText(tag, x + pad, Math.max(offY + th - 4, y - 4));
     }
   }, [data]);
 
@@ -153,7 +156,7 @@ export function VideoPlayer({ apiBase, name, onTimeUpdate }: Props) {
   const videoSrc = `${apiBase}/video/file/${encodeURIComponent(name)}`;
 
   return (
-    <div className="relative h-full min-h-0 w-full bg-surface-elevated">
+    <div className="relative h-full min-h-0 w-full overflow-hidden rounded-md border border-border bg-bg hud-grid shadow-card">
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
       <video
         ref={videoRef}
@@ -161,22 +164,22 @@ export function VideoPlayer({ apiBase, name, onTimeUpdate }: Props) {
         controls
         playsInline
         preload="metadata"
-        className="block h-full w-full object-contain bg-black"
+        className="block h-full w-full object-contain bg-bg"
       />
       <canvas
         ref={canvasRef}
         className="pointer-events-none absolute inset-0 m-auto h-full w-full"
       />
 
-      <div className="pointer-events-none absolute left-2 top-2 flex items-center gap-1.5 rounded-sm border border-border bg-surface/90 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.3em] text-text">
+      <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2 rounded-full border border-border-strong bg-surface/85 px-3 py-1 font-sans text-[10px] uppercase tracking-[0.3em] text-text-muted backdrop-blur-sm">
         <span aria-hidden className="relative inline-flex h-2 w-2">
-          <span className={`relative inline-block h-2 w-2 rounded-full ${data ? "bg-ok" : "bg-fail"}`} />
+          <span className={`relative inline-block h-2 w-2 rounded-full ${data ? "bg-accent shadow-glow-cyan" : "bg-fail"}`} />
         </span>
-        Playback · {name}
+        <span className="text-text">Playback · {name}</span>
       </div>
 
       {loadError && (
-        <div className="absolute inset-x-4 bottom-16 rounded-sm border border-fail bg-white p-3 font-mono text-[10px] uppercase tracking-widest text-fail">
+        <div className="absolute inset-x-4 bottom-16 rounded-md border border-fail/60 bg-surface/90 p-3 font-mono text-[10px] uppercase tracking-widest text-fail">
           ▲ Detections fetch failed: {loadError}
         </div>
       )}

@@ -2,22 +2,31 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Light dispatcher — pure value, no hue. White paper, black ink, gray scale. */
+/* Dark tactical HUD palette inspired by mission-control UIs.
+ * Deep navy bg, cyan/teal accents for live state, bright blue for CTA
+ * actions. White-on-dark text. */
 :root {
-  --bg: #ffffff;
-  --surface: #fafafa;
-  --surface-elevated: #f5f5f5;
-  --border: #e5e5e5;
-  --border-strong: #d4d4d4;
-  --text: #0a0a0a;
-  --text-muted: #525252;
-  --text-dim: #a3a3a3;
-  --invert: #0a0a0a;
-  /* Traffic-light status hues — only used for the small pulse dots in the
-     status bar. Picked for AA contrast on a white surface. */
-  --ok:   #16a34a;
-  --warn: #d97706;
-  --fail: #dc2626;
+  --bg: #06121f;            /* deep navy, almost black */
+  --surface: #0c1c2d;        /* card surfaces */
+  --surface-elevated: #122939; /* nested cards / inputs */
+  --border: #1c3149;
+  --border-strong: #2a4660;
+  --text: #e6f1fb;
+  --text-muted: #93b1cb;
+  --text-dim: #5b7a96;
+  --invert: #06121f;
+
+  /* Status tier colors */
+  --ok: #2dd4bf;            /* teal-cyan = live/online */
+  --warn: #f59e0b;
+  --fail: #ef4444;
+
+  /* Brand accents */
+  --accent: #22d3ee;         /* cyan accent for highlights, grid, rings */
+  --accent-dim: #0e7490;
+  --cta: #3b82f6;            /* blue CTA buttons */
+  --cta-hover: #60a5fa;
+  --cta-active: #2563eb;
 }
 
 html,
@@ -30,16 +39,29 @@ body {
 
 body {
   font-family:
+    "Inter",
     ui-sans-serif,
     system-ui,
     -apple-system,
     "Segoe UI",
     Roboto,
     sans-serif;
+  background:
+    radial-gradient(
+      1200px 600px at 50% -20%,
+      rgba(34, 211, 238, 0.06),
+      transparent 60%
+    ),
+    radial-gradient(
+      800px 400px at 100% 100%,
+      rgba(59, 130, 246, 0.06),
+      transparent 60%
+    ),
+    var(--bg);
 }
 
 ::selection {
-  background: var(--text);
+  background: var(--accent);
   color: var(--bg);
 }
 
@@ -47,6 +69,30 @@ button:focus {
   outline: none;
 }
 button:focus-visible {
-  outline: 1px solid var(--text);
+  outline: 1px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* The logo file is black on white. Invert it for the dark dispatcher surface
+   so the wordmark becomes white. */
+.logo-invert {
+  filter: invert(1) brightness(1.05);
+}
+
+/* Subtle glow utility for HUD-style elements. */
+.glow-cyan {
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.35),
+    0 0 24px rgba(34, 211, 238, 0.12);
+}
+.glow-blue {
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.4),
+    0 0 24px rgba(59, 130, 246, 0.18);
+}
+
+/* Faint grid backdrop for surfaces meant to feel like a HUD pane. */
+.hud-grid {
+  background-image:
+    linear-gradient(rgba(34, 211, 238, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 211, 238, 0.04) 1px, transparent 1px);
+  background-size: 40px 40px;
 }
