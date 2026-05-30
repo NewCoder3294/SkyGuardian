@@ -365,8 +365,8 @@ export default function LandingPage() {
       {/* CTA */}
       <section id="demo" className="relative overflow-hidden">
         <Image
-          src="/hero-drone-city.png"
-          alt="Drone over city skyline"
+          src="https://images.unsplash.com/photo-1508444845599-5c89863b1c44?w=1920&q=85"
+          alt="Military drone in flight during reconnaissance"
           fill
           sizes="100vw"
           className="object-cover"
