@@ -3,6 +3,23 @@ from app.contracts import Entity, EntitySource, EntityStatus, EntityType, Vec3
 from app.world_model import WorldModel
 
 
+def test_phone_reported_drone_appears_then_goes_stale():
+    clock = FakeClock(100.0)
+    world = WorldModel(clock=clock)
+    world.upsert(Entity(
+        id="drone", type=EntityType.DRONE,
+        position=Vec3(x=5.0, y=3.0, z=0.0),
+        timestamp=100.0, source=EntitySource.FOLLOW, label="tello", ttl_s=4.0,
+    ))
+    snap = world.snapshot()
+    assert any(e.id == "drone" and e.status == EntityStatus.ACTIVE for e in snap)
+
+    clock.advance(5.0)  # 5s later, past ttl_s=4 -> stale
+    snap = world.snapshot()
+    drone = next(e for e in snap if e.id == "drone")
+    assert drone.status == EntityStatus.STALE
+
+
 def _entity(t: float, ttl: float = 5.0) -> Entity:
     return Entity(
         id="e1", type=EntityType.POI, position=Vec3(x=0, y=0, z=0),

@@ -48,6 +48,7 @@ from .contracts import (
     Detections,
     DeviceLocation,
     Entity,
+    EntityReport,
     EntitySource,
     EntityType,
     FollowState,
@@ -993,6 +994,15 @@ def _apply_device_location(msg: DeviceLocation) -> None:
     ))
 
 
+def _apply_entity_report(msg: EntityReport) -> None:
+    """Phone-localized entities (operator + drone), already in the shared world
+    frame. The phone co-registers against the launch anchor tag, so these upsert
+    straight into the world model. TTL on each entity ages them out if the phone
+    link drops (no frozen drone left on the map)."""
+    for entity in msg.entities:
+        world.upsert(entity)
+
+
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket) -> None:
     await ws.accept()
@@ -1018,6 +1028,8 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 global _follow_state, _follow_rx_t
                 _follow_state = msg.model_copy(update={"source": "phone"})
                 _follow_rx_t = clock.now()
+            elif isinstance(msg, EntityReport):
+                _apply_entity_report(msg)
     except WebSocketDisconnect:
         pass
     finally:
