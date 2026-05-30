@@ -99,6 +99,14 @@ struct ContentView: View {
                 Text(voiceStatus).font(Theme.mono(11, weight: .semibold)).foregroundColor(Theme.ink)
             }
             Spacer()
+            // Hard safety control — always available, not voice-only.
+            Button { hardStop() } label: {
+                Text("LAND").font(Theme.mono(12, weight: .bold))
+                    .foregroundColor(Theme.panel)
+                    .padding(.horizontal, 14).padding(.vertical, 12)
+                    .background(Theme.danger)
+                    .overlay(Rectangle().stroke(Theme.ink, lineWidth: 1.4))
+            }
         }
         .padding(.horizontal, 14).padding(.vertical, 8)
         .background(Theme.panel)
@@ -115,10 +123,28 @@ struct ContentView: View {
 
     private func onMicTap() {
         if ModelDownloader.isPresent {
-            voice.toggle(onCommand: { client.send($0) })
+            voice.toggle(onAction: handle)
         } else {
             Task { await model.ensureModel(); if model.state == .ready { voice.reloadService() } }
         }
+    }
+
+    /// Route a resolved voice action: flight commands go straight to the Tello over
+    /// the shared UDP channel (works standalone); mission intents go to the laptop
+    /// brain over the WS when it's connected.
+    private func handle(_ action: DroneAction) {
+        if action.function.isFlight {
+            TelloCommander.shared.execute(action)
+        } else if let command = action.function.missionCommand {
+            client.send(command)
+        }
+    }
+
+    /// Hard safety control — not voice-only (per spec): land the drone now and signal
+    /// a mission stop to the laptop if connected.
+    private func hardStop() {
+        TelloCommander.shared.send("land")
+        if isConnected { client.send(.stop) }
     }
 
     private var voiceStatus: String {
@@ -131,7 +157,7 @@ struct ContentView: View {
         switch voice.state {
         case .idle:
             if !ModelDownloader.isPresent { return "TAP TO GET MODEL" }
-            return voice.lastCommand.map { "→ \($0.rawValue.uppercased())" } ?? "TAP TO SPEAK"
+            return voice.lastAction.map { "→ \($0.label)" } ?? "TAP TO SPEAK"
         case .listening: return "● LISTENING…"
         case .thinking: return "PROCESSING…"
         case .error(let e): return e

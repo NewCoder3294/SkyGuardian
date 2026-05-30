@@ -7,6 +7,9 @@ protocol CactusService: AnyObject {
     var isAvailable: Bool { get }
     func transcribe(pcm16k: Data) async throws -> String
     func analyze(imageJPEG: Data, prompt: String) async throws -> String
+    /// Text completion with a system + user message — used for function-calling
+    /// (map a command transcript onto the closed drone-function vocabulary).
+    func complete(system: String, user: String) async throws -> String
 }
 
 enum CactusError: Error, LocalizedError {
@@ -31,6 +34,7 @@ final class UnavailableCactusService: CactusService {
     var isAvailable: Bool { false }
     func transcribe(pcm16k: Data) async throws -> String { throw CactusError.unavailable(reason) }
     func analyze(imageJPEG: Data, prompt: String) async throws -> String { throw CactusError.unavailable(reason) }
+    func complete(system: String, user: String) async throws -> String { throw CactusError.unavailable(reason) }
 }
 
 /// Where the on-device model lives. The Gemma 3n file is downloaded once (online,
@@ -81,6 +85,14 @@ final class RealCactusService: CactusService {
         let messages = """
         [{"role":"user","content":[{"type":"text","text":\(jsonString(prompt))},\
         {"type":"image_url","image_url":{"url":"data:image/jpeg;base64,\(b64)"}}]}]
+        """
+        return try await run { try cactusComplete(self.model, messages) }
+    }
+
+    func complete(system: String, user: String) async throws -> String {
+        let messages = """
+        [{"role":"system","content":\(jsonString(system))},\
+        {"role":"user","content":\(jsonString(user))}]
         """
         return try await run { try cactusComplete(self.model, messages) }
     }

@@ -15,14 +15,10 @@ final class TelloDirectStream: ObservableObject {
 
     let displayLayer = AVSampleBufferDisplayLayer()
 
-    private let telloHost = "192.168.10.1"
-    private let cmdPort: UInt16 = 8889
     private let videoPort: UInt16 = 11111
 
     private let q = DispatchQueue(label: "tello.video")
-    private var cmd: NWConnection?
     private var video: NWListener?
-    private var keepalive: DispatchSourceTimer?
     private var formatDesc: CMVideoFormatDescription?
     private var sps: Data?
     private var pps: Data?
@@ -31,45 +27,21 @@ final class TelloDirectStream: ObservableObject {
     func start() {
         setState(.connecting)
         displayLayer.videoGravity = .resizeAspect
-        openCommand()
+        // The shared commander owns the control channel (command/streamon/keepalive),
+        // so voice flight control and the video stream share one socket to the Tello.
+        TelloCommander.shared.startVideo()
         openVideo()
     }
 
     func stop() {
-        keepalive?.cancel(); keepalive = nil
-        cmd?.cancel(); cmd = nil
+        // Leave the command channel up — voice may still control the drone after the
+        // video tab is dismissed. Only the video listener is torn down here.
         video?.cancel(); video = nil
         setState(.idle)
     }
 
     private func setState(_ s: State) {
         DispatchQueue.main.async { if self.state != s { self.state = s } }
-    }
-
-    // MARK: control channel (UDP -> Tello :8889)
-
-    private func openCommand() {
-        let conn = NWConnection(host: .init(telloHost), port: .init(rawValue: cmdPort)!, using: .udp)
-        cmd = conn
-        conn.stateUpdateHandler = { [weak self] s in
-            guard let self, case .ready = s else { return }
-            self.send("command")
-            self.q.asyncAfter(deadline: .now() + 0.5) { self.send("streamon") }
-            self.startKeepalive()
-        }
-        conn.start(queue: q)
-    }
-
-    private func send(_ s: String) {
-        cmd?.send(content: Data(s.utf8), completion: .contentProcessed { _ in })
-    }
-
-    private func startKeepalive() {
-        let t = DispatchSource.makeTimerSource(queue: q)
-        t.schedule(deadline: .now() + 5, repeating: 5)
-        t.setEventHandler { [weak self] in self?.send("command") }  // keep SDK mode alive
-        keepalive = t
-        t.resume()
     }
 
     // MARK: video channel (UDP :11111 <- Tello)

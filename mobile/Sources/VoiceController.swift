@@ -11,7 +11,7 @@ final class VoiceController: ObservableObject {
 
     @Published private(set) var state: State = .idle
     @Published private(set) var lastTranscript: String = ""
-    @Published private(set) var lastCommand: Command?
+    @Published private(set) var lastAction: DroneAction?
 
     private var service: CactusService = CactusFactory.make()
 
@@ -27,9 +27,9 @@ final class VoiceController: ObservableObject {
     var sourceLabel: String { service.sourceLabel }
     var available: Bool { service.isAvailable }
 
-    func toggle(onCommand: @escaping (Command) -> Void) {
+    func toggle(onAction: @escaping (DroneAction) -> Void) {
         switch state {
-        case .listening: stopAndProcess(onCommand: onCommand)
+        case .listening: stopAndProcess(onAction: onAction)
         default: startListening()
         }
     }
@@ -55,19 +55,20 @@ final class VoiceController: ObservableObject {
         }
     }
 
-    private func stopAndProcess(onCommand: @escaping (Command) -> Void) {
+    private func stopAndProcess(onAction: @escaping (DroneAction) -> Void) {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         try? AVAudioSession.sharedInstance().setActive(false)
         let captured = pcm
         state = .thinking
+        let pilot = DronePilot(service: service)
         Task {
             do {
                 let transcript = try await service.transcribe(pcm16k: captured)
                 lastTranscript = transcript
-                if let command = IntentParser.parse(transcript) {
-                    lastCommand = command
-                    onCommand(command)
+                if let action = await pilot.resolve(transcript) {
+                    lastAction = action
+                    onAction(action)
                     state = .idle
                 } else {
                     state = .error("NO INTENT")
