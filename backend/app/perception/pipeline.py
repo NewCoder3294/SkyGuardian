@@ -173,7 +173,12 @@ class PerceptionPipeline:
     # Detections expire if no new perception frame arrived within this window.
     # Prevents stale boxes from being broadcast forever once the video source
     # disconnects (was producing phantom dashboard detections after RTMP dropped).
-    _STALENESS_WINDOW_S = 2.0
+    # Sized to outlive one full perception tick on CPU/MPS hardware: ensemble
+    # YOLO inference (yolov8l-worldv2 + yolov8l at imgsz=960) measures ~2.6 s
+    # per frame on M-series. A 2 s window busts every poll and leaves both the
+    # `Detections` broadcast and the intel loop starving even when YOLO is
+    # actively producing entities. 6 s comfortably covers ensemble + depth.
+    _STALENESS_WINDOW_S = 6.0
 
     def latest_boxes(self) -> tuple[list[DetectionBox], int, int, float]:
         """Snapshot the latest YOLO boxes (normalised), the source frame dims,
