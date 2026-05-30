@@ -5,6 +5,7 @@ import { Canvas } from "@react-three/fiber";
 import { Grid, Html, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import type { Entity, EntityStatus, EntityType, Vec3 } from "@/lib/contracts";
+import { Buildings } from "./Buildings";
 
 /**
  * 3D top-down/perspective scene of the local frame. All data here is already
@@ -25,6 +26,10 @@ interface Props {
   landmarks?: Entity[];
   spanMeters?: number;
   showLandmarks?: boolean;
+  /** Backend origin so we can fetch the cached buildings JSON. */
+  apiBase?: string;
+  /** Building-clip radius (metres). 0 = show everything in the cache. */
+  buildingsRadiusM?: number;
 }
 
 export function LocalMap3D({
@@ -32,6 +37,8 @@ export function LocalMap3D({
   landmarks = [],
   spanMeters = 20,
   showLandmarks = false,
+  apiBase,
+  buildingsRadiusM = 0,
 }: Props) {
   return (
     <div className="relative h-full w-full bg-bg">
@@ -46,6 +53,9 @@ export function LocalMap3D({
 
         <SceneFloor span={spanMeters} />
         <OriginMarker />
+        {apiBase && (
+          <Buildings apiBase={apiBase} clipRadiusM={buildingsRadiusM} />
+        )}
 
         {entities.map((e) => (
           <EntityMarker key={e.id} entity={e} />
