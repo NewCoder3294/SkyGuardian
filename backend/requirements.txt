@@ -4,8 +4,13 @@ uvicorn[standard]>=0.29
 pydantic>=2.6
 websockets>=12.0
 
-# Perception (Track 2) — added when YOLO/SLAM land:
+# Perception — GPS-less monocular mapping (Track 2, built)
+numpy>=1.26
+opencv-python-headless>=4.9   # VO geometry + frame I/O (use opencv-python if you need GUI windows)
+pupil-apriltags>=1.0          # metric scale anchor + follow controller (Track 1)
+
+# Perception — added when YOLO lands:
 # ultralytics>=8.1
-# opencv-python>=4.9
-# pupil-apriltags>=1.0   # follow controller (Track 1)
-# djitellopy>=2.5        # Tello control (Track 1)
+
+# Track 1 robotics — added when follow controller lands:
+# djitellopy>=2.5             # Tello control

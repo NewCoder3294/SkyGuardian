@@ -14,7 +14,9 @@ write detected entities (with local-frame position) into the `WorldModel`.
 - SLAM gives camera pose + a local map frame anchored to launch point + landmarks. No GPS.
 - Keep detection a few FPS (recon-rate); it never sits in a real-time control loop.
 
-## Planned modules
-- `yolo.py` — ultralytics inference → boxes/classes.
-- `slam.py` — monocular VO (ORB-SLAM3 or equivalent) → pose + local frame.
-- `fusion.py` — box + pose → entity position in local frame → upsert.
+## Modules
+- `slam/` — **GPS-less monocular mapping (built).** Pure-Python VO default +
+  optional ORB-SLAM3 backend, AprilTag metric scale anchor, local-frame map that
+  feeds the world model. See [`../../../docs/SLAM.md`](../../../docs/SLAM.md).
+- `yolo.py` — *(planned)* ultralytics inference → boxes/classes.
+- `fusion.py` — *(planned)* YOLO box + SLAM pose → entity position in local frame → upsert.
