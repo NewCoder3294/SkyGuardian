@@ -18,6 +18,10 @@ targets:
     platform: iOS
     sources:
       - path: Sources
+    dependencies:
+      - framework: Frameworks/cactus.xcframework
+        embed: true
+        codeSign: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nicolasdossantos.skyguardian
