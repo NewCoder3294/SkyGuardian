@@ -1,9 +1,16 @@
 # `backend/` — the laptop brain (Track 2 · Brain · Python)
 
 The single source of truth. Owns the world model, the mission state machine, the
-WebSocket fan-out, the video relay, and the only Tello connection. Both clients —
-the [iOS app](../mobile/README.md) and the web dashboard — subscribe here; they
-never duplicate state and never command the Tello directly.
+WebSocket fan-out, the video relay, on-device reasoning, and a Tello controller.
+Both clients — the [iOS app](../mobile/README.md) and the web dashboard —
+subscribe here and never duplicate state.
+
+> Tello control note: the backend ships a `FollowController` + `TelloClient`, but
+> in the current build the **phone is the primary Tello controller** (on-device
+> AprilTag follow + voice, commanding the Tello directly over its AP at
+> `192.168.10.1:8889`). The laptop controller is an *alternate*. Exactly one
+> controller is armed at a time — there is no code interlock yet, so this is an
+> operating rule. See [`../CLAUDE.md`](../CLAUDE.md).
 
 Offline-first, no GPS, recon/situational-awareness only. See [`../CLAUDE.md`](../CLAUDE.md)
 for the hard constraints.
@@ -13,14 +20,19 @@ for the hard constraints.
 ```bash
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements-dev.txt   # runtime deps + pytest/httpx
+pip install -r requirements-dev.txt   # runtime deps (-r requirements.txt) + pytest/httpx
 ```
+
+`requirements.txt` is runtime only (fastapi, uvicorn[standard], pydantic,
+websockets, python-multipart, numpy, opencv-python-headless, pupil-apriltags,
+ultralytics, djitellopy). `requirements-dev.txt` includes it and adds
+`pytest` + `httpx` (FastAPI test client).
 
 Tests run against the venv interpreter and are deterministic (inject `FakeClock`,
 no wall-clock or RNG in assertions):
 
 ```bash
-cd backend && .venv/bin/python -m pytest -q   # 33 passing
+cd backend && .venv/bin/python -m pytest -q   # 40 passing
 ```
 
 Run the server (`run.sh` binds `0.0.0.0:8000` with `--reload`, so both clients
@@ -33,56 +45,130 @@ reach it):
 Or invoke uvicorn directly with explicit config:
 
 ```bash
-MAVIC_SOURCE=url:rtmp://localhost:1935/leader \
+MAVIC_SOURCE=url:rtmp://localhost:1935/live \
 YOLO_WEIGHTS=$PWD/../models/yolo/yolov8l-worldv2.pt \
 uvicorn app.server:app --host 0.0.0.0 --port 8000
 ```
 
-The server boots cleanly with **no** env vars set — every hardware-facing producer
-(Mavic source, Tello link, perception, follow) reports its health string instead
-of crashing when nothing is connected.
+The server boots cleanly with **no** env vars set — every hardware-facing
+producer (Mavic source, Tello link, perception, follow) reports its health
+string instead of crashing when nothing is connected, and the intel reasoner
+silently disables itself if Ollama is unreachable.
 
 ### Endpoints
 
-- `ws://<host>:8000/ws` — Contract B WebSocket (world/mission/health out, intent/
-  device_location in).
+All routes live in [`server.py`](./app/server.py).
+
+**WebSocket / health**
+- `ws://<host>:8000/ws` — Contract B WebSocket (world/mission/health/detections
+  out; intent/device_location in).
 - `GET /health` — JSON liveness + client count + stage + tello/mavic/perception
   health.
-- `GET /video/leader.jpg` · `GET /video/follower.jpg` — single-frame JPEG, polled
-  by the dashboard at ~10 Hz (`204` when no frame yet). This is the primary path.
+
+**Video**
+- `GET /video/leader.jpg` · `GET /video/follower.jpg` — single-frame JPEG,
+  polled by the dashboard at ~10 Hz (`204` when no frame yet). This is the
+  primary path.
 - `GET /video/leader.mjpg` · `GET /video/follower.mjpg` — legacy
   `multipart/x-mixed-replace` streams, kept for debugging.
-- `GET /video/source` · `GET /video/upload/status` — current leader source state
-  and upload/processing progress (dashboard `SourceSelector`).
-- `POST /video/source/rtmp` · `POST /video/source/upload` — hot-swap the leader
-  source between the env RTMP feed and an operator-uploaded clip without restarting.
-- `GET /video/file/{name}` · `GET /video/detections/{name}` — serve an uploaded
-  clip (with HTTP byte ranges) and its pre-computed per-timestamp detections JSON.
+- `GET /video/source` — current leader source state (kind/label/streaming,
+  the RTMP default, and the upload status block).
+- `GET /video/upload/status` — granular processing status (polled by the
+  dashboard `SourceSelector` during an upload).
+- `POST /video/source/rtmp` — switch the leader source to the configured RTMP
+  feed (`MAVIC_SOURCE` if set, else the loopback default).
+- `POST /video/source/upload` — accept an operator video clip; parks the live
+  source, runs perception over the whole file, returns immediately.
+- `GET /video/file/{name}` — serve an uploaded clip (HTTP byte ranges, for the
+  `<video>` scrubber).
+- `GET /video/detections/{name}` — pre-computed per-timestamp detections JSON
+  sidecar for an uploaded clip.
 
-CORS is wide-open (`allow_origins=["*"]`, GET/POST) — the dashboard runs on a
-separate port (3001) and this server is LAN-only.
+**Reasoning (on-device "Gemini Live" equivalent)**
+- `GET /intel/summary` — latest local-LLM assessment (`available` = Ollama
+  reachable, `running` = inference in flight, plus the summary text + threat
+  level + labels). See [`reasoning/intel.py`](./app/reasoning/intel.py).
+- `POST /intel/chat` — operator Q&A over the same local model, grounded in the
+  latest summary + most-recent detection labels.
+
+**Map**
+- `GET /map/buildings` — pre-cached OSM building polygons (projected to local
+  metres), served read-only from `.context/buildings.json`. `404` until the
+  operator runs `scripts/fetch_buildings.py` once with internet.
+
+### Control-plane hardening
+
+The state-mutating POSTs (`/video/source/rtmp`, `/video/source/upload`) are a
+drone control plane even on a closed LAN, so they get a CSRF/DoS floor:
+
+- **CORS** is an allowlist, not `*` — origins come from `DASHBOARD_ORIGINS`
+  (default `http://localhost:3001,http://127.0.0.1:3001`), methods `GET`/`POST`.
+- **`OPERATOR_KEY`** (optional): when set, every mutating POST must supply a
+  matching `X-Operator-Key` header or it's rejected `401`. No-op when unset
+  (local demos stay frictionless).
+- **Upload guards**: extension allowlist (`.mp4/.mov/.m4v/.avi/.mkv/.webm`),
+  size cap (`MAX_UPLOAD_MB`, default 500, streamed in 1 MiB chunks → `413` on
+  overflow), single in-flight upload (`409` on a second), and a uuid-prefixed
+  on-disk name so a re-upload can't clobber a clip still being scrubbed.
 
 ### Env vars
 
-All optional. Read in [`server.py`](./app/server.py).
+All optional. Read in [`server.py`](./app/server.py) / [`run.sh`](./run.sh).
+
+**Mavic source / relay**
 
 | Var | Default | Meaning |
 |---|---|---|
-| `MAVIC_SOURCE` | _(unset)_ | `url:<stream>`, `file:<path>`, or `device:<index>`; unset → `NullSource` (perception idles). Wrapped in a `SwitchableSource` so the operator can hot-swap to an uploaded file at runtime. |
+| `MAVIC_SOURCE` | _(unset)_ | `url:<stream>`, `file:<path>`, or `device:<index>`; unset → `NullSource` (perception idles). Wrapped in a `SwitchableSource` for runtime hot-swap. |
+| `MAVIC_RTMP_DEFAULT` | `url:rtmp://127.0.0.1:1935/live` | RTMP target the dashboard "RTMP" button uses when `MAVIC_SOURCE` wasn't set at boot. Matches the local MediaMTX relay expected during a demo. |
+
+**Perception — YOLO**
+
+| Var | Default | Meaning |
+|---|---|---|
 | `YOLO_WEIGHTS` | _(unset)_ | Local YOLO / YOLO-World weights. Without weights, perception runs SLAM-only. |
-| `YOLO_CLASSES` | defense vocab when a `-world` checkpoint is loaded, else _(unset)_ | Comma-separated open-vocab prompt set for YOLO-World. |
+| `YOLO_CLASSES` | defense vocab when a `-world` checkpoint is loaded, else _(unset)_ | Comma-separated open-vocab prompt set for YOLO-World (overrides the built-in `_DEFAULT_VOCAB`). |
 | `YOLO_IMGSZ` | `960` | YOLO inference image size. |
 | `YOLO_CONF` | `0.20` | YOLO confidence threshold. |
-| `YOLO_COCO_WEIGHTS` | _(unset)_ | Optional second detector (standard COCO YOLOv8) for high-precision person/vehicle/backpack. Its classes are pruned from the YOLO-World vocab to avoid double-detection. |
-| `YOLO_COCO_KEEP` | `person,car,truck,motorcycle,bicycle,bus,backpack` when COCO weights set | COCO labels trusted over open-vocab. |
+| `YOLO_COCO_WEIGHTS` | _(unset)_ | Optional second detector (standard COCO YOLOv8) for high-precision person/vehicle/backpack. When set, its labels are pruned from the YOLO-World vocab so the same object isn't double-detected. |
+| `YOLO_COCO_KEEP` | `person,car,truck,motorcycle,bicycle,bus,backpack` (when COCO weights set) | COCO labels trusted over open-vocab. |
+
+**Perception — depth / anchor / loop**
+
+| Var | Default | Meaning |
+|---|---|---|
 | `DEPTH_MODEL` | `depth-anything/Depth-Anything-V2-Small-hf` | HF model id / local cache, or `off` to disable monocular depth. |
 | `DEPTH_SCALE` | `5.0` | Calibrates inverse-depth → metres. |
 | `ANCHOR_TAG_SIZE_M` | `0.20` | AprilTag physical size for the perception metric-scale anchor. |
 | `PERCEPTION_FPS` | `5` | Perception loop rate (also the sample rate for offline file processing). |
+
+**Follow / Tello**
+
+| Var | Default | Meaning |
+|---|---|---|
 | `FOLLOW_TAG_SIZE_M` | `0.18` | Soldier-badge AprilTag size for the follow controller. |
 | `FOLLOW_TAG_ID` | _(unset)_ | Filter the follow controller to a specific tag id; unset → any tag. |
 | `TELLO_RETRY_S` | `3` | Tello supervisor reconnect interval. |
+
+**Reasoning (Ollama, local)**
+
+| Var | Default | Meaning |
+|---|---|---|
+| `INTEL_MODEL` | `gemma3:4b` | Local Ollama model for intel summary + chat. `off` disables reasoning entirely. |
+| `INTEL_VISION` | `0` | `1` feeds the current JPEG to the model (image-aware, ~30× slower); default text-only over the YOLO label list. |
+| `INTEL_INTERVAL_S` | `5` | How often the intel loop runs. |
+
+Reasoning is fully local (Ollama at `127.0.0.1:11434`) and auto-disables if the
+server is unreachable — no cloud, ever.
+
+**Server / hardening**
+
+| Var | Default | Meaning |
+|---|---|---|
 | `BROADCAST_HZ` | `10` | world/mission/health/detections fan-out rate. |
+| `DASHBOARD_ORIGINS` | `http://localhost:3001,http://127.0.0.1:3001` | CORS allowlist (comma-separated). |
+| `OPERATOR_KEY` | _(unset)_ | Shared secret gating mutating POSTs via `X-Operator-Key`. Unset → open. |
+| `MAX_UPLOAD_MB` | `500` | Upload size cap (MB). |
 
 ## The two contracts everything meets at
 
@@ -94,11 +180,12 @@ Defined in [`app/contracts.py`](./app/contracts.py) (Pydantic), mirrored in
   · `source` (`yolo`/`slam`/`follow`/`manual`) · `ttl_s` · `status`
   (`active`/`stale`/`lost`, owned by the world model, never the producer).
 - **Contract B — WebSocket protocol:** server→clients `world_snapshot` /
-  `mission_state` / `health` / `detections`; clients→server `intent` (closed command
-  vocab: `follow_me`/`hold`/`recall`/`stop`) / `device_location`.
+  `mission_state` / `health` / `detections`; clients→server `intent` (closed
+  command vocab) / `device_location`. The detections `source` is `"leader"`
+  (recon Mavic) / `"follower"` (companion Tello), abstracting the airframe make.
   `parse_client_message` validates inbound messages; unknown/malformed intent is
-  rejected, never guessed. `stop`/`recall` are always-live, highest priority,
-  honored from any stage.
+  rejected, never guessed. `stop`/`recall` are highest priority, honored from
+  any stage.
 
 ## `app/` package layout
 
@@ -106,14 +193,15 @@ Defined in [`app/contracts.py`](./app/contracts.py) (Pydantic), mirrored in
 |---|---|
 | [`contracts.py`](./app/contracts.py) | Contract A + B, Pydantic. |
 | [`world_model.py`](./app/world_model.py) | Single source of truth; entity upsert + TTL lifecycle (`active`→`stale`→`lost`). |
-| [`state_machine.py`](./app/state_machine.py) | Mission arbiter + event log. Stages `idle`→`following`→`holding`; `recall`/`stopped` from anywhere. |
+| [`state_machine.py`](./app/state_machine.py) | Mission arbiter + event log. `recall`/`stopped` from anywhere. |
 | [`ws_hub.py`](./app/ws_hub.py) | WebSocket client registry + broadcast fan-out (`Hub`). |
 | [`video.py`](./app/video.py) | Frame-source abstraction; `make_source` selects URL/file/device or `NullSource`; `SwitchableSource` allows runtime hot-swap. |
-| [`server.py`](./app/server.py) | FastAPI app: `/ws`, `/health`, leader/follower video + upload endpoints, broadcast loop, producer wiring. |
 | [`clock.py`](./app/clock.py) | Injectable clock (`RealClock` / `FakeClock`) for deterministic tests. |
-| [`perception/`](./app/perception/README.md) | Mavic recon: SLAM, YOLO, depth, fusion pipeline (`PerceptionPipeline`), plus `file_processor.py` for offline clip processing. |
+| [`server.py`](./app/server.py) | FastAPI app: `/ws`, `/health`, video + upload + intel + buildings routes, broadcast + intel loops, producer wiring, CORS/operator-key hardening. |
+| [`reasoning/`](./app/reasoning/) | On-device reasoning over the latest frame + detections via a **local** Ollama model (`IntelReasoner`, `IntelChat`, `IntelSummary`, `ollama_alive`). The offline equivalent of "Gemini Live". |
+| [`perception/`](./app/perception/README.md) | Mavic recon: SLAM, YOLO (+ optional COCO ensemble), depth, fusion pipeline (`PerceptionPipeline`), plus `file_processor.py` for offline clip processing. |
 | [`follow/`](./app/follow/README.md) | Tello soldier-follow controller (`FollowController`, AprilTag station-keep). |
-| [`tello/`](./app/tello/README.md) | Tello transport: `TelloClient` (djitellopy wrapper, sole commander) + `TelloVideoSource`. |
+| [`tello/`](./app/tello/README.md) | Tello transport: `TelloClient` (djitellopy wrapper) + `TelloVideoSource`. |
 
 ## Producers
 
@@ -121,24 +209,30 @@ Wired in `server.py` and started on FastAPI `startup`. All are robust to absent
 hardware.
 
 - **`PerceptionPipeline`** reads Mavic frames from `mavic_camera` (the
-  `SwitchableSource` around `MAVIC_SOURCE`), runs SLAM + YOLO (+ optional depth),
-  and upserts entities. Idle when the source is `NullSource`.
-- **`FollowController`** reads Tello frames, detects the soldier AprilTag, upserts
-  `soldier` + `drone` entities, and sends RC to the Tello when stage=`following`.
-  Idle when the Tello link is down (the supervisor thread auto-reconnects every
-  `TELLO_RETRY_S`).
+  `SwitchableSource` around `MAVIC_SOURCE`), runs SLAM + YOLO (+ optional COCO
+  ensemble + optional depth), and upserts entities. Idle when the source is
+  `NullSource`.
+- **`FollowController`** reads Tello frames, detects the soldier AprilTag,
+  upserts `soldier` + `drone` entities, and sends RC to the Tello when
+  stage=`following`. Idle when the Tello link is down (the supervisor thread
+  auto-reconnects every `TELLO_RETRY_S`). Keep this disarmed whenever the phone
+  is flying the Tello.
 - **`device_location`** from the phone upserts a `soldier` entity with
-  `source=manual` — the fallback marker before the follow controller is producing
+  `source=manual` — the fallback marker before the follow controller produces
   one, overwritten once it has a higher-quality reading.
+- **Intel loop** (`_intel_loop`): when `INTEL_MODEL != off` and Ollama is
+  reachable, runs `IntelReasoner.summarise` every `INTEL_INTERVAL_S` over the
+  latest perception state and publishes via `/intel/summary`.
 
 ## Offline clip processing
 
 `POST /video/source/upload` parks the live source (`NullSource`), saves the clip
-under `.context/uploads/`, and runs `perception/file_processor.process_video_file`
-over the whole file in a worker thread (YOLO + depth ~150 ms/frame is too slow for
-live HD playback on CPU). It writes a `<name>.detections.json` sidecar. The
-dashboard polls `/video/upload/status` until `state=="ready"`, then plays the raw
-file natively (`<video controls>`) and overlays detections from the cached JSON at
+under `.context/uploads/` (uuid-prefixed name), and runs
+`perception/file_processor.process_video_file` over the whole file in a worker
+thread (YOLO + depth ~150 ms/frame is too slow for live HD playback on CPU). It
+writes a `<name>.detections.json` sidecar. The dashboard polls
+`/video/upload/status` until `state=="ready"`, then plays the raw file natively
+(`<video controls>`) and overlays detections from the cached JSON at
 `video.currentTime`.
 
 ## Build notes
@@ -147,9 +241,11 @@ file natively (`<video controls>`) and overlays detections from the cached JSON 
   djitellopy, so the relay stays independent of the flight transport.
 - Producers (`perception`, `follow`) upsert entities; the world model alone owns
   `status` demotion. Clients subscribe and arbitrate intent through the state
-  machine — never the Tello directly.
-- `tests/` covers contracts, world model, state machine, video relay, and SLAM
-  (`tests/slam/`).
+  machine.
+- The broadcast loop and intel loop each wrap a tick in `try/except` so one bad
+  tick can't kill the single producer of world/mission/health.
+- `tests/` covers contracts, world model, state machine, video relay, upload
+  guards (`test_upload_guards.py`), and SLAM (`tests/slam/`).
 
 ## Docs
 

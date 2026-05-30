@@ -7,7 +7,7 @@ and the team's Xcode workflow.)
 
 ## What it does
 - **Subscribes** to the mission spine (`/ws`) and renders the live entity set on a
-  map. Three map modes (`ContentView.MapMode`):
+  map. Three map modes (`MapMode`, a top-level enum; the MAP/FEED toggle is `CenterView`):
   - **2D / 3D** — flat vs tilted **OpenStreetMap** raster basemap (`OSMMapView`,
     MapKit + an OSM tile overlay, free/no-API-key), entities placed around the
     operator's device location.
@@ -21,14 +21,31 @@ and the team's Xcode workflow.)
 - **On-phone autonomous follow** — FEED can also host the soldier-follow loop
   (`FollowCoordinator`): decoded frames → AprilTag detection → a station-keeping
   `rc` stick controller → the Tello, entirely on the phone while it's on the Tello
-  AP. Explicit arm/takeoff, hover-on-tag-loss, auto-land if the tag stays lost.
-- **Voice + flight control** — push-to-talk, on-device (Gemma 3n via Cactus): mic →
-  transcript → a **closed drone-function vocabulary** (`DroneFunction`). Two routing
-  classes: *flight* functions (takeoff/land/up/down/left/right/forward/back/
-  rotate_cw/rotate_ccw/emergency) execute directly on the Tello over UDP as SDK
-  command strings; *mission* intents (`follow_me`/`hold`/`recall`/`stop`) route to
-  the laptop over the WS. An always-visible hard **STOP** (ControlBar)
-  and **LAND** (voice bar) are first-class, never voice-only.
+  AP. Explicit arm/takeoff, hover-on-tag-loss, auto-land if the tag stays lost. The
+  coordinator runs two modes (`FollowCoordinator.Mode = .tag | .track`):
+  - `.tag` — AprilTag worn by the soldier.
+  - `.track` — **tag-free visual lock** (`ObjectTracker`, Vision saliency +
+    `VNTrackObjectRequest`): "track that boat" centers a salient region and follows
+    it frame-to-frame, synthesizing a `TagDetection` so the same station-keeping
+    controller drives it. Class-agnostic, fully on-device.
+- **On-phone map (no laptop)** — `Localizer` builds the map locally off the follow
+  fix: the operator is anchored by GPS, the drone is placed by the tag's
+  distance/bearing rotated by compass heading, and both accumulate movement trails
+  in a fixed launch frame. The TAC/OSM views render the drone + operator even with
+  no laptop in the loop; laptop entities (`WorldClient`) are merged in when present.
+- **Voice + flight control** — push-to-talk, fully on-device. Speech-to-text runs on
+  Apple's offline `SFSpeechRecognizer` (`VoiceController`), **not** Cactus — Gemma 3n's
+  `cactus_transcribe` path has no STT backend and null-derefs, so STT is deliberately
+  Apple's recognizer. The transcript maps to a **closed drone-function vocabulary**
+  (`DroneFunction`): `VoiceController` resolves it deterministically via
+  `DroneIntent.match`, while `DronePilot` is the richer path that asks the Cactus/Gemma
+  model to pick exactly one function (JSON function-call) and falls back to the same
+  `DroneIntent` keyword matcher. Three routing classes: *flight* functions (takeoff/
+  land/up/down/left/right/forward/back/rotate_cw/rotate_ccw/emergency) execute directly
+  on the Tello over UDP as SDK command strings; `track` arms (or relocks) the tag-free
+  visual follow; *mission* intents (`follow_me`/`hold`/`recall`/`stop`) route to the
+  laptop over the WS. An always-visible hard **STOP** (ControlBar) and **LAND** (voice
+  bar) are first-class, never voice-only.
 - Provides its own **device location** (`LocationProvider`) to anchor the OSM map and
   for follow-me context.
 
@@ -60,16 +77,18 @@ mono type, shape-coded markers (● soldier, ▲ drone, ◇ POI, ✕ hazard).
 | `OSMMapView.swift` | 2D/3D OpenStreetMap basemap (MapKit + OSM tile overlay), local-frame→coord projection, trace polylines |
 | `LocalMapView.swift` | TAC: offline range/bearing tactical map (pure view) |
 | `MapProjection.swift` | local-frame metres → screen points for TAC (tested) |
-| `LocationProvider.swift` | device location (CoreLocation) — OSM anchor + follow-me context |
+| `LocationProvider.swift` | device location + compass heading (CoreLocation) — OSM anchor, follow-me context, `Localizer` heading |
+| `Localizer.swift` | phone-side map: places operator (GPS) + drone (tag distance/bearing × heading) in a launch frame with trails — no laptop needed |
+| `ObjectTracker.swift` | tag-free visual lock-and-follow (Vision saliency + `VNTrackObjectRequest`); class-agnostic ("track that boat") |
 | `TelloDirectStream.swift` | direct UDP H.264 receiver: NAL reassembly → VideoToolbox decode → `AVSampleBufferDisplayLayer`; optional pixel-buffer tap for follow |
 | `TelloVideoView.swift` | `TelloDirectView` — FEED view hosting the display layer + the follow loop (honest status, never fakes a frame) |
 | `TelloCommander.swift` | sole Tello control channel (UDP 8889): `command`/`streamon`, flight, `rc`, keepalive |
 | `MJPEGView.swift` | legacy laptop MJPEG-relay decoder (not wired into FEED) |
 | `AprilTagDetector.swift` | on-device AprilTag (vendored AprilRobotics C lib, tag36h11) → pose/bearing/distance |
 | `FollowController.swift` | pure station-keeping: tag → `rc` stick command (tested) |
-| `FollowCoordinator.swift` | the on-phone follow loop: detect → controller → Tello, with arm/disarm/manual/lost-land safety |
-| `VoiceController.swift` | mic capture → 16 kHz PCM → on-device transcription → action |
-| `DronePilot.swift` | transcript → `DroneAction` (model function-call, keyword fallback) |
+| `FollowCoordinator.swift` | the on-phone follow loop: detect (`.tag` AprilTag or `.track` `ObjectTracker`) → controller → Tello, with arm/disarm/manual/lost-land safety |
+| `VoiceController.swift` | push-to-talk mic capture → Apple `SFSpeechRecognizer` on-device STT → `DroneIntent.match` → action (not Cactus) |
+| `DronePilot.swift` | transcript → `DroneAction` (Cactus/Gemma function-call, `DroneIntent` keyword fallback) |
 | `DroneFunction.swift` | the closed drone-function vocabulary + `DroneAction` (Tello SDK strings / mission routing) |
 | `IntentParser.swift` | transcript → closed mission `Command` vocab (tested) |
 | `Cactus.swift` / `CactusService.swift` | on-device model bridge (`canImport(cactus)`-guarded; honest Unavailable fallback) |
@@ -77,7 +96,10 @@ mono type, shape-coded markers (● soldier, ▲ drone, ◇ POI, ✕ hazard).
 | `StatusBar.swift` / `ControlBar.swift` / `Theme.swift` | status strip, intent buttons + hard STOP, design tokens |
 
 ## On-device model (Cactus / Gemma 3n)
-Voice STT and any vision run fully on-device through Cactus. The Swift bridge
+Command understanding (voice → drone-function mapping in `DronePilot`) and any vision
+run on-device through Cactus/Gemma. Speech-to-text itself is Apple's offline
+`SFSpeechRecognizer` (`VoiceController`), not Cactus — Gemma 3n has no working STT
+backend here. The Swift bridge
 (`Cactus.swift`) is guarded by `#if canImport(cactus)`: **the app builds and ships
 without the framework**, and `CactusFactory` returns an honest `UnavailableCactusService`
 (every call throws — never canned data) so the UI shows the truth. With
@@ -98,12 +120,12 @@ xcodegen generate     # project.yml → ReconCompanion.xcodeproj
                       #   (embeds Frameworks/cactus.xcframework, compiles Vendor/apriltag,
                       #    SPM dep: ZIPFoundation)
 xcodebuild test -scheme ReconCompanion \
-  -destination 'platform=iOS Simulator,name=iPhone 17'    # 29 XCTest
-# open straight to FEED (DEBUG only): xcrun simctl launch booted \
-#   com.nicolasdossantos.skyguardian -feed
+  -destination 'platform=iOS Simulator,name=iPhone 17'    # 33 XCTest
+# open straight to FEED (DEBUG only; also repoints WS to ws://127.0.0.1:8001/ws):
+#   xcrun simctl launch booted com.nicolasdossantos.skyguardian -feed
 ```
 Tests cover the pure/offline-safe pieces: `ContractsTests`, `FollowControllerTests`,
-`IntentParserTests`, `MapProjectionTests`. The direct Tello FEED + follow loop need
+`IntentParserTests`, `MapProjectionTests`, `WorldClientConfigTests`. The direct Tello FEED + follow loop need
 **real hardware on the Tello WiFi AP** — the simulator can't join it, and Cactus voice
 needs a device + the framework/model.
 

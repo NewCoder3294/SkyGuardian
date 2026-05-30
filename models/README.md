@@ -12,17 +12,19 @@ from the network at runtime.
 ## How the brain finds weights
 The brain does **not** auto-scan this directory. Paths are passed via environment
 variables, read in `backend/app/server.py` and handed to `PerceptionPipeline`
-(`backend/app/perception/pipeline.py`), which constructs `YoloDetector`
-(`backend/app/perception/yolo.py`). `models/` is just the conventional place to
-keep the files the env vars point at.
+(`backend/app/perception/pipeline.py`), which constructs one `YoloDetector`
+(`backend/app/perception/yolo.py`) for the primary open-vocab model and an
+optional second `YoloDetector` for the COCO ensemble. `models/` is just the
+conventional place to keep the files the env vars point at.
 
 | Env var | What it points at | Default |
 |---|---|---|
 | `YOLO_WEIGHTS` | Primary detector `.pt`. A YOLO-World checkpoint (filename contains `world`) runs open-vocab via `YOLOWorld`; anything else runs stock `YOLO`. | unset → SLAM-only |
-| `YOLO_CLASSES` | Comma-separated open-vocab prompt list for a `-world` checkpoint. | a defense-relevant default vocab when a `-world` checkpoint is loaded |
-| `YOLO_COCO_WEIGHTS` | Optional second detector — stock COCO YOLOv8 — ensembled with the open-vocab one; its classes are pruned from the YOLO-World vocab to avoid double-detection. | unset → no COCO ensemble |
-| `YOLO_IMGSZ` | Inference resolution. | `960` |
-| `YOLO_CONF` | Confidence threshold. | `0.20` |
+| `YOLO_CLASSES` | Comma-separated open-vocab prompt list for a `-world` checkpoint. | a defense-relevant default vocab (`server.py` `_DEFAULT_VOCAB`: person, soldier, gun, rifle, knife, backpack, vehicle, drone, ied, …) when a `-world` checkpoint is loaded |
+| `YOLO_COCO_WEIGHTS` | Optional second detector — stock COCO YOLOv8 — ensembled with the open-vocab one. The kept classes are pruned from the YOLO-World vocab so the same object isn't double-detected; both detectors' boxes are merged. | unset → no COCO ensemble |
+| `YOLO_COCO_KEEP` | Comma-separated COCO labels to trust over open-vocab (lowercased; COCO boxes outside this set are dropped). | `person,car,truck,motorcycle,bicycle,bus,backpack` when `YOLO_COCO_WEIGHTS` is set |
+| `YOLO_IMGSZ` | Inference resolution (applies to both detectors). | `960` |
+| `YOLO_CONF` | Confidence threshold (applies to both detectors). | `0.20` |
 | `DEPTH_MODEL` | Monocular depth model (HuggingFace id, downloaded once to the HF cache); set `off` to disable. | `depth-anything/Depth-Anything-V2-Small-hf` |
 | `ORB_SLAM3_ROOT` | Root of an externally-built ORB-SLAM3 (see SLAM below). | unset → pure-Python VO |
 

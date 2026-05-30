@@ -40,7 +40,7 @@ Built for environments with no connectivity. Everything runs locally. No cloud, 
 
 **Phone (mobile client)**
 - Reads the map and entities from the laptop server (subscribe, do not duplicate state).
-- Is the primary Tello controller: turns voice into structured drone actions on-device (Cactus/Gemma function-calling) and runs the AprilTag follow loop on-device, commanding the Tello directly over the Tello AP (`TelloCommander` → `192.168.10.1:8889`).
+- Is the primary Tello controller: captures voice fully on-device (Apple `SFSpeechRecognizer` with `requiresOnDeviceRecognition`, no cloud) and maps the transcript to structured drone actions by deterministic keyword match (`DroneIntent.match`), then runs the AprilTag follow loop on-device, commanding the Tello directly over the Tello AP (`TelloCommander` → `192.168.10.1:8889`). (A Cactus/Gemma function-call mapper, `DronePilot`, is compiled in but not yet wired into the live voice loop — STT was moved off Cactus because Gemma 3n's `cactus_transcribe` path has no STT backend. Cactus/Gemma still powers on-device reasoning + vision.)
 - Still sends mission-level intent (hold/recall) and its own device location to the laptop over the WebSocket for "follow me" context.
 
 ## Architecture
@@ -66,12 +66,18 @@ Built for environments with no connectivity. Everything runs locally. No cloud, 
 ```
 backend/                 # the brain (Python, FastAPI)
   app/
-    server.py            # FastAPI app + WebSocket endpoint; binds 0.0.0.0:8000
+    server.py            # FastAPI app + WS endpoint; binds 0.0.0.0:8000.
+                         #   Also: intel summary/chat + /map/buildings + video
+                         #   upload/MJPEG/JPEG HTTP routes; RTMP default; CORS
+                         #   allowlist + optional OPERATOR_KEY hardening.
     contracts.py         # wire format (source of truth; mirrored by shared/ + mobile)
     world_model.py       # single source of truth for entities
     state_machine.py     # mission/connection state
     ws_hub.py            # WebSocket fan-out to both clients
     clock.py video.py    # shared clock; Mavic video source handling
+    reasoning/           # on-device "Gemini Live" equivalent (local Ollama)
+      intel.py           #   IntelReasoner (periodic vision/text assessment),
+                         #   IntelChat (operator Q&A), IntelSummary, ollama_alive
     tello/               # only code that talks to the Tello
       client.py          #   TelloClient (djitellopy-backed)
       video.py           #   TelloVideoSource
@@ -80,34 +86,43 @@ backend/                 # the brain (Python, FastAPI)
       controller.py      #   FollowController (bearing/distance station-keeping)
     perception/          # Mavic feed: detect + map
       pipeline.py yolo.py depth.py fusion.py file_processor.py
+                         #   yolo.py supports a YOLO-World custom vocabulary +
+                         #   an optional second COCO YOLOv8 ensemble detector.
       slam/              #   vo.py anchor.py backend.py local_map.py types.py
                          #   euroc.py orbslam3_runner.py
   run.sh                 # uvicorn app.server:app --host 0.0.0.0 --port 8000
-  requirements.txt
+  requirements.txt       # incl. python-multipart (upload)
   tests/                 # pytest; run: cd backend && .venv/bin/python -m pytest -q
+                         #   test_contracts test_state_machine test_video
+                         #   test_world_model test_upload_guards slam/*
 
 frontend/                # web dashboard (Next.js + Tailwind, runs on port 3001)
   src/app/               # layout.tsx page.tsx globals.css
-  src/components/        # Clock ConsolePanel EntityList IntelPanel LocalMap
+  src/components/        # Clock ConsolePanel EntityList IntelPanel IntelChat
+                         # IntelSummaryCard Buildings LocalMap LocalMap2D
                          # LocalMap3D SourceSelector StatusBar ThreatAlert
                          # VideoFeed VideoPlayer
   src/lib/               # contracts entities feedUrl playback projection
-                         # status threats useWorldClient
-                         # Pulls MJPEG/JPEG from the brain.
+                         # status threats useWorldClient wsConfig
+                         # (+ vitest: feedUrl.test.ts wsConfig.test.ts)
+                         # Pulls MJPEG/JPEG + WS (:8000) from the brain.
 
 mobile/                  # iOS / SwiftUI client (pairs with Cactus/Gemma on-device)
   Sources/               # ReconCompanionApp ContentView WorldClient OSMMapView
-                         # LocalMapView MapProjection AprilTagDetector
+                         # LocalMapView MapProjection AprilTagDetector ObjectTracker
                          # FollowController FollowCoordinator Cactus CactusService
                          # VoiceController IntentParser DroneFunction DronePilot
                          # TelloCommander TelloDirectStream TelloVideoView MJPEGView
-                         # ModelDownloader LocationProvider StatusBar ControlBar
-                         # Theme Contracts
-  Tests/                 # ContractsTests FollowControllerTests
-                         # IntentParserTests MapProjectionTests
+                         # ModelDownloader LocationProvider Localizer StatusBar
+                         # ControlBar Theme Contracts
+  Tests/                 # ContractsTests FollowControllerTests IntentParserTests
+                         # MapProjectionTests WorldClientConfigTests
 
 shared/contracts.ts      # TS mirror of backend/app/contracts.py
-scripts/                 # asc.py, run_slam_video.py
+scripts/                 # asc.py, run_slam_video.py, fetch_buildings.py
+.context/buildings.json  # pre-cached OSM building polygons (offline map layer;
+                         # generated once by scripts/fetch_buildings.py, served
+                         # read-only at /map/buildings)
 models/  captures/       # local data dirs (weights, recorded feeds)
 ```
 
@@ -115,21 +130,25 @@ models/  captures/       # local data dirs (weights, recorded feeds)
 
 **Brain (laptop, Python)**
 - `djitellopy` for Tello control (bind the UDP socket to the Tello WiFi interface IP).
-- `ultralytics` YOLO for detection (local weights).
+- `ultralytics` YOLO for detection (local weights). Default to a YOLO-World open-vocabulary model driven by a defense-relevant prompt set (`server.py` `_DEFAULT_VOCAB`; override with `YOLO_CLASSES`), with an optional second standard YOLOv8/COCO detector ensembled in for high-precision person/vehicle/backpack (`YOLO_COCO_WEIGHTS` / `YOLO_COCO_KEEP`). Other knobs: `YOLO_WEIGHTS`, `YOLO_IMGSZ`, `YOLO_CONF`, `DEPTH_MODEL`/`DEPTH_SCALE`, `ANCHOR_TAG_SIZE_M`, `FOLLOW_TAG_SIZE_M`, `PERCEPTION_FPS`.
+- On-device reasoning (`app/reasoning/intel.py`): the offline equivalent of the prior hackathon's Gemini Live. A local Ollama vision/text model (default `gemma3:4b`) periodically assesses the latest frame + YOLO labels (`IntelReasoner`), and answers operator questions over the same context (`IntelChat`). `httpx` to a local Ollama at `127.0.0.1:11434`; no cloud. Env: `INTEL_MODEL` (default `gemma3:4b`, `off` disables), `INTEL_VISION` (default `0`; image-aware path is ~30x slower), `INTEL_INTERVAL_S` (default `5`). Auto-disabled if Ollama is unreachable.
 - SLAM: monocular VO (ORB-SLAM3 or equivalent), local. Local frame only, no GPS.
 - `opencv` + AprilTag detection (`pupil-apriltags` or OpenCV's aruco/apriltag module) for the soldier-follow tag.
-- `fastapi` + `websockets` for the local server. Bind to `0.0.0.0`.
+- `fastapi` + `websockets` for the local server. Bind to `0.0.0.0`. HTTP surface is hardened: CORS allowlist (`DASHBOARD_ORIGINS`), optional `OPERATOR_KEY` header gate on state-mutating routes, `MAX_UPLOAD_MB` + video-extension allowlist on upload. Dashboard "RTMP" button targets a local MediaMTX relay (`MAVIC_RTMP_DEFAULT`, default `url:rtmp://127.0.0.1:1935/live`).
+- Offline map layer: `scripts/fetch_buildings.py` pulls OSM building polygons once (requires internet at fetch time only), projects them into the local frame, and writes `.context/buildings.json`, which the backend serves read-only at `/map/buildings` — zero runtime network.
 
 **Voice (phone, on-device)**
 - Cactus running Gemma for local STT plus intent. Cactus is mobile-first, so run it on the phone.
 - Constrain output to a fixed command vocabulary (structured intent enum), not free text.
 
 **Web dashboard (laptop)**
-- Next.js 14 + Tailwind. Runs on port 3001; pulls MJPEG/JPEG video from the brain.
+- Next.js 14 + Tailwind. Runs on port 3001; pulls MJPEG/JPEG video + the WS world model from the brain (default `ws://localhost:8000/ws`, via `src/lib/wsConfig.ts`; override with `NEXT_PUBLIC_WS_URL`).
+- Renders the world model as a top-down 2D tactical map (`LocalMap2D`) and a `three.js` 3D scene (`LocalMap3D`/`Buildings`), both overlaying the pre-cached OSM footprints from `/map/buildings`. The intel reasoner surfaces as `IntelSummaryCard` (periodic assessment) and `IntelChat` (operator Q&A).
 - Dark tactical aesthetic. Define design tokens first (layered near-black, one accent, hairline borders, mono numerals). Avoid generic defaults.
 
 **Mobile app (phone)**
 - iOS / SwiftUI (pairs with Cactus on-device). Map view plus voice control plus device location.
+- `ObjectTracker` (Vision `VNTrackObjectRequest`) adds tag-free, class-agnostic visual lock-and-follow ("track that boat") alongside the AprilTag follow. `Localizer` builds a phone-side map (operator + drone placed by tag distance/bearing rotated by compass heading, with movement trails) so the map renders with no laptop in the loop.
 
 ## World model / data
 

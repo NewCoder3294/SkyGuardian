@@ -1,16 +1,16 @@
 # `tests/` — backend test suite (pytest · Brain)
 
 ## Responsibility
-Pin the spine and SLAM contracts with deterministic, fast tests. No hardware, no
-network, no wallclock, no unseeded randomness — every time- or RNG-dependent path
-is driven by an injectable [`FakeClock`](../app/clock.py) or a seeded
-`np.random.default_rng(...)`, so runs are bit-stable and CI-safe. ✅ 33 tests.
+Pin the spine, the upload guards, and the SLAM contracts with deterministic, fast
+tests. No hardware, no network, no wallclock, no unseeded randomness — every time-
+or RNG-dependent path is driven by an injectable [`FakeClock`](../app/clock.py) or a
+seeded `np.random.default_rng(...)`, so runs are bit-stable and CI-safe. ✅ 40 tests.
 
 ## Run
 The repo ships a `.venv` in `backend/`; the canonical invocation is:
 ```bash
 cd backend
-.venv/bin/python -m pytest -q                  # 33 tests
+.venv/bin/python -m pytest -q                  # 40 tests
 .venv/bin/python -m pytest -q tests/slam       # just the SLAM geometry/anchor suite
 .venv/bin/python -m pytest -q -k state_machine # one file by keyword
 ```
@@ -23,7 +23,7 @@ python3 -m venv .venv
 Config: [`../pytest.ini`](../pytest.ini) sets `testpaths = tests` and
 `pythonpath = .` (so `app.*` and `tests.slam.synth` import without an install).
 
-## Spine tests
+## Spine + control-plane tests (27)
 - `test_contracts.py` ✅ (5) — Contract (de)serialization via
   `parse_client_message`: a valid `intent` parses to `IntentMessage` with the
   right `Command`, `device_location` parses to `DeviceLocation`; an unknown
@@ -43,8 +43,21 @@ Config: [`../pytest.ini`](../pytest.ini) sets `testpaths = tests` and
   `url:`/`file:`/`device:N` specs and bare paths, returns a `NullSource` for
   empty/`None`, and rejects a non-integer `device:` spec and an unknown source
   kind. `NullSource` never produces frames and reports `is_streaming is False`.
+- `test_upload_guards.py` ✅ (7) — hardening on the operator video-upload
+  control-plane endpoint in `app.server` (see the upload/MJPEG/JPEG routes there).
+  The handler is driven directly as a coroutine, so no `python-multipart` and no
+  running server are needed and the perception path is never reached — every case
+  rejects first. Covers: `_save_upload_capped` aborts and deletes the partial file
+  past `max_bytes` but writes a payload under the cap; `_require_operator` is a
+  no-op when `_OPERATOR_KEY` is unset and raises `HTTPException(401)` on a
+  missing/wrong key when set; and `upload_source_video` rejects a non-video
+  extension (`400`), a concurrent upload while the single status slot is
+  `processing` (`409`), and an oversize body (`413`, marking `_upload_status` as
+  `error`). An autouse fixture repoints `_UPLOADS_DIR` at `tmp_path`, clears
+  `_OPERATOR_KEY`, and resets `server._upload_status` around each test so order
+  can't leak state.
 
-## SLAM tests — `slam/`
+## SLAM tests — `slam/` (13)
 GPS-less monocular VO + AprilTag metric anchor (see
 [`../../docs/SLAM.md`](../../docs/SLAM.md)). Geometry is checked against known
 synthetic projections rather than images, so it's exact and deterministic.
