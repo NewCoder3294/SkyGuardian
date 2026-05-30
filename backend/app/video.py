@@ -154,7 +154,6 @@ class StreamVideoSource:
     def start(self) -> None:
         if self._thread is not None:
             return
-        self._cap = self._cv2.VideoCapture(self._spec)
         self._stop.clear()
         self._thread = threading.Thread(target=self._reader, name="video-reader", daemon=True)
         self._thread.start()
@@ -184,21 +183,52 @@ class StreamVideoSource:
     def _reader(self) -> None:
         cv2 = self._cv2
         encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), self._jpeg_quality]
-        while not self._stop.is_set():
+        empty_reads = 0
+        try:
+            while not self._stop.is_set():
+                cap = self._cap
+                if cap is None:
+                    # OpenCV/FFmpeg can block for many seconds opening an RTMP URL
+                    # with no publisher. Do it in this daemon reader thread so app
+                    # startup and source-switch HTTP requests stay responsive.
+                    cap = cv2.VideoCapture(self._spec)
+                    if self._stop.is_set():
+                        cap.release()
+                        break
+                    self._cap = cap
+                    empty_reads = 0
+
+                if not cap.isOpened():
+                    cap.release()
+                    self._cap = None
+                    self._stop.wait(2.0)
+                    continue
+
+                ok, frame = cap.read()
+                if not ok or frame is None:
+                    # End-of-file for files; transient hiccup for streams. Reopen
+                    # periodically so a relay that starts publishing later is found.
+                    empty_reads += 1
+                    if empty_reads >= 20:
+                        cap.release()
+                        self._cap = None
+                        empty_reads = 0
+                        self._stop.wait(0.5)
+                    else:
+                        self._stop.wait(0.05)
+                    continue
+
+                empty_reads = 0
+                ok, buf = cv2.imencode(".jpg", frame, encode_params)
+                if not ok:
+                    continue
+                with self._lock:
+                    self._latest_jpeg = buf.tobytes()
+        finally:
             cap = self._cap
-            if cap is None or not cap.isOpened():
-                self._stop.wait(0.25)
-                continue
-            ok, frame = cap.read()
-            if not ok or frame is None:
-                # End-of-file for files; transient hiccup for streams. Brief pause.
-                self._stop.wait(0.05)
-                continue
-            ok, buf = cv2.imencode(".jpg", frame, encode_params)
-            if not ok:
-                continue
-            with self._lock:
-                self._latest_jpeg = buf.tobytes()
+            self._cap = None
+            if cap is not None:
+                cap.release()
 
 
 def make_source(spec: Optional[str]) -> FrameSource:

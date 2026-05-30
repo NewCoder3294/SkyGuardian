@@ -81,6 +81,9 @@ export function SourceSelector({ apiBase, onState }: Props) {
       if (res.ok) {
         const s = (await res.json()) as SourceState;
         setState(s);
+        setError((current) =>
+          current?.startsWith("Backend unavailable") ? null : current
+        );
         onState?.(s);
       }
     } catch {
