@@ -10,6 +10,12 @@ struct LocalMapView: View {
     let trails: [String: [Vec3]]
     var projection: MapProjection
 
+    // Pan + pinch-zoom, baked into the drawing so panning reveals off-screen units.
+    @State private var pan: CGSize = .zero
+    @State private var panStart: CGSize = .zero
+    @State private var zoom: CGFloat = 1
+    @State private var zoomStart: CGFloat = 1
+
     var body: some View {
         Canvas { context, size in
             drawRangeRings(&context, size: size)
@@ -21,14 +27,45 @@ struct LocalMapView: View {
             drawScaleBar(&context, size: size)
         }
         .background(Theme.paper)
+        .contentShape(Rectangle())
+        .gesture(
+            SimultaneousGesture(
+                DragGesture()
+                    .onChanged { v in pan = CGSize(width: panStart.width + v.translation.width,
+                                                   height: panStart.height + v.translation.height) }
+                    .onEnded { _ in panStart = pan },
+                MagnificationGesture()
+                    .onChanged { v in zoom = min(max(zoomStart * v, 0.4), 8) }
+                    .onEnded { _ in zoomStart = zoom }
+            )
+        )
+        .onTapGesture(count: 2) {   // double-tap to recenter
+            withAnimation(.easeOut(duration: 0.2)) {
+                pan = .zero; panStart = .zero; zoom = 1; zoomStart = 1
+            }
+        }
+        .clipped()
     }
 
-    private func center(_ size: CGSize) -> CGPoint { CGPoint(x: size.width / 2, y: size.height / 2) }
+    // Launch origin = view center, shifted by pan (zoom pivots on it, so zoom doesn't move it).
+    private func center(_ size: CGSize) -> CGPoint {
+        CGPoint(x: size.width / 2 + pan.width, y: size.height / 2 + pan.height)
+    }
+
+    private func scale(_ size: CGSize) -> CGFloat { projection.scale(in: size) * zoom }
+
+    /// World position → screen, with pan + zoom (zoom pivots on the view center).
+    private func screenPoint(_ v: Vec3, _ size: CGSize) -> CGPoint {
+        let base = projection.point(for: v, in: size)
+        let cx = size.width / 2, cy = size.height / 2
+        return CGPoint(x: cx + (base.x - cx) * zoom + pan.width,
+                       y: cy + (base.y - cy) * zoom + pan.height)
+    }
 
     // Concentric distance rings every 5 m, faintly labelled.
     private func drawRangeRings(_ ctx: inout GraphicsContext, size: CGSize) {
         let c = center(size)
-        let s = projection.scale(in: size)
+        let s = scale(size)
         let maxR = hypot(size.width, size.height) / 2
         var m = 5
         while CGFloat(m) * s <= maxR {
@@ -66,7 +103,7 @@ struct LocalMapView: View {
             let isDrone = entityType(forId: id) == .drone
             let base = color(forId: id)
             let lineW: CGFloat = isDrone ? 2.6 : 1.8
-            let screen = pts.map { projection.point(for: $0, in: size) }
+            let screen = pts.map { screenPoint($0, size) }
             let n = screen.count
             for i in 1..<n {
                 let t = Double(i) / Double(n - 1)           // 0 = oldest, 1 = head
@@ -119,7 +156,7 @@ struct LocalMapView: View {
     }
 
     private func drawScaleBar(_ ctx: inout GraphicsContext, size: CGSize) {
-        let s = projection.scale(in: size)
+        let s = scale(size)
         let y = size.height - 18
         let x0: CGFloat = 14
         let x1 = x0 + 5 * s   // 5 metres
@@ -133,7 +170,7 @@ struct LocalMapView: View {
     }
 
     private func drawMarker(_ entity: Entity, in ctx: inout GraphicsContext, size: CGSize) {
-        let p = projection.point(for: entity.position, in: size)
+        let p = screenPoint(entity.position, size)
         let tint = color(for: entity.type).opacity(opacity(for: entity.status))
         let r: CGFloat = (entity.type == .soldier || entity.type == .drone) ? 7 : 5
 
