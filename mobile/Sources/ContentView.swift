@@ -16,6 +16,9 @@ struct ContentView: View {
     @State private var center: CenterView = .map
     @State private var mapMode: MapMode = .twoD
     @State private var setupStarted = false
+    @State private var pendingArm: PendingArm?
+
+    enum PendingArm { case follow, track }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -51,6 +54,17 @@ struct ContentView: View {
         .task { await startModelIfNeeded() }
         .onReceive(location.$coordinate) { _ in updateLocalizer() }
         .onReceive(follow.$distance) { _ in updateLocalizer() }
+        .confirmationDialog("Take off?", isPresented: Binding(get: { pendingArm != nil },
+                                                              set: { if !$0 { pendingArm = nil } }),
+                            titleVisibility: .visible) {
+            Button(pendingArm == .track ? "TAKE OFF & TRACK" : "TAKE OFF & FOLLOW", role: .destructive) {
+                if pendingArm == .track { startTrack() } else { startFollow() }
+                pendingArm = nil
+            }
+            Button("Cancel", role: .cancel) { pendingArm = nil }
+        } message: {
+            Text("The drone will launch and \(pendingArm == .track ? "track the centered object" : "follow the tag"). Keep clear; STOP lands it.")
+        }
         .onReceive(follow.$phase) { _ in publishFollow() }
     }
 
@@ -229,12 +243,13 @@ struct ContentView: View {
         let fn = action.function
 
         if fn == .followMe {
-            if follow.phase == .disarmed { startFollow() } else { follow.resumeFollow() }
+            // Initial arm (takeoff) must be confirmed; resuming from manual does not.
+            if follow.phase == .disarmed { pendingArm = .follow } else { follow.resumeFollow() }
             return
         }
 
         if fn == .track {   // "track that boat" — tag-free visual tracking
-            if follow.phase == .disarmed { startTrack() } else { follow.relock() }
+            if follow.phase == .disarmed { pendingArm = .track } else { follow.relock() }
             return
         }
 

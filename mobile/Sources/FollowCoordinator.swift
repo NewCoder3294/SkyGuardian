@@ -132,8 +132,10 @@ final class FollowCoordinator: ObservableObject {
     /// drone stays airborne; "follow me" resumes. (Pause-and-hold model.)
     func pauseToManual() {
         guard isArmed else { return }
+        // Stop the rc loop entirely so a stray follow tick can't override the manual
+        // move/turn the operator just issued.
+        rcQueue.async { self.followActive = false; self.rcTimer?.cancel(); self.rcTimer = nil }
         TelloCommander.shared.rc(.hover)            // neutralize follow motion
-        rcQueue.async { self.followActive = false }
         setPhase(.manual)
     }
 
@@ -148,6 +150,7 @@ final class FollowCoordinator: ObservableObject {
             self.latestTime = CACurrentMediaTime()  // fresh grace before lost-land
         }
         setPhase(.searching)
+        startRCLoop()                      // pauseToManual cancelled the loop — restart it
     }
 
     /// Stop following and land. Safe to call any time.

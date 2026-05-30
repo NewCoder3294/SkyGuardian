@@ -176,7 +176,7 @@ enum DroneIntent {
         if has(t, ["ascend", "go up", "rise", "higher", "climb"]) { return DroneAction(.up, n) }
         if has(t, ["descend", "go down", "lower", "drop"]) { return DroneAction(.down, n) }
         if has(t, ["forward", "ahead", "advance"]) { return DroneAction(.forward, n) }
-        if has(t, ["backward", "back up", "reverse", "retreat"]) { return DroneAction(.back, n) }
+        if has(t, ["back", "backward", "back up", "reverse", "retreat", "go back"]) { return DroneAction(.back, n) }
         if has(t, ["strafe left", "slide left", "move left"]) { return DroneAction(.left, n) }
         if has(t, ["strafe right", "slide right", "move right"]) { return DroneAction(.right, n) }
         if has(t, ["up"]) { return DroneAction(.up, n) }
