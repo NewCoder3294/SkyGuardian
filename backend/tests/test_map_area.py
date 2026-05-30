@@ -110,3 +110,14 @@ def test_fetch_and_project_uses_injected_fetcher():
     assert len(payload["buildings"]) == 1
     assert "300" in captured["q"]
     assert "1.0" in captured["q"] and "2.0" in captured["q"]
+
+
+def test_fetch_buildings_script_reuses_map_area():
+    # The CLI must not re-implement projection; it imports from app.map_area.
+    import importlib.util
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parents[2] / "scripts" / "fetch_buildings.py"
+    src = script.read_text()
+    assert "from app.map_area import" in src or "import app.map_area" in src
+    assert "def project_enu" not in src  # logic lives in map_area, not duplicated
