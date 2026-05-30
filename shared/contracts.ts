@@ -57,7 +57,25 @@ export interface Health {
   t: number;
 }
 
-export type ServerMessage = WorldSnapshot | MissionState | Health;
+export interface DetectionBox {
+  label: string;
+  confidence: number; // 0..1
+  cx: number;         // normalised image-plane centre (0..1)
+  cy: number;
+  w: number;          // normalised box width (0..1)
+  h: number;
+}
+
+export interface Detections {
+  type: "detections";
+  source: string;     // "mavic" | "tello"
+  boxes: DetectionBox[];
+  image_w: number;
+  image_h: number;
+  t: number;
+}
+
+export type ServerMessage = WorldSnapshot | MissionState | Health | Detections;
 
 // --- clients -> server ---
 export interface IntentMessage {

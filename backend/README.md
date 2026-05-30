@@ -14,29 +14,29 @@ for the hard constraints.
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt   # runtime deps + pytest/httpx
-pytest                                 # 34 tests, deterministic (FakeClock)
+pytest
 ```
 
 Run the server (binds `0.0.0.0` so both clients reach it):
 
 ```bash
-# real Tello feed, no mock in the path:
-USE_MOCK=0 TELLO_SOURCE=tello uvicorn app.server:app --host 0.0.0.0 --port 8011
-
-# hardware-free UI dev (drifting demo entities + synthetic frames):
-./run.sh                               # USE_MOCK=1, --reload, port 8000
+MAVIC_SOURCE=url:rtmp://localhost:1935/leader \
+YOLO_WEIGHTS=$PWD/../models/yolo/yolov8l-worldv2.pt \
+uvicorn app.server:app --host 0.0.0.0 --port 8001
 ```
 
-Endpoints: `ws://<host>:<port>/ws` · `GET /health` · `GET /video/tello` ·
-`GET /video/mavic` (both MJPEG).
+Endpoints: `ws://<host>:<port>/ws` · `GET /health` · `GET /video/leader.jpg` ·
+`GET /video/follower.jpg` · legacy MJPEG endpoints at `/video/{leader,follower}.mjpg`.
 
 ### Env vars
 
 | Var | Default | Meaning |
 |---|---|---|
-| `USE_MOCK` | `1` | `1` injects drifting demo entities + reports `mock` health. Set `0` for real hardware. |
-| `TELLO_SOURCE` | `tello` | `tello` (live Tello: raw SDK over UDP + OpenCV/ffmpeg decode, not djitellopy) · `url:<stream>` (any OpenCV/RTSP/HTTP) · `mock` (synthetic) · unset/other → honest empty feed. Phone reads `/video/tello`. |
-| `MAVIC_SOURCE` | _(unset)_ | Same grammar; unset → disabled (empty feed). Dashboard reads `/video/mavic`. |
+| `MAVIC_SOURCE` | _(unset)_ | `url:<stream>`, `file:<path>`, or `device:<index>`; unset means no frames. Dashboard reads `/video/leader.jpg`. |
+| `YOLO_WEIGHTS` | _(unset)_ | Local YOLO/YOLO-World weights. Without weights, perception runs SLAM-only. |
+| `DEPTH_MODEL` | DepthAnything-V2-Small | HF model id, local cache, or `off`. |
+| `PERCEPTION_FPS` | `5` | Perception loop rate. |
+| `TELLO_RETRY_S` | `3` | Tello supervisor reconnect interval. |
 | `BROADCAST_HZ` | `10` | Snapshot/state/health fan-out rate. |
 
 ## The two contracts everything meets at
@@ -62,13 +62,12 @@ Defined in [`app/contracts.py`](./app/contracts.py) (Pydantic), mirrored in
 | [`world_model.py`](./app/world_model.py) | ✅ | Single source of truth; entity upsert + TTL lifecycle (`active`→`stale`→`lost`). |
 | [`state_machine.py`](./app/state_machine.py) | ✅ | Mission arbiter + event log. Stages `idle`→`following`→`holding`; `recall`/`stopped` from anywhere. |
 | [`ws_hub.py`](./app/ws_hub.py) | ✅ | WebSocket client registry + broadcast fan-out. |
-| [`video.py`](./app/video.py) | ✅ | MJPEG relay; `make_source` selects Tello / URL stream / mock / disabled. |
-| [`server.py`](./app/server.py) | ✅ | FastAPI app: `/ws`, `/health`, `/video/{tello,mavic}`, broadcast loop. |
+| [`video.py`](./app/video.py) | ✅ | Frame source abstraction; `make_source` selects URL/file/device streams or empty source. |
+| [`server.py`](./app/server.py) | ✅ | FastAPI app: `/ws`, `/health`, leader/follower video endpoints, broadcast loop. |
 | [`clock.py`](./app/clock.py) | ✅ | Injectable clock (`RealClock` / `FakeClock`) for deterministic tests. |
-| [`mock_source.py`](./app/mock_source.py) | ✅ | Drifting demo entities for hardware-free UI dev (`USE_MOCK=1`). |
-| [`perception/`](./app/perception/README.md) | 🟡 | Mavic recon. `slam/` built (GPS-less monocular mapping); YOLO + fusion planned. |
-| [`follow/`](./app/follow/README.md) | ⬜ | Tello soldier-follow controller (AprilTag station-keep). The make-or-break piece. |
-| [`tello/`](./app/tello/README.md) | ⬜ | Tello transport (djitellopy wrapper + video grab). Consumed only by `follow/`. |
+| [`perception/`](./app/perception/README.md) | 🟡 | Mavic recon: SLAM, YOLO, depth, and fusion pipeline. |
+| [`follow/`](./app/follow/README.md) | 🟡 | Tello soldier-follow controller (AprilTag station-keep). |
+| [`tello/`](./app/tello/README.md) | 🟡 | Tello transport (djitellopy wrapper + video grab). Consumed by `follow/`. |
 
 ## Build notes
 

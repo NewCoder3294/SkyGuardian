@@ -99,7 +99,40 @@ class Health(BaseModel):
     t: float
 
 
-ServerMessage = Union[WorldSnapshot, MissionState, Health]
+class DetectionBox(BaseModel):
+    """One YOLO box in image-plane coords, normalised 0..1 against the source frame.
+
+    Position is centre + size in normalised units so the dashboard overlay scales
+    automatically regardless of source resolution. `label`, `confidence` mirror
+    the underlying YoloDetection.
+    """
+
+    label: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    cx: float = Field(ge=0.0, le=1.0)
+    cy: float = Field(ge=0.0, le=1.0)
+    w: float = Field(ge=0.0, le=1.0)
+    h: float = Field(ge=0.0, le=1.0)
+
+
+class Detections(BaseModel):
+    """A snapshot of the most recent YOLO detections on one video source.
+
+    `source` identifies the video stream the boxes belong to (`mavic` or `tello`)
+    so the dashboard overlay knows which `<img>` to draw on top of. `image_w/h`
+    are the source frame dimensions in pixels (advisory — the boxes are already
+    normalised).
+    """
+
+    type: Literal["detections"] = "detections"
+    source: str  # "mavic" | "tello"
+    boxes: list[DetectionBox]
+    image_w: int = 0
+    image_h: int = 0
+    t: float
+
+
+ServerMessage = Union[WorldSnapshot, MissionState, Health, Detections]
 
 
 # --- clients -> server ---

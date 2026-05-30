@@ -3,14 +3,15 @@ fastapi>=0.110
 uvicorn[standard]>=0.29
 pydantic>=2.6
 websockets>=12.0
+python-multipart>=0.0.9   # FastAPI file uploads (operator video source upload)
 
 # Perception — GPS-less monocular mapping (Track 2, built)
 numpy>=1.26
 opencv-python-headless>=4.9   # VO geometry + frame I/O (use opencv-python if you need GUI windows)
 pupil-apriltags>=1.0          # metric scale anchor + follow controller (Track 1)
 
-# Perception — added when YOLO lands:
-# ultralytics>=8.1
+# Perception — YOLO detection (local weights, no cloud)
+ultralytics>=8.1
 
-# Tello control + video relay (real source)
+# Track 1 robotics — Tello control + follow controller
 djitellopy>=2.5

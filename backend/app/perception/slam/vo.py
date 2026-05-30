@@ -21,6 +21,10 @@ from .backend import SlamBackend
 from .types import CameraModel, Frame, Landmark, Pose, Trajectory
 
 _MIN_MATCHES = 12
+# Median feature displacement (pixels) below which we assume the camera was
+# stationary between two frames. Monocular VO has no zero-motion detector by
+# default, so feature noise on a hovering drone accumulates into fake drift.
+_ZERO_MOTION_PX = 1.5
 
 
 # ---------------------------------------------------------------------------
@@ -52,10 +56,19 @@ def triangulate(
     K: np.ndarray, R: np.ndarray, t: np.ndarray, pts1: np.ndarray, pts2: np.ndarray
 ) -> np.ndarray:
     """Triangulate 3D points in camera-1 coordinates given the relative pose
-    (R, t) of camera 2 w.r.t. camera 1. Returns (N, 3) array."""
-    P1 = K @ np.hstack([np.eye(3), np.zeros((3, 1))])
-    P2 = K @ np.hstack([R, t.reshape(3, 1)])
-    pts4 = cv2.triangulatePoints(P1, P2, pts1.T.astype(np.float64), pts2.T.astype(np.float64))
+    (R, t) of camera 2 w.r.t. camera 1. Returns (N, 3) array. Returns an empty
+    (0, 3) array when there are too few correspondences."""
+    pts1 = np.asarray(pts1, dtype=np.float64)
+    pts2 = np.asarray(pts2, dtype=np.float64)
+    if pts1.ndim != 2 or pts1.shape[0] < 1 or pts1.shape != pts2.shape:
+        return np.empty((0, 3), dtype=np.float64)
+    P1 = (K @ np.hstack([np.eye(3), np.zeros((3, 1))])).astype(np.float64)
+    P2 = (K @ np.hstack([R, t.reshape(3, 1)])).astype(np.float64)
+    # cv2.triangulatePoints requires contiguous 2xN float64 matrices; a
+    # transposed view from numpy is non-contiguous and trips error -210.
+    pts1_2xN = np.ascontiguousarray(pts1.T)
+    pts2_2xN = np.ascontiguousarray(pts2.T)
+    pts4 = cv2.triangulatePoints(P1, P2, pts1_2xN, pts2_2xN)
     pts3 = (pts4[:3] / pts4[3]).T
     return pts3
 
@@ -149,6 +162,17 @@ class MonocularVO(SlamBackend):
 
             pts1 = np.float64([kp1[m.queryIdx].pt for m in matches])
             pts2 = np.float64([kp2[m.trainIdx].pt for m in matches])
+
+            # Zero-motion gate: if matched features barely moved, hold pose.
+            # Prevents a stationary hovering drone from appearing to drift on
+            # the map due to ORB feature jitter / triangulation noise.
+            median_disp = float(np.median(np.linalg.norm(pts2 - pts1, axis=1)))
+            if median_disp < _ZERO_MOTION_PX:
+                traj.poses.append(Pose(t=frames[i].t, R_wc=R_wc.copy(), position=C.copy()))
+                # Do not reset prev_common_pts3 — we want the next real motion
+                # step to scale relative to the prior reconstruction.
+                continue
+
             try:
                 R_rel, t_unit, inliers = estimate_relative_pose(K, pts1, pts2)
             except ValueError:

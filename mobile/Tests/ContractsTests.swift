@@ -32,10 +32,10 @@ final class ContractsTests: XCTestCase {
     }
 
     func testDecodeHealth() throws {
-        let json = #"{"type":"health","tello":"mock","mavic":"mock","perception":"mock","t":2.0}"#
+        let json = #"{"type":"health","tello":"connected","mavic":"streaming","perception":"running","t":2.0}"#
         let message = try JSONDecoder().decode(ServerMessage.self, from: Data(json.utf8))
         guard case .health(let h) = message else { return XCTFail("wrong variant") }
-        XCTAssertEqual(h.tello, "mock")
+        XCTAssertEqual(h.tello, "connected")
     }
 
     func testUnknownTypeIsTolerated() throws {

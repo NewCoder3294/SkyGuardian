@@ -1,106 +1,186 @@
-# SkyGuardian — Recon & Companion Drone System
+# SkyGuardian
 
-Offline-first situational awareness for dismounted soldiers. A piloted recon
-Mavic maps an area (local YOLO + SLAM); a Tello companion follows the soldier via
-an AprilTag; a native iOS app and a web dashboard read the same live world model,
-show the drone feeds, and talk to the system by voice + buttons. **No cloud, no
-internet, no GPS. Recon and situational awareness only — no engagement, ever.**
+Offline-first aerial recon and situational awareness for dismounted soldiers.
+A piloted **Leader** drone (DJI Mavic) streams video to a local brain that runs
+SLAM, monocular depth estimation, and an open-vocabulary detector; entities are
+projected into a metre-scale local frame and pushed to an operator dashboard
+and a tactical mobile app over WebSocket. A **Follower** drone (Tello) is
+paired with the mobile app for soldier station-keeping via AprilTag.
 
-See [`CLAUDE.md`](./CLAUDE.md) for the spec/hard constraints and
-[`docs/`](./docs/) for design + subsystem docs.
+**No cloud. No internet. No GPS. Recon and situational awareness only — no
+engagement, ever.** See [`CLAUDE.md`](./CLAUDE.md) for the hard constraints.
 
-## Status
+## Architecture
 
-| Subsystem | State |
-|---|---|
-| **Spine** — world model + WebSocket server + mission state machine | ✅ built, tested |
-| **GPS-less SLAM mapping** (monocular VO + AprilTag metric anchor) | ✅ built, tested — [`docs/SLAM.md`](./docs/SLAM.md) |
-| **Direct phone↔Tello video** — app joins the Tello WiFi, decodes H.264 on-device (no laptop) | ✅ built — [`mobile/README.md`](./mobile/README.md) |
-| **Video relay** — laptop re-streams Tello/Mavic feeds as MJPEG (dashboard path) | ✅ built, tested — [`docs/VIDEO.md`](./docs/VIDEO.md) |
-| **iOS app** (SwiftUI) — tactical map, live Tello feed, intent, voice | ✅ built, tested, on TestFlight — [`mobile/README.md`](./mobile/README.md) |
-| **On-device voice + vision** (Gemma 3n via Cactus) | 🟡 framework embedded (build 4); needs the model download — [`docs/VOICE.md`](./docs/VOICE.md) |
-| **Follow controller** (AprilTag station-keep, the make-or-break) | ⬜ not started |
-| **Perception** (YOLO detection → entities) | ⬜ not started |
-| **Web dashboard** | ⬜ not started — [`frontend/README.md`](./frontend/README.md) |
+```
+                 ┌── DJI Fly app (RTMP push) ──┐
+                 │                               │
+[ Mavic camera ──> rtmp://laptop:1935/leader ]   │
+                                                 ▼
+                  ┌──────── LAPTOP (the brain) ─────────┐
+                  │ MediaMTX (:1935 RTMP receiver)      │
+                  │   │                                  │
+                  │   ▼                                  │
+                  │ PerceptionPipeline (~3-5 Hz)         │
+                  │   ├─ MonocularVO (ORB SLAM core)     │
+                  │   ├─ AprilTag metric anchor          │
+                  │   ├─ YOLO-World v2 detector          │
+                  │   ├─ DepthAnything-V2 depth          │
+                  │   └─ Fusion → 3D entities            │
+                  │   │                                  │
+                  │   ▼                                  │
+                  │ WorldModel ── WS broadcast (10 Hz) ──┼──> Dashboard (Next.js)
+                  │   ▲                                  │     - Feed (+ overlay + console)
+                  │ MissionStateMachine                  │     - Map (3D Three.js)
+                  │   ▲                                  │     - Intel (threat board)
+                  │ FollowController ─ djitellopy ── Tello (AP)
+                  └──────────────────────────────────────┘
+                                  ▲
+                            intent (WS)
+                                  │
+                          Mobile app (SwiftUI)
+```
+
+Two contracts every subsystem meets at:
+- **Contract A — Entity:** the shared world-model data shape.
+  Python source of truth in `backend/app/contracts.py`; TS mirror in
+  `shared/contracts.ts`.
+- **Contract B — WebSocket protocol:**
+  - server → clients: `world_snapshot`, `mission_state`, `health`, `detections`
+  - clients → server: `intent`, `device_location`
+
+`stop` and `recall` are always-live and highest priority; the state machine
+honours them from any stage.
 
 ## Repo layout
 
 ```
-SkyGuardian/  (local: ~/recon-companion)
-├── CLAUDE.md              # the spec + hard constraints (source of truth)
-├── shared/contracts.ts   # Contract A+B as TS types (web client imports this)
-├── backend/              # LAPTOP BRAIN (Python)
+.
+├── CLAUDE.md                      # spec + hard constraints (source of truth)
+├── README.md                      # this file
+├── shared/
+│   └── contracts.ts               # TS mirror of Contract A + B
+├── backend/                       # the local brain (FastAPI + asyncio)
 │   ├── app/
-│   │   ├── contracts.py      # Contract A (Entity) + B (WS messages), Pydantic
-│   │   ├── world_model.py    # single source of truth; entity lifecycle/TTL
-│   │   ├── state_machine.py  # mission state machine + event log (arbiter)
-│   │   ├── ws_hub.py         # WebSocket fan-out
-│   │   ├── video.py          # MJPEG relay: Tello/Mavic/stream sources (dashboard path)
-│   │   ├── server.py         # FastAPI: /ws, /health, /video/{tello,mavic}
-│   │   ├── clock.py          # injectable clock (deterministic tests)
-│   │   ├── mock_source.py    # dev-only drifting demo entities (USE_MOCK, off by default)
-│   │   ├── perception/slam/  # GPS-less monocular mapping (built)
-│   │   ├── follow/           # Tello soldier-follow controller (not started)
-│   │   └── tello/            # Tello transport (not started)
-│   ├── tests/                # pytest (deterministic, FakeClock) — 34 tests
+│   │   ├── server.py              # WS hub, broadcast loop, MJPEG + single-JPEG endpoints
+│   │   ├── contracts.py           # Pydantic models for Contract A + B
+│   │   ├── world_model.py         # entity lifecycle / TTL
+│   │   ├── state_machine.py       # mission stages + event log
+│   │   ├── ws_hub.py              # WebSocket fan-out
+│   │   ├── video.py               # FrameSource + StreamVideoSource (cv2)
+│   │   ├── clock.py               # injectable clock (deterministic tests)
+│   │   ├── perception/
+│   │   │   ├── pipeline.py        # the live loop
+│   │   │   ├── yolo.py            # YOLO / YOLO-World detector wrapper
+│   │   │   ├── depth.py           # DepthAnything-V2 monocular depth
+│   │   │   ├── fusion.py          # YOLO box + SLAM pose (+ depth) → Entity
+│   │   │   └── slam/              # MonocularVO + AprilTag anchor + LocalMap
+│   │   ├── tello/
+│   │   │   ├── client.py          # djitellopy supervisor (single Tello owner)
+│   │   │   └── video.py           # Tello video → FrameSource
+│   │   └── follow/
+│   │       ├── apriltag.py        # soldier tag detection (bearing + distance)
+│   │       └── controller.py      # PD follow loop, RC commands, entity emission
+│   ├── tests/                     # 29 pytest cases, deterministic
 │   └── requirements.txt
-├── mobile/               # iOS app (Swift/SwiftUI, XcodeGen, no Expo)
-│   ├── Sources/              # app code (map, feed, voice, contracts)
-│   │   ├── TelloDirectStream.swift / TelloVideoView.swift  # direct phone↔Tello H.264 video
-│   │   ├── MJPEGView.swift        # decodes the laptop's MJPEG relay (dashboard-style path)
-│   │   ├── Cactus.swift / CactusService.swift              # on-device Gemma 3n bridge
-│   │   └── …                      # map, contracts, intent, voice, UI shell
-│   ├── Frameworks/           # cactus.xcframework (vendored, embedded in build 4)
-│   ├── Tests/                # XCTest — 15 tests
-│   └── project.yml           # XcodeGen project spec
-├── frontend/             # web dashboard (Next.js) — not started, README-only stub
-├── scripts/              # asc.py (App Store Connect API), bring-up helpers
-├── models/  captures/    # local weights / recorded media (git-ignored)
-└── docs/                 # SLAM.md, VIDEO.md, VOICE.md, design specs
+├── frontend/                      # operator dashboard (Next.js 14 + Tailwind)
+│   └── src/
+│       ├── app/                   # page + globals + favicon
+│       ├── components/
+│       │   ├── VideoFeed.tsx      # polled JPEG + bounding-box overlay
+│       │   ├── LocalMap3D.tsx     # Three.js / R3F 3D map
+│       │   ├── IntelPanel.tsx     # threat board
+│       │   ├── ConsolePanel.tsx   # rolling detection log
+│       │   ├── StatusBar.tsx      # link / leader / perception / world / det
+│       │   └── ThreatAlert.tsx    # bottom-right warning popup
+│       └── lib/                   # WS client, status tiers, threat list
+├── mobile/                        # SwiftUI tactical companion (iOS)
+├── models/                        # local weights — git-ignored
+├── captures/                      # recorded media for replay — git-ignored
+├── scripts/                       # bring-up + dev helpers
+└── docs/                          # design specs (SLAM, hardware notes)
 ```
 
-## The spine — two contracts everything meets at
+## Run the stack
 
-- **Contract A — Entity:** the shared world-model shape (`shared/contracts.ts` ↔
-  `backend/app/contracts.py` ↔ `mobile/Sources/Contracts.swift`).
-- **Contract B — WebSocket protocol:** `world_snapshot` / `mission_state` /
-  `health` (server→clients) and `intent` / `device_location` (clients→server).
+Three processes: MediaMTX (RTMP receiver), backend (brain), frontend (dashboard).
 
-Producers (SLAM, perception, follow) upsert entities; consumers (iOS app,
-dashboard) subscribe; the state machine arbitrates intent → Tello. `stop`/`recall`
-are always-live and highest priority. Clients **never** command the Tello directly.
+### 1. RTMP receiver
+```bash
+brew install mediamtx                                # one time
+mediamtx .context/mediamtx.yml                       # listens on :1935 path 'leader'
+```
 
-## Run the backend
-
+### 2. Backend
 ```bash
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements-dev.txt
-pytest                                   # 34 tests
-# real Tello feed (default), no mock in the path:
-USE_MOCK=0 TELLO_SOURCE=tello uvicorn app.server:app --host 0.0.0.0 --port 8011
-#   ws://0.0.0.0:8011/ws · http://localhost:8011/health · /video/tello · /video/mavic
+pip install -r requirements.txt                      # one time
+
+MAVIC_SOURCE=url:rtmp://localhost:1935/leader \
+YOLO_WEIGHTS=$PWD/../models/yolo/yolov8l-worldv2.pt \
+DEPTH_MODEL=depth-anything/Depth-Anything-V2-Small-hf \
+ANCHOR_TAG_SIZE_M=0.20 \
+PERCEPTION_FPS=3 \
+uvicorn app.server:app --host 0.0.0.0 --port 8001
 ```
 
-Env: `TELLO_SOURCE=tello|url:<stream>|mock` (default `tello`),
-`MAVIC_SOURCE=url:<rtsp/http>|...` (default disabled → empty feed),
-`USE_MOCK=1` injects drifting demo entities for UI dev (off by default).
+Environment knobs:
 
-## Build & ship the iOS app
+| Var | Default | Meaning |
+|---|---|---|
+| `MAVIC_SOURCE` | _(unset = no source)_ | `url:rtmp://…`, `file:/path.mp4`, or `device:0` |
+| `YOLO_WEIGHTS` | _(unset = SLAM-only)_ | path to a YOLOv8 `.pt`. `-world` weights enable open-vocab |
+| `YOLO_CLASSES` | defense vocab (21 classes) | comma-separated override for YOLO-World vocabulary |
+| `YOLO_IMGSZ` | `960` | inference resolution; bump for far-distance accuracy |
+| `YOLO_CONF` | `0.20` | confidence threshold |
+| `DEPTH_MODEL` | DepthAnything-V2-Small | HF model id, or `off` to use ground-plane fallback |
+| `DEPTH_SCALE` | `5.0` | inverse-depth → metres heuristic |
+| `ANCHOR_TAG_SIZE_M` | `0.20` | physical side length of the AprilTag |
+| `PERCEPTION_FPS` | `5` | perception loop rate |
+| `BROADCAST_HZ` | `10` | WS broadcast cadence |
+| `TELLO_RETRY_S` | `3` | Tello supervisor reconnect interval |
+
+### 3. Dashboard
+```bash
+cd frontend
+npm install                                          # one time
+npm run dev                                          # http://localhost:3001
+```
+
+Set `NEXT_PUBLIC_WS_URL=ws://<laptop-ip>:8001/ws` if hitting the dashboard from
+a phone on the LAN.
+
+## Perception stack — what's loaded
+
+| Subsystem | Implementation | Notes |
+|---|---|---|
+| **Visual odometry** | Pure-Python ORB + OpenCV essential-matrix VO with zero-motion gate | Drop-in `ORBSLAM3Runner` available if the C++ binary is built |
+| **Metric anchor** | AprilTag (tag36h11), PnP via `pupil-apriltags` | Two observations with parallax fix scale to metres |
+| **Object detection** | Ultralytics YOLO-World v2 (open-vocabulary) | 21-class defense vocab by default; CLIP text encoder |
+| **Depth** | DepthAnything-V2 via HuggingFace transformers | Cached locally; inference fully offline after first load |
+| **Tello follow** | djitellopy + PD station-keep on a soldier-worn AprilTag | Idle when no Tello on the network |
+
+All model weights are distributed out-of-band (see `models/yolo/README.md`).
+No model downloads at runtime once the cache is warm.
+
+## Testing
 
 ```bash
-cd mobile
-xcodegen generate
-xcodebuild test -scheme ReconCompanion -destination 'platform=iOS Simulator,name=iPhone 17'
+cd backend && source .venv/bin/activate
+pytest                  # 29 tests, deterministic (FakeClock), no hardware required
 ```
-The FEED tab streams the Tello directly — the phone joins the Tello WiFi and
-decodes its H.264 on-device, so the live camera needs **no laptop**. (The laptop's
-MJPEG relay still serves the dashboard and `/video/mavic`.) TestFlight ships via the
-App Store Connect API key (`scripts/asc.py` + the archive lane). Bundle id
-`com.nicolasdossantos.skyguardian`. See [`docs/MOBILE.md`](./docs/MOBILE.md) for the
-device + Tello-feed test walkthrough.
 
-## Hard constraints (do not violate)
-Offline-first · no GPS · recon/situational-awareness only (no engagement) ·
-single plain Tello (AP mode) · reimplement from prior approaches, don't copy
-wholesale. See `CLAUDE.md`.
+## What's deliberately not built yet
+
+- Voice intent (Cactus + Gemma on mobile)
+- Multi-view object triangulation (the principled successor to monocular depth)
+- ORB-SLAM3 C++ backend integration (drop-in via `ORB_SLAM3_ROOT` env)
+- Shared-map sync between Tello/mobile and the dashboard (the Follower feed
+  endpoint exists but is unwired)
+
+## Constraints
+
+Offline-first · no GPS · recon and situational awareness only (no engagement)
+· single plain Tello (AP mode) · no cloud calls at runtime. See `CLAUDE.md`
+for the full list.

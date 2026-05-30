@@ -17,8 +17,8 @@ for the spec + hard constraints.
   light mode (the tactical look is system-independent). ✅
 - [`ContentView.swift`](./ContentView.swift) — root layout: `StatusBar` ·
   MAP/FEED toggle · mission-link connect panel · voice bar · `ControlBar`. Owns the
-  `WorldClient` + `VoiceController`. `-demo` / `-feed` launch args (DEBUG) seed
-  sample data / point at the local backend. ✅
+  `WorldClient` + `VoiceController`. The DEBUG `-feed` launch arg opens straight
+  to FEED and points at the local backend. ✅
 
 ### Contracts + networking
 - [`Contracts.swift`](./Contracts.swift) — Swift mirror of **Contract A** (`Entity`,
@@ -30,8 +30,7 @@ for the spec + hard constraints.
 - [`WorldClient.swift`](./WorldClient.swift) — `@MainActor ObservableObject`,
   `URLSessionWebSocketTask`. Subscribes to the spine, publishes `entities`, `stage`,
   `lastError`, `health`, `connection`, and per-unit movement `trails` (soldier/drone,
-  jitter-filtered, capped at 80 pts). `send(_:)` delivers intent only. Includes
-  DEBUG `loadSampleData()`. ✅
+  jitter-filtered, capped at 80 pts). `send(_:)` delivers intent only. ✅
 
 ### Video
 Two independent paths; the FEED tab currently shows the **direct** one.

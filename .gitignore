@@ -27,6 +27,10 @@ captures/**/*.avi
 .idea/
 .vscode/
 
+# Conductor workspace scratch (attachments, pasted instructions, generated
+# AprilTags, MediaMTX config). Never commit — local-only working state.
+.context/
+
 # Xcode / iOS
 mobile/*.xcodeproj
 mobile/DerivedData/

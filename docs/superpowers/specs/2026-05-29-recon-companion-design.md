@@ -58,7 +58,7 @@ Python source of truth: `backend/app/contracts.py`. TS mirror: `shared/contracts
 |---|---|---|---|
 | 1 · Robotics | De-risk follow (standalone) | Wire follow → spine | Tune gains, harden loss/recall |
 | 2 · Brain | Spine + state machine | Perception (recorded clips) | Live Mavic + health |
-| 3 · Clients | Dashboard + fake injector | Mobile app + intent | Voice + polish |
+| 3 · Clients | Dashboard | Mobile app + intent | Voice + polish |
 
 **Checkpoints:** Day-1 Go/No-Go on the follow; Day-2 clean follow→hold→recall chain;
 Day-3 diagnosable per-stage failure view. **2-person fallback:** fold Track 3 into
@@ -68,7 +68,7 @@ Track 2; cut voice first.
 single-network fallback (laptop + phone both on the Tello AP).
 
 ## De-risking
-Mocks so no track is hardware-blocked: fake-entity injector (built, `USE_MOCK=1`),
+Earlier prototypes used hardware-free stand-ins so no track was blocked:
 recorded Mavic clips for perception, scripted intent sender for the state machine.
 
 ## Testing
@@ -78,6 +78,6 @@ tests green for the spine (world model lifecycle, state machine, contract valida
 ## What's built in v1
 The spine: contracts (A+B), world model with TTL lifecycle, mission state machine +
 event log, WS hub, FastAPI server with 10 Hz broadcast + validated intent intake,
-fake-entity injector, deterministic tests, shared TS types, full folder structure
-with per-folder READMEs. Verified: server boots, broadcasts mock entities, applies
+deterministic tests, shared TS types, full folder structure
+with per-folder READMEs. Verified: server boots, broadcasts entities, applies
 intent, rejects unknown commands, honors always-live stop.

@@ -1,214 +1,223 @@
-"""Video relay: the laptop owns the drone video sources and re-streams them to
-clients as MJPEG over HTTP. The phone never connects to the Tello directly — it
-reads the laptop's relay (honors the single-controller rule). The dashboard reads
-the Mavic relay the same way.
+"""Video source abstraction for the Mavic feed (and any other camera).
 
-Frame sources are pluggable: a MockCameraSource (synthetic, hardware-free dev) and,
-later, real Tello (djitellopy) / Mavic (server stream) sources behind the same
-FrameSource interface. Output is JPEG frames; the relay wraps them as multipart
-MJPEG so any browser/phone can render the stream.
+The perception pipeline reads JPEG bytes from a FrameSource. Source identity
+(RTMP URL, local file, USB device index) is configured via env vars at startup
+so the rest of the system never knows where pixels came from.
+
+Spec parsed from MAVIC_SOURCE:
+  - "url:rtmp://host/path"   → cv2.VideoCapture(url)
+  - "url:http://host/stream" → cv2.VideoCapture(url)
+  - "file:/path/to/clip.mp4" → cv2.VideoCapture(path)
+  - "device:0"               → cv2.VideoCapture(0)
+  - unset / empty            → NullSource (always returns None, no frames)
+
+All sources are best-effort and offline: cv2.VideoCapture decodes whatever
+ffmpeg/avfoundation/v4l backends are compiled in. They never reach the
+network beyond the configured URL.
 """
 from __future__ import annotations
 
-import asyncio
-import math
-import os
-import socket
 import threading
-import time
-from typing import AsyncIterator, Protocol
-
-import cv2
-import numpy as np
-
-from .clock import Clock, RealClock
-
-BOUNDARY = "frame"
+from pathlib import Path
+from typing import Optional, Protocol
 
 
 class FrameSource(Protocol):
-    def read_jpeg(self) -> bytes | None:
-        """Return the latest frame as JPEG bytes, or None if unavailable."""
-        ...
+    """Anything that can produce the latest frame as JPEG bytes on demand.
+
+    `start()` may be a no-op or may spin up a reader thread (for streams whose
+    backend buffers frames). `read_jpeg()` must be non-blocking-ish: callers
+    pace themselves at `PERCEPTION_FPS` and expect a sub-frame-interval return.
+    `None` means no frame is currently available.
+    """
+
+    def start(self) -> None: ...
+    def stop(self) -> None: ...
+    def read_jpeg(self) -> Optional[bytes]: ...
 
 
-class MockCameraSource:
-    """Synthetic FPV-style frame so the feed pipeline works with no drone.
-    Renders a horizon, a drifting target box, crosshair, and a label/timestamp."""
+class NullSource:
+    """No-op source: nothing ever ready. Used when MAVIC_SOURCE is unset."""
 
-    def __init__(self, label: str, clock: Clock | None = None, size: tuple[int, int] = (640, 480)) -> None:
-        self._label = label
-        self._clock = clock or RealClock()
-        self._w, self._h = size
+    def start(self) -> None: pass
+    def stop(self) -> None: pass
+    def read_jpeg(self) -> Optional[bytes]: return None
 
-    def read_jpeg(self) -> bytes | None:
-        t = self._clock.now()
-        img = np.full((self._h, self._w, 3), 22, np.uint8)  # near-black
-        # horizon band
-        cv2.rectangle(img, (0, self._h // 2), (self._w, self._h), (30, 38, 30), -1)
-        # drifting target box
-        cx = int(self._w / 2 + math.cos(t * 0.7) * self._w * 0.3)
-        cy = int(self._h / 2 + math.sin(t * 1.1) * self._h * 0.18)
-        cv2.rectangle(img, (cx - 26, cy - 26), (cx + 26, cy + 26), (80, 200, 120), 2)
-        # crosshair
-        c = (self._w // 2, self._h // 2)
-        cv2.line(img, (c[0] - 18, c[1]), (c[0] + 18, c[1]), (180, 180, 180), 1)
-        cv2.line(img, (c[0], c[1] - 18), (c[0], c[1] + 18), (180, 180, 180), 1)
-        # labels
-        cv2.putText(img, f"{self._label} - MOCK", (12, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 220, 200), 1)
-        cv2.putText(img, f"t={t:8.1f}", (12, self._h - 14), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (160, 160, 160), 1)
-        ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 70])
-        return buf.tobytes() if ok else None
+    @property
+    def is_streaming(self) -> bool: return False
 
 
-async def mjpeg_stream(source: FrameSource, fps: float = 20.0) -> AsyncIterator[bytes]:
-    """Yield a multipart MJPEG stream from a frame source. The (possibly blocking)
-    frame read + JPEG encode runs off the event loop so the server stays responsive."""
-    interval = 1.0 / fps
-    while True:
-        jpeg = await asyncio.to_thread(source.read_jpeg)
-        if jpeg is not None:
-            yield (
-                b"--" + BOUNDARY.encode() + b"\r\n"
-                b"Content-Type: image/jpeg\r\n"
-                b"Content-Length: " + str(len(jpeg)).encode() + b"\r\n\r\n"
-                + jpeg + b"\r\n"
-            )
-        await asyncio.sleep(interval)
+class SwitchableSource:
+    """Hot-swappable FrameSource. The perception pipeline + MJPEG endpoints
+    hold a reference to a single SwitchableSource; we mutate which inner
+    source it delegates to without rewiring those consumers.
 
+    Use cases: operator clicks "Upload video" → the laptop's RTMP receiver
+    pipe is replaced by a file-backed StreamVideoSource; clicking "RTMP"
+    restores the env-configured source. The active source's lifecycle (start/
+    stop) is managed here so consumers never have to know about the swap.
+    """
 
-class DisabledSource:
-    """No source configured -> no frames. Honest empty feed (not a mock)."""
+    def __init__(self, initial: "FrameSource", initial_kind: str = "rtmp", initial_label: str = "") -> None:
+        self._inner: "FrameSource" = initial
+        self._kind = initial_kind
+        self._label = initial_label
+        self._lock = threading.Lock()
+        self._started = False
 
-    def read_jpeg(self) -> bytes | None:
-        return None
+    # --- read path ----------------------------------------------------------
+
+    def read_jpeg(self) -> Optional[bytes]:
+        with self._lock:
+            inner = self._inner
+        return inner.read_jpeg()
+
+    @property
+    def is_streaming(self) -> bool:
+        with self._lock:
+            inner = self._inner
+        return bool(getattr(inner, "is_streaming", False))
+
+    # --- lifecycle ----------------------------------------------------------
+
+    def start(self) -> None:
+        with self._lock:
+            inner = self._inner
+            self._started = True
+        try:
+            inner.start()
+        except Exception:
+            pass
+
+    def stop(self) -> None:
+        with self._lock:
+            inner = self._inner
+            self._started = False
+        try:
+            inner.stop()
+        except Exception:
+            pass
+
+    # --- swap ---------------------------------------------------------------
+
+    def replace(self, new: "FrameSource", kind: str, label: str = "") -> None:
+        """Swap the inner source atomically. Best-effort stop the old source
+        AFTER the swap so reads briefly fall through to the new one; the new
+        source is started if the wrapper was already started."""
+        with self._lock:
+            old = self._inner
+            started = self._started
+            self._inner = new
+            self._kind = kind
+            self._label = label
+        if started:
+            try:
+                new.start()
+            except Exception:
+                pass
+        try:
+            old.stop()
+        except Exception:
+            pass
+
+    @property
+    def kind(self) -> str:
+        with self._lock:
+            return self._kind
+
+    @property
+    def label(self) -> str:
+        with self._lock:
+            return self._label
 
 
 class StreamVideoSource:
-    """Latest frame from any OpenCV-openable stream (RTSP/HTTP/MJPEG). Used for the
-    Mavic, whose video arrives via the existing server stream. `start()` opens the
-    capture (blocking) once at startup; read_jpeg is non-blocking after that."""
+    """cv2.VideoCapture-backed source with a background reader thread.
 
-    def __init__(self, url: str) -> None:
-        self._url = url
-        self._cap = None
-
-    def start(self) -> None:
-        cap = cv2.VideoCapture(self._url)
-        if cap.isOpened():
-            self._cap = cap
-
-    def read_jpeg(self) -> bytes | None:
-        if self._cap is None or not self._cap.isOpened():
-            return None
-        ok, frame = self._cap.read()
-        if not ok:
-            return None
-        ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
-        return buf.tobytes() if ok else None
-
-
-class TelloVideoSource:
-    """Live Tello camera. The laptop is the sole Tello controller; this ingests its
-    video and the relay re-streams it to the phone.
-
-    Uses the raw Tello SDK over UDP for control (command/streamon + keepalive) and
-    OpenCV/ffmpeg to decode the H.264 video stream — deliberately NOT djitellopy,
-    which pulls in PyAV and conflicts with OpenCV's bundled ffmpeg dylibs. `start()`
-    sends streamon and opens the stream; a background thread keeps the latest frame
-    fresh. read_jpeg is non-blocking and returns None until the first frame decodes.
+    The reader keeps the *latest* decoded frame; older frames are dropped. This
+    matches what the perception loop wants: it samples at 5 Hz from a stream
+    that may run at 20–30 Hz, and we don't want to play catch-up on stale frames.
     """
 
-    TELLO_IP = "192.168.10.1"
-    CMD_PORT = 8889
-    VIDEO_URL = "udp://@0.0.0.0:11111?overrun_nonfatal=1&fifo_size=50000000"
-
-    def __init__(self) -> None:
-        self._cap = None
-        self._sock = None
-        self._frame = None
+    def __init__(self, spec: str | int, jpeg_quality: int = 80) -> None:
+        # Late import so the module is importable without cv2 in test envs.
+        import cv2  # noqa: PLC0415
+        self._cv2 = cv2
+        self._spec = spec
+        self._jpeg_quality = int(jpeg_quality)
+        self._cap = None  # type: Optional["cv2.VideoCapture"]
         self._lock = threading.Lock()
-        self._running = False
-
-    def _send(self, cmd: str) -> None:
-        if self._sock is not None:
-            self._sock.sendto(cmd.encode(), (self.TELLO_IP, self.CMD_PORT))
+        self._latest_jpeg: Optional[bytes] = None
+        self._thread: Optional[threading.Thread] = None
+        self._stop = threading.Event()
 
     def start(self) -> None:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            # Bind to the Tello-subnet interface IP when set (per CLAUDE.md routing),
-            # not 0.0.0.0. Defaults to "" for back-compat; set TELLO_BIND_IP to harden.
-            sock.bind((os.environ.get("TELLO_BIND_IP", ""), self.CMD_PORT))
-            self._sock = sock
-            self._send("command")
-            time.sleep(0.5)
-            self._send("streamon")
-            time.sleep(2.0)
-            self._cap = cv2.VideoCapture(self.VIDEO_URL, cv2.CAP_FFMPEG)
-        except Exception:
-            sock.close()
-            self._sock = None
-            raise
-        self._running = True
-        threading.Thread(target=self._reader, daemon=True).start()
-        threading.Thread(target=self._keepalive, daemon=True).start()
+        if self._thread is not None:
+            return
+        self._cap = self._cv2.VideoCapture(self._spec)
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._reader, name="video-reader", daemon=True)
+        self._thread.start()
 
     def stop(self) -> None:
-        """Release the socket, capture, and stop the worker threads."""
-        self._running = False
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+            self._thread = None
         if self._cap is not None:
-            try:
-                self._cap.release()
-            except Exception:
-                pass
+            self._cap.release()
             self._cap = None
-        if self._sock is not None:
-            try:
-                self._sock.close()
-            except Exception:
-                pass
-            self._sock = None
+
+    def read_jpeg(self) -> Optional[bytes]:
+        with self._lock:
+            return self._latest_jpeg
+
+    @property
+    def is_streaming(self) -> bool:
+        """True only once at least one frame has actually been decoded — the
+        opaque `_cap` object exists even when the RTMP URL can't connect, so
+        `_cap is not None` is a false positive. The reader only fills
+        `_latest_jpeg` after a successful read+encode."""
+        with self._lock:
+            return self._latest_jpeg is not None
 
     def _reader(self) -> None:
-        while self._running and self._cap is not None:
-            ok, frame = self._cap.read()
-            if ok and frame is not None:
-                with self._lock:
-                    self._frame = frame
-                time.sleep(0.005)  # cap the reader; we only need the latest frame
-            else:
-                time.sleep(0.01)  # no keyframe yet; don't busy-spin
-
-    def _keepalive(self) -> None:
-        # The Tello leaves SDK mode (and stops streaming) without periodic commands.
-        while self._running:
-            time.sleep(5.0)
-            self._send("command")
-
-    def read_jpeg(self) -> bytes | None:
-        with self._lock:
-            frame = self._frame
-        if frame is None:
-            return None
-        ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
-        return buf.tobytes() if ok else None
+        cv2 = self._cv2
+        encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), self._jpeg_quality]
+        while not self._stop.is_set():
+            cap = self._cap
+            if cap is None or not cap.isOpened():
+                self._stop.wait(0.25)
+                continue
+            ok, frame = cap.read()
+            if not ok or frame is None:
+                # End-of-file for files; transient hiccup for streams. Brief pause.
+                self._stop.wait(0.05)
+                continue
+            ok, buf = cv2.imencode(".jpg", frame, encode_params)
+            if not ok:
+                continue
+            with self._lock:
+                self._latest_jpeg = buf.tobytes()
 
 
-def make_source(spec: str, label: str, clock: Clock | None = None) -> FrameSource:
-    """Select a frame source from a spec string:
-      'tello'      -> live Tello via djitellopy (the phone feed)
-      'url:<URL>'  -> any OpenCV stream (Mavic server stream / RTSP / HTTP)
-      'mock'       -> synthetic frames (explicit opt-in for hardware-free UI dev)
-      anything else / unset -> DisabledSource (honest empty feed, no mock)
-    """
-    if spec == "tello":
-        return TelloVideoSource()
-    if spec.startswith("url:"):
-        return StreamVideoSource(spec[len("url:"):])
-    if spec == "mock":
-        return MockCameraSource(label, clock=clock)
-    return DisabledSource()
-
-
-MJPEG_MEDIA_TYPE = f"multipart/x-mixed-replace; boundary={BOUNDARY}"
+def make_source(spec: Optional[str]) -> FrameSource:
+    """Build a FrameSource from an env-style spec. Returns NullSource for unset."""
+    if not spec:
+        return NullSource()
+    if ":" not in spec:
+        # Bare path or URL — best-effort treat as a stream target.
+        return StreamVideoSource(spec)
+    kind, _, value = spec.partition(":")
+    kind = kind.lower()
+    if kind == "url":
+        return StreamVideoSource(value)
+    if kind == "file":
+        path = Path(value).expanduser()
+        return StreamVideoSource(str(path))
+    if kind == "device":
+        try:
+            return StreamVideoSource(int(value))
+        except ValueError as exc:
+            raise ValueError(f"device spec must be an integer index, got {value!r}") from exc
+    raise ValueError(f"unknown video source kind {kind!r} in {spec!r}")
