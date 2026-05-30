@@ -23,8 +23,7 @@ import {
 } from "@/lib/playback";
 import type { ConnectionState, DetectionEvent, DetectionLayer } from "@/lib/useWorldClient";
 import { useWorldClient } from "@/lib/useWorldClient";
-
-const DEFAULT_WS = "ws://localhost:8000/ws";
+import { resolveWsUrl } from "@/lib/wsConfig";
 
 type Tab = "feed" | "map" | "intel";
 
@@ -35,10 +34,7 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 export default function Page() {
-  const wsUrl = useMemo(() => {
-    const override = process.env.NEXT_PUBLIC_WS_URL;
-    return override && override.length > 0 ? override : DEFAULT_WS;
-  }, []);
+  const wsUrl = useMemo(() => resolveWsUrl(process.env.NEXT_PUBLIC_WS_URL), []);
 
   const leaderSrc = useMemo(() => httpFromWs(wsUrl, "/video/leader.jpg"), [wsUrl]);
   const apiBase = useMemo(() => httpFromWs(wsUrl, ""), [wsUrl]);
@@ -185,40 +181,54 @@ export default function Page() {
             Operator
           </span>
         </div>
-        <div className="flex items-center gap-3 border border-border-strong bg-surface-elevated px-4 py-1.5">
-          <span className="h-1.5 w-1.5 rounded-full bg-ok shadow-glow-cyan" aria-hidden />
-          <span className="font-mono text-[9px] uppercase tracking-[0.3em] text-text-dim">Z</span>
-          <Clock />
+        <div className="flex items-center gap-5">
+          <div className="hidden lg:block">
+            <StatusBar
+              connection={effectiveConnection}
+              health={effectiveHealth}
+              entityCount={effectiveOpEntities.length}
+              detectionCount={detectionCount}
+            />
+          </div>
+          <span className="hidden h-5 w-px bg-border lg:block" aria-hidden />
+          <div className="flex items-center gap-3 border border-border-strong bg-surface-elevated px-4 py-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-ok shadow-glow-cyan" aria-hidden />
+            <span className="font-mono text-[9px] uppercase tracking-[0.3em] text-text-dim">Z</span>
+            <Clock />
+          </div>
         </div>
       </header>
 
-      <StatusBar
-        connection={effectiveConnection}
-        lastError={lastError}
-        health={effectiveHealth}
-        entityCount={effectiveOpEntities.length}
-        detectionCount={detectionCount}
-      />
+      {lastError && (
+        <div className="flex items-center gap-2 border-b border-fail/40 bg-fail/10 px-6 py-1 font-mono text-[10px] uppercase tracking-[0.2em] text-fail">
+          ▲ Fault: {lastError}
+        </div>
+      )}
 
-      <nav className="flex items-stretch gap-0 border-b border-border bg-surface/60 px-4">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            className={`relative -mb-px border-b-2 px-5 py-2.5 font-sans text-[12px] font-semibold uppercase tracking-[0.25em] transition-colors ${
-              tab === t.id
-                ? "border-accent text-accent"
-                : "border-transparent text-text-dim hover:text-text-muted"
-            }`}
-          >
-            {tab === t.id && (
-              <span aria-hidden className="mr-2 text-text-dim">▸</span>
-            )}
-            {t.label}
-          </button>
-        ))}
-      </nav>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 border-b border-border bg-surface/60 px-4">
+        <nav className="flex items-stretch gap-0">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`relative -mb-px border-b-2 px-5 py-2.5 font-sans text-[12px] font-semibold uppercase tracking-[0.25em] transition-colors ${
+                tab === t.id
+                  ? "border-accent text-accent"
+                  : "border-transparent text-text-dim hover:text-text-muted"
+              }`}
+            >
+              {tab === t.id && (
+                <span aria-hidden className="mr-2 text-text-dim">▸</span>
+              )}
+              {t.label}
+            </button>
+          ))}
+        </nav>
+        {tab === "feed" && (
+          <SourceSelector apiBase={apiBase} onState={onSource} />
+        )}
+      </div>
 
       <ThreatAlert detections={effectiveDetections} />
 
@@ -226,7 +236,6 @@ export default function Page() {
         <section className="flex min-h-0 flex-1 flex-col">
           {tab === "feed" && (
             <div className="flex min-h-0 flex-1 flex-col">
-              <SourceSelector apiBase={apiBase} onState={onSource} />
               <div className="flex min-h-0 flex-1">
                 <div className="flex min-w-0 flex-1">
                   {isPlayback ? (

@@ -13,19 +13,20 @@ import {
 
 interface Props {
   connection: ConnectionState;
-  lastError: string | null;
   health: Health | null;
   entityCount: number;
   detectionCount: number;
 }
 
 /**
- * Read-only telemetry strip. Every channel is binary: ONLINE (green) or
- * OFFLINE (red) — no intermediate states. The eye doesn't have to think.
+ * Compact telemetry readout for the header. Every channel is binary: ONLINE
+ * (green) or OFFLINE (red) — the dot carries the state so the eye doesn't have
+ * to read. Lives inline next to the clock rather than as its own band; the
+ * fault line is surfaced separately by the page so a healthy system stays at
+ * two header rows.
  */
 export function StatusBar({
   connection,
-  lastError,
   health,
   entityCount,
   detectionCount,
@@ -35,86 +36,48 @@ export function StatusBar({
   const percT = perceptionTier(health?.perception);
 
   return (
-    <div className="border-b border-border bg-surface/50 px-5 py-2.5 backdrop-blur-sm">
-      <div className="flex flex-wrap items-stretch gap-0">
-        <SystemChannel label="Link" value={tierLabel(linkT)} tier={linkT} />
-        <SystemChannel label="Leader" value={tierLabel(leaderT)} tier={leaderT} />
-        <SystemChannel label="Perception" value={tierLabel(percT)} tier={percT} />
-
-        <span className="mx-3 my-1 w-px bg-border" aria-hidden />
-
-        <CountChannel label="Tracked" value={entityCount} />
-        <CountChannel label="In Frame" value={detectionCount} />
+    <div className="flex items-center gap-4 font-mono">
+      <div className="flex items-center gap-3.5">
+        <Channel label="Link" tier={linkT} />
+        <Channel label="Leader" tier={leaderT} />
+        <Channel label="Perception" tier={percT} />
       </div>
-      {lastError && (
-        <div className="mt-2 inline-flex items-center gap-2 border border-fail/60 bg-fail/10 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-fail">
-          ▲ Fault: {lastError}
-        </div>
-      )}
+      <span className="h-4 w-px bg-border" aria-hidden />
+      <div className="flex items-center gap-3.5">
+        <Count label="Trk" value={entityCount} />
+        <Count label="Frm" value={detectionCount} />
+      </div>
     </div>
   );
 }
 
-function SystemChannel({
-  label,
-  value,
-  tier,
-}: {
-  label: string;
-  value: string;
-  tier: StatusTier;
-}) {
-  const isOk = tier === "ok";
+function Channel({ label, tier }: { label: string; tier: StatusTier }) {
   return (
-    <div
-      className={`-ml-px flex items-center gap-2.5 border px-3 py-1.5 first:ml-0 ${
-        isOk ? "border-ok/40 bg-ok/[0.06]" : "border-fail/40 bg-fail/[0.06]"
-      }`}
+    <span
+      className="flex items-center gap-1.5"
+      title={`${label}: ${tierLabel(tier)}`}
     >
-      <Dot tier={tier} />
-      <div className="flex flex-col leading-tight">
-        <span className="font-mono text-[9px] uppercase tracking-[0.25em] text-text-dim">
-          {label}
-        </span>
-        <span
-          className={`font-mono text-[12px] font-semibold tracking-wide ${
-            isOk ? "text-ok" : "text-fail"
-          }`}
-        >
-          {value}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function CountChannel({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="-ml-px flex items-center gap-2.5 border border-border bg-surface-elevated px-3 py-1.5 first:ml-0">
-      <div className="flex flex-col leading-tight">
-        <span className="font-mono text-[9px] uppercase tracking-[0.25em] text-text-dim">
-          {label}
-        </span>
-        <span className="font-mono text-[13px] font-semibold tabular-nums text-accent">
-          {value.toString().padStart(2, "0")}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function Dot({ tier }: { tier: StatusTier }) {
-  const isLive = tier === "ok";
-  return (
-    <span className="relative inline-flex h-2.5 w-2.5 items-center justify-center" aria-hidden>
-      {isLive && (
-        <span className={`absolute h-2.5 w-2.5 rounded-full ${dotClass(tier)} opacity-50 animate-ping`} />
-      )}
+      <span className={`h-1.5 w-1.5 rounded-full ${dotClass(tier)}`} aria-hidden />
       <span
-        className={`relative h-2.5 w-2.5 rounded-full ${dotClass(tier)} ${
-          isLive ? "shadow-glow-cyan" : ""
+        className={`text-[10px] uppercase tracking-[0.2em] ${
+          tier === "ok" ? "text-text-muted" : "text-fail"
         }`}
-      />
+      >
+        {label}
+      </span>
+    </span>
+  );
+}
+
+function Count({ label, value }: { label: string; value: number }) {
+  return (
+    <span className="flex items-baseline gap-1.5">
+      <span className="text-[10px] uppercase tracking-[0.2em] text-text-dim">
+        {label}
+      </span>
+      <span className="text-[12px] font-semibold tabular-nums text-accent">
+        {value.toString().padStart(2, "0")}
+      </span>
     </span>
   );
 }

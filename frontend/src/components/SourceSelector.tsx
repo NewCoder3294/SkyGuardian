@@ -167,7 +167,7 @@ export function SourceSelector({ apiBase, onState }: Props) {
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-border bg-surface/60 px-4 py-2.5">
+    <div className="flex flex-wrap items-center justify-end gap-2 py-2">
       <div className="flex items-center gap-2 border border-border bg-surface-elevated px-3 py-1.5">
         <span
           className={`inline-block h-1.5 w-1.5 rounded-full ${
@@ -187,7 +187,7 @@ export function SourceSelector({ apiBase, onState }: Props) {
         </span>
       )}
 
-      <div className="ml-auto flex items-stretch gap-0">
+      <div className="flex items-stretch gap-0">
         {/* RTMP — segmented-control style. Pressed (armed) when active. */}
         <button
           type="button"
