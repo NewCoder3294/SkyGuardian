@@ -78,3 +78,30 @@ def test_stream_source_start_does_not_block_on_slow_capture_open():
         assert open_started.wait(timeout=1)
     finally:
         source.stop()
+
+
+def test_stream_source_goes_offline_when_publisher_stops():
+    """A cached jpeg must NOT keep the source reporting `is_streaming` (and
+    feeding the perception loop) forever after the publisher drops. Otherwise
+    the dashboard shows a frozen frame while perception broadcasts empty boxes,
+    and the operator can't tell the feed is dead."""
+    source = StreamVideoSource.__new__(StreamVideoSource)
+    source._cv2 = None  # not used in this test
+    source._spec = "rtmp://127.0.0.1:1935/live"
+    source._jpeg_quality = 80
+    source._cap = None
+    source._lock = threading.Lock()
+    source._latest_jpeg = None
+    source._latest_t = 0.0
+    source._thread = None
+    source._stop = threading.Event()
+
+    source._latest_jpeg = b"\xff\xd8\xff"  # any JPEG-ish bytes
+    source._latest_t = time.monotonic()
+    assert source.is_streaming is True
+    assert source.read_jpeg() == b"\xff\xd8\xff"
+
+    # Backdate the last-decode timestamp past the freshness window.
+    source._latest_t = time.monotonic() - (source._FRESH_WINDOW_S + 0.5)
+    assert source.is_streaming is False
+    assert source.read_jpeg() is None

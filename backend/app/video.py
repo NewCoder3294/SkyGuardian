@@ -18,6 +18,7 @@ network beyond the configured URL.
 from __future__ import annotations
 
 import threading
+import time
 from pathlib import Path
 from typing import Optional, Protocol
 
@@ -139,6 +140,14 @@ class StreamVideoSource:
     that may run at 20–30 Hz, and we don't want to play catch-up on stale frames.
     """
 
+    # If the reader hasn't decoded a fresh frame in this window, treat the
+    # source as dead. Without this, an RTMP publisher that disconnects leaves
+    # the last decoded JPEG cached forever — leader.jpg keeps serving it,
+    # `is_streaming` reports True, but perception sees the same frame on every
+    # tick and the dashboard can't tell the feed has dropped. Tuned to outlive
+    # one perception interval at 5 Hz (200 ms) plus a couple of RTMP hiccups.
+    _FRESH_WINDOW_S = 3.0
+
     def __init__(self, spec: str | int, jpeg_quality: int = 80) -> None:
         # Late import so the module is importable without cv2 in test envs.
         import cv2  # noqa: PLC0415
@@ -148,6 +157,7 @@ class StreamVideoSource:
         self._cap = None  # type: Optional["cv2.VideoCapture"]
         self._lock = threading.Lock()
         self._latest_jpeg: Optional[bytes] = None
+        self._latest_t: float = 0.0  # monotonic timestamp of last successful decode
         self._thread: Optional[threading.Thread] = None
         self._stop = threading.Event()
 
@@ -169,16 +179,24 @@ class StreamVideoSource:
 
     def read_jpeg(self) -> Optional[bytes]:
         with self._lock:
+            if self._latest_jpeg is None:
+                return None
+            if time.monotonic() - self._latest_t > self._FRESH_WINDOW_S:
+                return None
             return self._latest_jpeg
 
     @property
     def is_streaming(self) -> bool:
-        """True only once at least one frame has actually been decoded — the
-        opaque `_cap` object exists even when the RTMP URL can't connect, so
-        `_cap is not None` is a false positive. The reader only fills
-        `_latest_jpeg` after a successful read+encode."""
+        """True only when a fresh frame has been decoded within the freshness
+        window. The opaque `_cap` exists even when the RTMP URL can't connect,
+        so `_cap is not None` is a false positive; and once a publisher drops,
+        `_latest_jpeg` would otherwise stay populated forever, lying about a
+        live stream. Pairing freshness with the latest-frame cache lets the
+        dashboard correctly fall back to its 'feed offline' state."""
         with self._lock:
-            return self._latest_jpeg is not None
+            if self._latest_jpeg is None:
+                return False
+            return time.monotonic() - self._latest_t <= self._FRESH_WINDOW_S
 
     def _reader(self) -> None:
         cv2 = self._cv2
@@ -224,6 +242,7 @@ class StreamVideoSource:
                     continue
                 with self._lock:
                     self._latest_jpeg = buf.tobytes()
+                    self._latest_t = time.monotonic()
         finally:
             cap = self._cap
             self._cap = None
