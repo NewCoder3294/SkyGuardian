@@ -80,10 +80,18 @@ and are sent directly to the Tello over UDP. Moves and rotations take a magnitud
 function with no `telloCommand` (returns nil) — "track that boat" / "lock on"
 engages the on-device visual tracker (`ObjectTracker`/`FollowCoordinator`) rather
 than issuing a move; `ContentView` special-cases it before the generic flight path.
+Like "follow me", a `track` from disarmed takes off and then **hovers at the airborne
+target-confirm gate** — the operator taps CONFIRM in the feed before any tracking
+motion; re-saying "track" while already armed just re-locks the centered object.
 
 Mission (routed to the laptop brain over the WS, which owns the SLAM/AprilTag autonomy):
 `follow_me`, `hold`, `recall`, `stop`. These map onto the wire `Command` vocabulary via
-`DroneFunction.missionCommand`.
+`DroneFunction.missionCommand`. Note the live FEED arbiter (`ContentView.handle`)
+special-cases `follow_me`: from disarmed it takes off the phone-flown Tello and enters
+the **airborne target-confirm gate** (hover + lock box) — no follow/track motion until
+the operator taps CONFIRM; said again after a manual takeover it just resumes (the prior
+confirmation carries over, no re-confirm). `hold` / `recall` / `stop` still go to the
+laptop over the WS.
 
 `DroneIntent.match` (the live path) resolves both classes from keywords, priority-ordered
 so failsafe/mission phrases win inside longer utterances and compound phrases

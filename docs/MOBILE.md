@@ -17,15 +17,21 @@ it's on:
 
 - **MAP**: renders the live world model — entities + movement trails — and sends
   **mission intent** (`follow_me` / `hold` / `recall` / `stop`) to the laptop over a
-  `/ws` WebSocket. It never commands the Tello on this path. Two sources of map data are
+  `/ws` WebSocket. The laptop-routed `ControlBar` (FOLLOW / HOLD / RECALL / STOP →
+  `client.send`) lives only on this tab; it is hidden on FEED, where the phone flies the
+  Tello directly. The phone also publishes `follow_state` here
+  (`WorldClient.sendFollowState`, wired via `ContentView.publishFollow`) carrying the
+  Tello's relative range/bearing/phase so the laptop dashboard can render its follow
+  inset. It never commands the Tello on this path. Two sources of map data are
   merged: the laptop world model (`WorldClient`, when a mission link is connected) **and**
   a fully on-device, GPS-anchored phone-side fix (`Localizer`) computed from the AprilTag
   follow loop — so the operator, the drone, and their trails plot even with no laptop in
   the loop. Three map modes: **2D / 3D** ride on an OpenStreetMap raster basemap (anchored
   to the device location), **TAC** is the offline, GPS-less range/bearing tactical plot.
 - **FEED** (direct phone↔Tello, no laptop): joins the Tello AP, shows the live H.264
-  camera, and runs an **autonomous on-device follow loop** — takeoff, station-keep on the
-  target, hover/land when lost. Two follow modes:
+  camera, and runs an **autonomous on-device follow loop** — takeoff, **airborne
+  target-confirm** (hover + lock box, operator taps CONFIRM before any motion),
+  station-keep on the target, hover/land when lost. Two follow modes:
   - **FOLLOW TAG** — AprilTag (tag36h11) station-keeping on the soldier's hat tag.
   - **TRACK** — tag-free visual tracking: lock onto whatever the operator has centered
     ("track that boat") via Vision saliency + `VNTrackObjectRequest`, then hold its
@@ -125,11 +131,17 @@ The simplest path: only the **iPhone** on the **Tello's WiFi AP** (`TELLO-XXXXXX
 
 1. Power the Tello, join its WiFi on the phone.
 2. Open SkyGuardian → tap **FEED** → live Tello camera appears (`● TELLO LIVE`).
-3. **FOLLOW TAG** (or **TRACK**) → confirmation dialog → takeoff + station-keeping. The
-   on-device follow loop holds standoff (default 2 m, `FollowConfig.targetDistance`),
-   hovers when the target is briefly lost, and lands automatically if it stays lost past
-   the lost-land timeout. **STOP · LAND** ends it; the LAND button in the voice bar and
-   an `emergency` voice verb (motor cut, no land) are also wired through the same arbiter.
+3. **FOLLOW TAG** (or **TRACK**) → confirmation dialog → takeoff. The drone then
+   **hovers** (no follow/track motion) and draws the lock box for an **airborne
+   target-confirm**: the in-feed `confirmBar` ("TARGET ACQUIRED — CONFIRM?") asks the
+   operator to approve the right target. Tap **CONFIRM** to release the loop, or
+   **ABORT · LAND** to bail. If no one confirms within 30 s (`confirmTimeout`) the drone
+   auto-lands rather than hover forever. After CONFIRM the on-device follow loop holds
+   standoff (default 2 m, `FollowConfig.targetDistance`), hovers when the target is
+   briefly lost, and lands automatically if it stays lost past the lost-land timeout.
+   **STOP · LAND** ends it; the LAND button in the voice bar and an `emergency` voice
+   verb (motor cut, no land) are also wired through the same arbiter. Resuming after a
+   manual/voice takeover keeps the prior confirmation — no re-confirm.
 
 The phone owns the Tello control channel directly here. `TelloCommander` (the single
 owner of the channel) sends SDK commands + keepalive over UDP `192.168.10.1:8889`;
@@ -138,7 +150,13 @@ units, and decodes via VideoToolbox both to the on-screen `AVSampleBufferDisplay
 and (tapped) to CVPixelBuffers for AprilTag/track detection. The follow loop
 (`FollowCoordinator`) runs detection on its own queue (~10 Hz cap) and streams `rc` stick
 commands at ~15 Hz on a separate queue; a takeoff-settle delay holds off follow `rc` until
-the climb finishes.
+the climb finishes. Its `Phase` is `disarmed → searching → confirming → following → lost`
+(plus `manual` on a voice takeover). After takeoff it gates motion behind a `confirmed`
+flag: the loop hovers in `.confirming`/`.searching` until `confirmTarget()` is called.
+When the climb settles it clears the last lock (and, in TRACK mode, resets the visual
+tracker) so it **re-locks on the hover-height view** — the ground-level lock taken at arm
+time may not survive the climb, so the confirm reflects what the drone actually sees at
+hover.
 
 ## Device test — MAP + mission link (with the laptop)
 
@@ -186,8 +204,10 @@ when standalone:
 
 `ContentView.handle(_:)` is the single drone arbiter for resolved voice actions:
 
-- `follow_me` → start following (takeoff) when disarmed, else resume after a manual takeover.
-- `track` → start tag-free tracking when disarmed, else re-lock the centered object.
+- `follow_me` → start following (takeoff → hover → CONFIRM gate) when disarmed, else
+  resume after a manual takeover (resume keeps the prior confirmation — no re-confirm).
+- `track` → start tag-free tracking (takeoff → hover → CONFIRM gate) when disarmed, else
+  re-lock the centered object.
 - `emergency` → cut motors (no land) — always wins.
 - `land` → land and disarm.
 - `stop` → stop the follow loop / hover, and send a mission `stop` to the laptop if connected.

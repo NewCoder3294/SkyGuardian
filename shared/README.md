@@ -59,11 +59,28 @@ highest priority, honored from any stage (see `PRIORITY_COMMANDS` in
   normalised image-plane units (0..1), so the dashboard overlay scales to any
   source resolution; `image_w/h` are advisory pixel dimensions (Python ints,
   default `0`).
+- `follow_state { active, phase, distance_m, bearing_deg, source, t }` — the
+  companion Tello's position **relative to the soldier**, for a self-contained
+  follow inset. NOT in the SLAM map frame: the phone's follow frame and the Mavic
+  SLAM frame aren't co-registered, so this carries only range + bearing, never
+  absolute map coordinates. `active` is true when the drone is airborne under
+  follow control; `phase` ∈ `disarmed · searching · confirming · following · lost
+  · manual · stale`; `distance_m` is the soldier → Tello range in metres (bounded
+  `0..200`); `bearing_deg` is the Tello bearing relative to the soldier
+  (`-360..360`); `source` is advisory (defaults `"phone"`, not trusted for any
+  decision). Python rejects NaN/inf (`allow_inf_nan=False`) so a malformed payload
+  can't poison the render. This message is *bidirectional* — see below.
 
 **clients → server** (`ClientMessage`):
 
 - `intent { command, source, t }` — `source` = `"phone"` | `"dashboard"`.
 - `device_location { position, source, t }` — `source` = `"phone"`.
+- `follow_state { … }` — same shape as above. The **phone** runs the follow loop
+  and publishes this to the laptop; the laptop validates it (`parse_client_message`
+  accepts `follow_state`) and rebroadcasts it to the dashboard, so the one message
+  flows phone→laptop then laptop→dashboard. The phone only ever sends the five live
+  phases; `stale` is server-injected when the phone's stream ages out
+  (`_FOLLOW_STALE_S` fail-stale TTL in `server.py`).
 
 Each message is discriminated on the `type` field. This contract carries only
 **mission-level** intent (`hold` / `recall` / `follow_me` / `stop`) and device
@@ -83,10 +100,18 @@ the world model, not a command relayed to the drone.
   struct (see below), so they are never decoded there.
 - **Swift mirror is partial on the server side.** `ServerMessage` in
   `Contracts.swift` decodes `world_snapshot` / `mission_state` / `health` and
-  folds everything else (including `detections`) into `.unknown(type)` — there is
-  no Swift `Detections` struct. The phone client doesn't render detection
-  overlays, so this is intentional, not drift. If the phone ever needs boxes, add
-  the struct + a `case "detections"` there.
+  folds everything else (including `detections` and `follow_state`) into
+  `.unknown(type)` — there are no Swift `Detections` or inbound `FollowState`
+  structs. The phone *produces* follow state and the dashboard renders the inset,
+  so the phone never needs to decode it; this is intentional, not drift. If the
+  phone ever needs boxes or the rebroadcast follow state, add the struct + a
+  matching `case` there.
+- **`follow_state` is the one bidirectional message.** Swift mirrors it as
+  `FollowStateMessage` (`Encodable` only) — the phone *sends* it (snake_case keys
+  `distance_m` / `bearing_deg` on the wire as-is, no `CodingKeys` needed). On the
+  Python side `FollowState` is in **both** `ServerMessage` and `ClientMessage`, and
+  `parse_client_message` accepts it inbound. TS lists it under `ServerMessage` (the
+  dashboard only consumes the rebroadcast).
 - Validation is one-directional: Python rejects malformed/unknown **client**
   payloads at the WS boundary (`parse_client_message` raises on unknown `type`,
   Pydantic raises on a bad enum/field), so the backend fails loud, not silent.

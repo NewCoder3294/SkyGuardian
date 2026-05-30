@@ -70,7 +70,13 @@ backend/                 # the brain (Python, FastAPI)
                          #   Also: intel summary/chat + /map/buildings + video
                          #   upload/MJPEG/JPEG HTTP routes; RTMP default; CORS
                          #   allowlist + optional OPERATOR_KEY hardening.
+                         #   Rebroadcasts the phone's follow_state with a fail-
+                         #   stale TTL (_FOLLOW_STALE_S); TELLO_DISABLE=1 skips
+                         #   the laptop Tello controller (dual-live demo).
     contracts.py         # wire format (source of truth; mirrored by shared/ + mobile)
+                         #   incl. FollowState (relative Tello range/bearing/phase
+                         #   from the soldier; phases disarmed/searching/confirming/
+                         #   following/lost/manual/stale; bounded, no NaN/inf).
     world_model.py       # single source of truth for entities
     state_machine.py     # mission/connection state
     ws_hub.py            # WebSocket fan-out to both clients
@@ -97,11 +103,13 @@ backend/                 # the brain (Python, FastAPI)
                          #   test_world_model test_upload_guards slam/*
 
 frontend/                # web dashboard (Next.js + Tailwind, runs on port 3001)
-  src/app/               # layout.tsx page.tsx globals.css
+  src/app/               # layout.tsx globals.css
+    page.tsx             #   marketing landing page (public-facing)
+    operator/page.tsx    #   operator dashboard (Feed/Map/Intel tabs)
   src/components/        # Clock ConsolePanel EntityList IntelPanel IntelChat
                          # IntelSummaryCard Buildings LocalMap LocalMap2D
                          # LocalMap3D SourceSelector StatusBar ThreatAlert
-                         # VideoFeed VideoPlayer
+                         # VideoFeed VideoPlayer FollowInset (renders follow_state)
   src/lib/               # contracts entities feedUrl playback projection
                          # status threats useWorldClient wsConfig
                          # (+ vitest: feedUrl.test.ts wsConfig.test.ts)
@@ -115,10 +123,18 @@ mobile/                  # iOS / SwiftUI client (pairs with Cactus/Gemma on-devi
                          # TelloCommander TelloDirectStream TelloVideoView MJPEGView
                          # ModelDownloader LocationProvider Localizer StatusBar
                          # ControlBar Theme Contracts
+                         #   FollowCoordinator drives the airborne target-confirm
+                         #   flow (.confirming phase + confirmTarget()); TelloVideoView
+                         #   shows the confirm bar. WorldClient.sendFollowState publishes
+                         #   follow_state to the laptop. Contracts mirrors FollowState.
+                         #   The laptop-intent ControlBar shows only on the Map tab
+                         #   (hidden on Feed, where the phone flies the Tello).
   Tests/                 # ContractsTests FollowControllerTests IntentParserTests
                          # MapProjectionTests WorldClientConfigTests
 
-shared/contracts.ts      # TS mirror of backend/app/contracts.py
+shared/contracts.ts      # TS mirror of backend/app/contracts.py (incl. FollowState)
+docs/                    # DEMO.md (live dual-live demo runbook), README,
+                         # MOBILE, SLAM, VIDEO, VOICE
 scripts/                 # asc.py, run_slam_video.py, fetch_buildings.py
 .context/buildings.json  # pre-cached OSM building polygons (offline map layer;
                          # generated once by scripts/fetch_buildings.py, served
@@ -136,6 +152,7 @@ models/  captures/       # local data dirs (weights, recorded feeds)
 - `opencv` + AprilTag detection (`pupil-apriltags` or OpenCV's aruco/apriltag module) for the soldier-follow tag.
 - `fastapi` + `websockets` for the local server. Bind to `0.0.0.0`. HTTP surface is hardened: CORS allowlist (`DASHBOARD_ORIGINS`), optional `OPERATOR_KEY` header gate on state-mutating routes, `MAX_UPLOAD_MB` + video-extension allowlist on upload. Dashboard "RTMP" button targets a local MediaMTX relay (`MAVIC_RTMP_DEFAULT`, default `url:rtmp://127.0.0.1:1935/live`).
 - Offline map layer: `scripts/fetch_buildings.py` pulls OSM building polygons once (requires internet at fetch time only), projects them into the local frame, and writes `.context/buildings.json`, which the backend serves read-only at `/map/buildings` — zero runtime network.
+- Follow telemetry: the laptop rebroadcasts the phone's `FollowState` (relative Tello range/bearing/phase from the soldier, never map coordinates) and downgrades it to a visible `stale` phase via a fail-stale TTL (`_FOLLOW_STALE_S`) when the phone stream ages out. `TELLO_DISABLE=1` makes the backend skip connecting to / commanding the Tello — the configuration for the dual-live demo (laptop runs Mavic recon + dashboard while the phone flies the Tello).
 
 **Voice (phone, on-device)**
 - Cactus running Gemma for local STT plus intent. Cactus is mobile-first, so run it on the phone.
@@ -143,7 +160,8 @@ models/  captures/       # local data dirs (weights, recorded feeds)
 
 **Web dashboard (laptop)**
 - Next.js 14 + Tailwind. Runs on port 3001; pulls MJPEG/JPEG video + the WS world model from the brain (default `ws://localhost:8000/ws`, via `src/lib/wsConfig.ts`; override with `NEXT_PUBLIC_WS_URL`).
-- Renders the world model as a top-down 2D tactical map (`LocalMap2D`) and a `three.js` 3D scene (`LocalMap3D`/`Buildings`), both overlaying the pre-cached OSM footprints from `/map/buildings`. The intel reasoner surfaces as `IntelSummaryCard` (periodic assessment) and `IntelChat` (operator Q&A).
+- `/` is a public-facing marketing landing page (`src/app/page.tsx`); the operator dashboard lives at `/operator` (`src/app/operator/page.tsx`) with Feed/Map/Intel tabs.
+- Renders the world model as a top-down 2D tactical map (`LocalMap2D`) and a `three.js` 3D scene (`LocalMap3D`/`Buildings`), both overlaying the pre-cached OSM footprints from `/map/buildings`. The intel reasoner surfaces as `IntelSummaryCard` (periodic assessment) and `IntelChat` (operator Q&A). `FollowInset` renders the rebroadcast `FollowState` (Tello follow phase + relative range/bearing).
 - Dark tactical aesthetic. Define design tokens first (layered near-black, one accent, hairline borders, mono numerals). Avoid generic defaults.
 
 **Mobile app (phone)**

@@ -32,7 +32,7 @@ Tests run against the venv interpreter and are deterministic (inject `FakeClock`
 no wall-clock or RNG in assertions):
 
 ```bash
-cd backend && .venv/bin/python -m pytest -q   # 40 passing
+cd backend && .venv/bin/python -m pytest -q   # 54 passing
 ```
 
 Run the server (`run.sh` binds `0.0.0.0:8000` with `--reload`, so both clients
@@ -53,15 +53,21 @@ uvicorn app.server:app --host 0.0.0.0 --port 8000
 The server boots cleanly with **no** env vars set — every hardware-facing
 producer (Mavic source, Tello link, perception, follow) reports its health
 string instead of crashing when nothing is connected, and the intel reasoner
-silently disables itself if Ollama is unreachable.
+silently disables itself if Ollama is unreachable. Set `TELLO_DISABLE=1` when the
+phone owns the Tello (the current demo topology): the backend then skips the
+Tello client / camera / follow producers entirely and reports `tello: "disabled"`,
+so the laptop can sit on the Tello AP serving the dashboard without contending
+for the drone. Mavic recon (perception) is unaffected.
 
 ### Endpoints
 
 All routes live in [`server.py`](./app/server.py).
 
 **WebSocket / health**
-- `ws://<host>:8000/ws` — Contract B WebSocket (world/mission/health/detections
-  out; intent/device_location in).
+- `ws://<host>:8000/ws` — Contract B WebSocket (world/mission/health/detections/
+  follow_state out; intent/device_location/follow_state in). `follow_state` is the
+  phone's relative Tello range/bearing from the soldier; the laptop stores the
+  latest and rebroadcasts it, downgrading to `phase="stale"` after ~2 s of silence.
 - `GET /health` — JSON liveness + client count + stage + tello/mavic/perception
   health.
 
@@ -149,6 +155,7 @@ All optional. Read in [`server.py`](./app/server.py) / [`run.sh`](./run.sh).
 | `FOLLOW_TAG_SIZE_M` | `0.18` | Soldier-badge AprilTag size for the follow controller. |
 | `FOLLOW_TAG_ID` | _(unset)_ | Filter the follow controller to a specific tag id; unset → any tag. |
 | `TELLO_RETRY_S` | `3` | Tello supervisor reconnect interval. |
+| `TELLO_DISABLE` | `0` | `1`/`true`/`yes` skips the Tello client/camera/follow producers at startup and reports `tello: "disabled"`. Use when the phone owns the Tello so the laptop doesn't contend for it. Perception is unaffected. |
 
 **Reasoning (Ollama, local)**
 
@@ -180,12 +187,19 @@ Defined in [`app/contracts.py`](./app/contracts.py) (Pydantic), mirrored in
   · `source` (`yolo`/`slam`/`follow`/`manual`) · `ttl_s` · `status`
   (`active`/`stale`/`lost`, owned by the world model, never the producer).
 - **Contract B — WebSocket protocol:** server→clients `world_snapshot` /
-  `mission_state` / `health` / `detections`; clients→server `intent` (closed
-  command vocab) / `device_location`. The detections `source` is `"leader"`
-  (recon Mavic) / `"follower"` (companion Tello), abstracting the airframe make.
-  `parse_client_message` validates inbound messages; unknown/malformed intent is
-  rejected, never guessed. `stop`/`recall` are highest priority, honored from
-  any stage.
+  `mission_state` / `health` / `detections` / `follow_state`; clients→server
+  `intent` (closed command vocab) / `device_location` / `follow_state`. The
+  detections `source` is `"leader"` (recon Mavic) / `"follower"` (companion Tello),
+  abstracting the airframe make. `follow_state` carries the companion Tello's
+  range/bearing relative to the soldier (`distance_m` 0–200, `bearing_deg` ±360,
+  `allow_inf_nan=False`) and a `phase` (`disarmed`/`searching`/`confirming`/
+  `following`/`lost`/`manual`/`stale`) — deliberately *not* map coordinates,
+  since the phone's follow frame and the Mavic SLAM frame aren't co-registered.
+  The phone publishes it and the laptop rebroadcasts it (overwriting the advisory
+  client `source`), downgrading to `phase="stale"` after ~2 s of silence so the
+  dashboard never shows a confident-but-dead reading. `parse_client_message`
+  validates inbound messages; unknown/malformed intent is rejected, never guessed.
+  `stop`/`recall` are highest priority, honored from any stage.
 
 ## `app/` package layout
 
@@ -216,7 +230,13 @@ hardware.
   upserts `soldier` + `drone` entities, and sends RC to the Tello when
   stage=`following`. Idle when the Tello link is down (the supervisor thread
   auto-reconnects every `TELLO_RETRY_S`). Keep this disarmed whenever the phone
-  is flying the Tello.
+  is flying the Tello — or set `TELLO_DISABLE=1` to skip the Tello client,
+  camera, and this controller at startup entirely (health reports
+  `tello: "disabled"`).
+- **`follow_state`** from the phone (the relative Tello range/bearing/phase) is
+  stored with a laptop receipt time and rebroadcast each tick; the broadcast loop
+  downgrades it to `phase="stale"` after `_FOLLOW_STALE_S` (~2 s) of silence so a
+  dead link can't show a confident follow reading.
 - **`device_location`** from the phone upserts a `soldier` entity with
   `source=manual` — the fallback marker before the follow controller produces
   one, overwritten once it has a higher-quality reading.
@@ -245,7 +265,9 @@ writes a `<name>.detections.json` sidecar. The dashboard polls
 - The broadcast loop and intel loop each wrap a tick in `try/except` so one bad
   tick can't kill the single producer of world/mission/health.
 - `tests/` covers contracts, world model, state machine, video relay, upload
-  guards (`test_upload_guards.py`), and SLAM (`tests/slam/`).
+  guards (`test_upload_guards.py`), the `follow_state` contract + rebroadcast/
+  fail-stale path (`test_follow_state.py`), the `TELLO_DISABLE` startup skip
+  (`test_tello_disable.py`), and SLAM (`tests/slam/`).
 
 ## Docs
 

@@ -33,27 +33,37 @@ by [`ModelDownloader`](#voice--intent) and the SETUP overlay blocks the UI until
   light mode (the tactical look is system-independent).
 - [`ContentView.swift`](./ContentView.swift) — root layout: `StatusBar` ·
   MAP/FEED toggle · 2D/3D/TAC map-mode picker · mission-link connect panel · voice
-  bar (mic + hard **LAND**) · `ControlBar`. Owns every `ObservableObject` (`WorldClient`,
-  `VoiceController`, `ModelDownloader`, `LocationProvider`, `TelloDirectStream`,
-  `FollowCoordinator`, `Localizer`). Blocks the UI behind a SETUP overlay until the
-  on-device model is present, then routes resolved voice actions through the single drone
-  arbiter (`handle(_:)`): `follow me` → arm/resume the AprilTag follow loop, `track` →
-  arm/relock the tag-free visual tracker, `land`/`stop`/`emergency` → land/cut (always win),
-  other flight → manual takeover (pause-and-hold), `hold`/`recall` → mission intent to the
-  laptop. Drives `Localizer` from `LocationProvider` + `FollowCoordinator` so the map renders
-  with no laptop. DEBUG `-feed` launch arg opens FEED against `ws://127.0.0.1:8001/ws`.
+  bar (mic + hard **LAND**) · `ControlBar` (laptop intent — shown **only on the Map tab**;
+  hidden on Feed, where the phone flies the Tello directly so those buttons would be inert).
+  Owns every `ObservableObject` (`WorldClient`, `VoiceController`, `ModelDownloader`,
+  `LocationProvider`, `TelloDirectStream`, `FollowCoordinator`, `Localizer`). Blocks the UI
+  behind a SETUP overlay until the on-device model is present, then routes resolved voice
+  actions through the single drone arbiter (`handle(_:)`): `follow me` → arm/resume the
+  AprilTag follow loop, `track` → arm/relock the tag-free visual tracker, `land`/`stop`/
+  `emergency` → land/cut (always win), other flight → manual takeover (pause-and-hold),
+  `hold`/`recall` → mission intent to the laptop. Drives `Localizer` from `LocationProvider`
+  + `FollowCoordinator` so the map renders with no laptop, and `publishFollow()` pushes the
+  follow phase + relative range/bearing to the laptop (via `WorldClient.sendFollowState`,
+  fired on every `follow.$phase`/`$distance` change) for the dashboard's follow inset. DEBUG
+  `-feed` launch arg opens FEED against `ws://127.0.0.1:8001/ws`.
 
 ### Contracts + networking
 - [`Contracts.swift`](./Contracts.swift) — Swift mirror of **Contract A** (`Entity`,
   `Vec3`, type/status/source enums; `ttl_s` ↔ `ttlS`) and **Contract B** (`ServerMessage`
   discriminated union over `world_snapshot`/`mission_state`/`health`; `IntentMessage` /
-  `DeviceLocation` outbound). Closed `Command` vocabulary: `follow_me`/`hold`/`recall`/
-  `stop`. All `Codable`. Mirrors [`../../backend/app/contracts.py`](../../backend/app/contracts.py)
+  `DeviceLocation` / `FollowStateMessage` outbound). `FollowStateMessage` (wire type
+  `follow_state`) carries the Tello's relative `active`/`phase`/`distance_m`/`bearing_deg`
+  from the soldier — range/bearing only, never map coords (the phone follow frame and the
+  Mavic SLAM frame aren't co-registered). Closed `Command` vocabulary: `follow_me`/`hold`/
+  `recall`/`stop`. All `Codable`. Mirrors
+  [`../../backend/app/contracts.py`](../../backend/app/contracts.py)
   ↔ [`../../shared/contracts.ts`](../../shared/contracts.ts).
 - [`WorldClient.swift`](./WorldClient.swift) — `@MainActor ObservableObject`,
   `URLSessionWebSocketTask`. Subscribes to the spine, publishes `entities`, `stage`,
   `lastError`, `health`, `connection`, and per-unit movement `trails` (soldier/drone,
-  0.2 m jitter-filtered, capped at 80 pts). `send(_:)` delivers `Command` intent only.
+  0.2 m jitter-filtered, capped at 80 pts). `send(_:)` delivers `Command` intent only;
+  `sendFollowState(active:phase:distanceM:bearingDeg:)` fire-and-forget publishes the phone's
+  `FollowStateMessage` so the laptop can rebroadcast it to the dashboard's follow inset.
 
 ### Direct Tello flight (no laptop)
 - [`TelloCommander.swift`](./TelloCommander.swift) — `ObservableObject` singleton; the
@@ -94,8 +104,15 @@ by [`ModelDownloader`](#voice--intent) and the SETUP overlay blocks the UI until
   drone). Decode tap → detect (backpressured, ~10 Hz cap) → `FollowController` → `rc` sticks
   at a fixed ~15 Hz cadence. Explicit `arm`/`armTrack` (takeoff + settle delay), `relock`,
   `pauseToManual`/`resumeFollow` (voice takeover), `disarmAndLand`, `emergencyCut`, and an
-  automatic lost-tag land after a long timeout. Publishes `phase`/`distance`/`bearingDeg`/
-  normalized box corners.
+  automatic lost-tag land after a long timeout. **Airborne target confirmation:** after the
+  takeoff climb settles the drone HOVERS in a `.confirming` (lock visible) / `.searching`
+  (no lock) pre-confirm state and sends **no** follow/track `rc` until the operator calls
+  `confirmTarget()` — if they never do, it auto-lands after `confirmTimeout` (30 s).
+  `.track` re-locks the tracker fresh at hover (the ground-level lock may not survive the
+  climb). Resuming from a manual takeover keeps the confirmation (no re-confirm). `Phase` =
+  `disarmed`/`searching`/`confirming`/`following`/`lost`/`manual` (lowercase `label` mirrors
+  the backend `FollowState.phase`). Publishes `phase`/`distance`/`bearingDeg`/normalized box
+  corners.
 
 ### Video
 Two independent paths; the FEED tab shows the **direct** one (which also hosts the
@@ -108,8 +125,11 @@ follow/track loop). The MJPEG relay path is built but not currently in the FEED 
 - [`TelloVideoView.swift`](./TelloVideoView.swift) — the FEED view (`TelloDirectView`):
   hosts the direct stream's display layer (`SampleLayerView`), overlays the live lock box
   (`TagBoxShape`, olive when following / red otherwise) + follow HUD (phase/dist/bearing) +
-  FOLLOW TAG / TRACK / STOP·LAND controls with takeoff confirmation dialogs. Keeps streaming
-  while following even off-tab.
+  FOLLOW TAG / TRACK / STOP·LAND controls with takeoff confirmation dialogs. When
+  `phase == .confirming` the control row swaps to a `confirmBar` ("TARGET ACQUIRED —
+  CONFIRM?" with **CONFIRM** / **ABORT·LAND** buttons) so the operator approves the locked
+  target while the drone hovers; the phase label/colour add a `.confirming` case
+  (◆ CONFIRM TARGET?, brown). Keeps streaming while following even off-tab.
 - [`MJPEGView.swift`](./MJPEGView.swift) — **laptop-relay** path: `MJPEGStream` reads the
   backend's MJPEG (`multipart/x-mixed-replace`) feed, deriving the HTTP URL from the ws
   server URL (e.g. `/video/tello`). Built and usable; not currently wired into the FEED toggle.

@@ -83,7 +83,7 @@ export interface Detections {
 export interface FollowState {
   type: "follow_state";
   active: boolean;       // drone airborne under follow control
-  phase: string;         // "disarmed" | "searching" | "following" | "lost" | "manual"
+  phase: string;         // disarmed | searching | confirming | following | lost | manual | stale ("stale" is server-injected)
   distance_m: number;    // soldier → Tello range, metres
   bearing_deg: number;   // Tello bearing relative to the soldier, degrees
   t: number;

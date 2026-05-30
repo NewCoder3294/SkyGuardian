@@ -47,8 +47,11 @@ DASHBOARD_ORIGINS=http://localhost:3001 \
 Then the dashboard (separate terminal):
 
 ```bash
-cd frontend && npm run dev     # http://localhost:3001
+cd frontend && npm run dev     # http://localhost:3001 — operator dashboard at /operator
 ```
+
+`/` is the marketing landing page; open **`http://localhost:3001/operator`** for the
+live operator dashboard (Feed/Map/Intel tabs, with the `FollowInset` radar).
 
 Optional env:
 - `INTEL_MODEL=gemma3:4b` (default) for on-device reasoning; `INTEL_MODEL=off` to skip. Needs a local Ollama.
@@ -81,13 +84,17 @@ filter to a tag id with `FOLLOW_TAG_ID`).
 | Surface | Sees |
 |---|---|
 | **Phone map** | Mavic recon entities (subscribed from laptop WS) **+** the Tello/operator follow track (computed on-device) |
-| **Laptop dashboard** | Mavic recon (YOLO detections, SLAM map, intel) |
+| **Laptop dashboard** | Mavic recon (YOLO detections, SLAM map, intel) **+** the Tello follow as a relative **radar inset** (`FollowInset`) |
 
-> ⚠️ Known gap: the Tello's live follow position is computed **on the phone**
-> (`Localizer`) and is **not yet published back** to the laptop, so the laptop
-> dashboard does **not** show the live Tello track. Closing this (phone publishes
-> drone/operator position over WS → laptop world model) is a planned follow-up.
-> Until then, the phone is the screen that shows the full combined picture.
+> ✅ The phone now publishes its follow geometry to the laptop. The phone computes
+> the follow on-device (`Localizer` / follow loop) and sends `follow_state`
+> (relative range + bearing + phase) over the WS; the laptop **rebroadcasts** it
+> and the dashboard renders it as the `FollowInset` radar (soldier at centre,
+> Tello range/bearing). It is a **relative inset, not co-registered with the SLAM
+> map** — the phone's follow frame and the Mavic SLAM frame don't share a
+> reference, so the Tello is shown as range/bearing rather than placed on the map.
+> If the phone stream ages out (2 s), the inset downgrades to a visible `stale`
+> phase rather than silently freezing.
 
 ---
 
@@ -95,7 +102,7 @@ filter to a tag id with `FOLLOW_TAG_ID`).
 
 - [ ] Laptop `/health` reports `"tello": "disabled"` — only the phone commands the Tello.
 - [ ] Phone is on the Tello AP and its `serverURL` points at the laptop's AP IP.
-- [ ] Dashboard at :3001 shows the Mavic feed linking/streaming.
+- [ ] Operator dashboard at `:3001/operator` shows the Mavic feed linking/streaming (and the `FollowInset` radar once the phone publishes follow state).
 - [ ] Hard stop/recall button on the phone works (don't rely on voice alone).
 - [ ] Tello battery checked; clear follow area.
 

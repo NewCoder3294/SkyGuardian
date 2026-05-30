@@ -11,7 +11,9 @@ equivalent of "Gemini Live") that produces a rolling threat assessment and answe
 operator questions, all without leaving the laptop.
 
 **No cloud. No internet. No GPS. Recon and situational awareness only — no
-engagement, ever.** See [`CLAUDE.md`](./CLAUDE.md) for the hard constraints.
+engagement, ever.** See [`CLAUDE.md`](./CLAUDE.md) for the hard constraints, and
+[`docs/DEMO.md`](./docs/DEMO.md) for the live dual-end demo runbook (laptop recon
++ phone-flown follow on one Tello AP).
 
 ## Architecture
 
@@ -19,8 +21,9 @@ engagement, ever.** See [`CLAUDE.md`](./CLAUDE.md) for the hard constraints.
             [ Soldier w/ Phone ] ──AP (rc / takeoff / land)──> [ Tello ]
                   │   ▲                                    (follows soldier via
    mission intent │   │ map + entities                     AprilTag; on-device
-   (hold/recall)  │   │ (subscribe)                         follow loop on phone)
-   + device loc   ▼   │
+   (hold/recall)  │   │ (subscribe)                         follow loop on phone;
+   + device loc   │   │                                     hovers after takeoff
+   + follow_state ▼   │                                     until target confirmed)
 [ Manned Mavic ] ──video (RTMP)──> ┌──────── LAPTOP (the brain) ──────────┐
                                    │ RTMP receiver (e.g. MediaMTX :1935)   │
                                    │   │                                   │
@@ -34,13 +37,15 @@ engagement, ever.** See [`CLAUDE.md`](./CLAUDE.md) for the hard constraints.
                                    │   │                                   │
                                    │   ▼                                   │
                                    │ WorldModel ─ WS broadcast (BROADCAST_HZ) ──> Dashboard
-                                   │   ▲                                   │     (Next.js, :3001)
+                                   │   ▲                                   │     (Next.js, :3001, /operator)
                                    │ MissionStateMachine                   │      - Feed (polled JPEG + overlay)
                                    │   ▲                                   │      - Map (2D + 3D Three.js + OSM)
                                    │ IntelReasoner / IntelChat (Ollama)    │      - Intel summary + operator chat
-                                   │ FollowController (alternate Tello     │      - Threat board
-                                   │   controller — left disarmed while    │
-                                   │   the phone is flying)                │
+                                   │ follow_state relay (phone → dash)     │      - Threat board
+                                   │   (relative range/bearing radar)      │      - Follow inset (Tello radar)
+                                   │ FollowController (alternate Tello     │
+                                   │   controller — disabled via           │
+                                   │   TELLO_DISABLE while the phone flies) │
                                    └───────────────────────────────────────┘
                                                    ▲
                                              intent (WS)
@@ -51,13 +56,20 @@ engagement, ever.** See [`CLAUDE.md`](./CLAUDE.md) for the hard constraints.
 **Tello control — one armed controller at a time.** In the current build the
 **phone is the primary Tello controller**: it joins the Tello AP and commands the
 drone directly over UDP (`192.168.10.1:8889`) — on-device voice → flight functions
-plus the on-phone AprilTag follow loop. The laptop backend also ships a
-`FollowController` as an *alternate* controller, but it must stay **disarmed** while
-the phone is flying. There is no code interlock yet, so this is an operating rule
-(see [`CLAUDE.md`](./CLAUDE.md) → "One Tello controller armed at a time"). The phone
-also subscribes to the world model and sends mission `intent` / `device_location`
-over the WebSocket; the laptop owns the world model and streams map + state to both
-clients. See [`mobile/README.md`](./mobile/README.md) for the phone-side detail.
+plus the on-phone AprilTag follow loop. After takeoff the Tello **hovers** and the
+operator must **confirm the locked target** before any follow/track motion begins
+(an unconfirmed lock auto-lands on a timeout). The laptop backend also ships a
+`FollowController` as an *alternate* controller; in the dual-live demo it is taken
+out of contention entirely with **`TELLO_DISABLE=1`** (the laptop never connects to
+or commands the Tello, and `/health` reports `tello: disabled`), so the phone is the
+sole Tello controller. There is no code interlock yet, so single-controller arming
+is still an operating rule (see [`CLAUDE.md`](./CLAUDE.md) → "One Tello controller
+armed at a time") and [`docs/DEMO.md`](./docs/DEMO.md) for the full topology. The
+phone also subscribes to the world model and sends mission `intent` /
+`device_location` plus a relative `follow_state` (the Tello's range/bearing from the
+soldier) over the WebSocket; the laptop owns the world model, rebroadcasts
+`follow_state` to the dashboard, and streams map + state to both clients. See
+[`mobile/README.md`](./mobile/README.md) for the phone-side detail.
 
 Two contracts every subsystem meets at:
 - **Contract A — Entity:** the shared world-model data shape.
@@ -65,8 +77,15 @@ Two contracts every subsystem meets at:
   `shared/contracts.ts`; Swift mirror in `mobile/Sources/Contracts.swift`.
   `Detections.source` is `"leader"` (recon) / `"follower"` (companion).
 - **Contract B — WebSocket protocol:**
-  - server → clients: `world_snapshot`, `mission_state`, `health`, `detections`
-  - clients → server: `intent`, `device_location`
+  - server → clients: `world_snapshot`, `mission_state`, `health`, `detections`,
+    `follow_state`
+  - clients → server: `intent`, `device_location`, `follow_state`
+
+`follow_state` carries the companion Tello's **relative** range/bearing + follow
+`phase` from the soldier — deliberately **not** map coordinates, because the phone's
+follow frame and the Mavic SLAM frame aren't co-registered. The phone publishes it;
+the laptop rebroadcasts it (injecting a `stale` phase if the phone goes quiet) so
+the dashboard can draw a self-contained radar inset.
 
 `stop` and `recall` are always-live and highest priority; the state machine
 honours them from any stage.
@@ -82,7 +101,9 @@ honours them from any stage.
 ├── backend/                       # the local brain (FastAPI + asyncio)
 │   ├── app/
 │   │   ├── server.py              # WS hub + broadcast loop; JPEG/MJPEG, upload,
-│   │   │                          #   buildings, intel summary + chat endpoints
+│   │   │                          #   buildings, intel summary + chat endpoints;
+│   │   │                          #   relays phone follow_state (fail-stale TTL);
+│   │   │                          #   TELLO_DISABLE=1 skips the laptop Tello stack
 │   │   ├── contracts.py           # Pydantic models for Contract A + B
 │   │   ├── world_model.py         # entity lifecycle / TTL
 │   │   ├── state_machine.py       # mission stages + event log
@@ -109,8 +130,11 @@ honours them from any stage.
 │   └── requirements.txt           # incl. python-multipart for upload
 ├── frontend/                      # operator dashboard (Next.js 14 + Tailwind, :3001)
 │   └── src/
-│       ├── app/                   # layout.tsx, page.tsx, globals.css
+│       ├── app/                   # layout.tsx, globals.css
+│       │   ├── page.tsx           # marketing LANDING page (route /), links to /operator
+│       │   └── operator/page.tsx  # the OPERATOR DASHBOARD (route /operator)
 │       ├── components/
+│       │   ├── FollowInset.tsx    # Tello follow radar (relative range/bearing)
 │       │   ├── VideoFeed.tsx      # polled JPEG + bounding-box overlay
 │       │   ├── VideoPlayer.tsx    # uploaded-clip playback + cached overlay
 │       │   ├── SourceSelector.tsx # RTMP / file source switch + upload UI
@@ -131,7 +155,7 @@ honours them from any stage.
 │                                  # (+ vitest: feedUrl.test.ts, wsConfig.test.ts)
 ├── mobile/                        # SwiftUI iOS app (XcodeGen, pairs with Cactus/Gemma)
 ├── scripts/                       # asc.py, run_slam_video.py, fetch_buildings.py
-├── docs/                          # MOBILE, SLAM, VIDEO, VOICE design notes
+├── docs/                          # DEMO runbook + MOBILE, SLAM, VIDEO, VOICE notes
 ├── models/                        # local weights — git-ignored
 └── captures/                      # recorded media for replay — git-ignored
 ```
@@ -193,6 +217,7 @@ Configure producers with env vars (or edit `run.sh`):
 | `PERCEPTION_FPS` | `5` | perception loop rate |
 | `BROADCAST_HZ` | `10` | WS broadcast cadence |
 | `TELLO_RETRY_S` | `3` | Tello supervisor reconnect interval |
+| `TELLO_DISABLE` | `0` | `1` skips the laptop's Tello stack entirely (no connect, no commands; `/health` → `tello: disabled`) so the phone is the sole Tello controller in the dual-live demo |
 | `INTEL_MODEL` | `gemma3:4b` | local Ollama model for reasoning + chat; `off` disables the intel layer |
 | `INTEL_VISION` | `0` | `1` enables image-aware reasoning (~30× slower than text-only) |
 | `INTEL_INTERVAL_S` | `5` | reasoning-loop interval |
@@ -223,13 +248,17 @@ npm install                            # one time
 npm run dev                            # http://localhost:3001
 ```
 
-The dashboard pulls video via polled single-frame JPEG (`/video/leader.jpg`,
-`/video/follower.jpg`) and subscribes to the world model over WebSocket. Set
-`NEXT_PUBLIC_WS_URL=ws://<laptop-ip>:8000/ws` to reach the brain from another host
-on the LAN. Beyond the live map and feed it surfaces: the **Intel summary card**
-(latest on-device assessment + threat level), the **operator chat** (Q&A grounded
-in the current feed via `/intel/chat`), and a **buildings overlay** drawn from the
-pre-cached OSM footprints served at `/map/buildings`.
+`http://localhost:3001/` is a marketing **landing** page; the **operator dashboard**
+lives at **`http://localhost:3001/operator`** (the landing page's "Operator" links
+point there). The dashboard pulls video via polled single-frame JPEG
+(`/video/leader.jpg`, `/video/follower.jpg`) and subscribes to the world model over
+WebSocket. Set `NEXT_PUBLIC_WS_URL=ws://<laptop-ip>:8000/ws` to reach the brain from
+another host on the LAN. Beyond the live map and feed it surfaces: the **Intel
+summary card** (latest on-device assessment + threat level), the **operator chat**
+(Q&A grounded in the current feed via `/intel/chat`), a **buildings overlay** drawn
+from the pre-cached OSM footprints served at `/map/buildings`, and a **follow inset**
+— a radar of the companion Tello's relative range/bearing from the soldier, fed by
+the phone's `follow_state` over the WS.
 
 ### 4. On-device reasoning (optional — local Ollama)
 
@@ -273,7 +302,7 @@ while decoding the Tello's raw H.264 in the FEED view. Mission intents
 | **Object detection** | Ultralytics YOLO / YOLO-World (open-vocabulary) | 21-prompt defense vocab by default with a `-world` checkpoint; optional standard-COCO ensemble for high-precision person/vehicle/backpack |
 | **Depth** | DepthAnything-V2 via HuggingFace transformers | Optional; loads `transformers`+`torch` lazily, caches locally, then offline |
 | **On-device reasoning** | Ollama-hosted vision/text LLM (default `gemma3:4b`) | Rolling tactical assessment + operator chat; text-only by default, `INTEL_VISION=1` for image-aware. Disabled if Ollama unreachable |
-| **Tello follow (laptop alt.)** | djitellopy + PD station-keep on a soldier-worn AprilTag | Alternate controller; left disarmed while the phone flies |
+| **Tello follow (laptop alt.)** | djitellopy + PD station-keep on a soldier-worn AprilTag | Alternate controller; in the dual-live demo it is disabled with `TELLO_DISABLE=1` so the phone flies the Tello |
 
 Model weights are distributed out-of-band (see `models/`); Ollama weights live in
 `~/.ollama/models`. No model downloads at runtime once the caches are warm.
@@ -310,7 +339,11 @@ WorldClientConfig) run via `xcodebuild test` — see
 - ORB-SLAM3 C++ backend integration is drop-in via `ORBSLAM3Runner` but not the
   default.
 - No code interlock yet prevents the phone and the laptop `FollowController` from
-  both commanding the Tello — single-controller arming is an operating rule.
+  both commanding the Tello — single-controller arming is an operating rule. The
+  dual-live demo enforces it by convention with `TELLO_DISABLE=1` on the laptop
+  (see [`docs/DEMO.md`](./docs/DEMO.md)).
+- The mobile follow loop hovers after takeoff and waits for the operator to confirm
+  the locked target before any follow/track motion; an unconfirmed lock auto-lands.
 
 ## Constraints
 

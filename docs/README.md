@@ -107,11 +107,24 @@ truth), mirrored by **`shared/contracts.ts`** and **`mobile/Sources/Contracts.sw
 Entity types: `poi`, `hazard`, `object`, `soldier`, `drone`. Closed intent
 vocabulary: `follow_me`, `hold`, `recall`, `stop` (`stop`/`recall` are
 always-live, honored from any stage). `Detections.source` is `leader`/`follower`.
+A `FollowState` message carries the companion Tello's **relative** range/bearing
+and follow phase from the soldier (phases: `disarmed`, `searching`, `confirming`,
+`following`, `lost`, `manual`, `stale`) — never map coordinates, since the phone's
+follow frame and the Mavic SLAM frame aren't co-registered.
+
+Follow telemetry + the dual-live demo: the phone runs the follow loop and publishes
+`follow_state` to the laptop, which **rebroadcasts** it to the dashboard and
+downgrades it to a visible `stale` phase via a fail-stale TTL (`_FOLLOW_STALE_S`,
+2 s) when the phone stream ages out. `TELLO_DISABLE=1` makes the backend skip
+connecting to / commanding the Tello (so `/health` reports `"tello": "disabled"`)
+— the configuration for the dual-live demo where the laptop runs Mavic recon +
+dashboard while the phone flies the Tello. See [`DEMO.md`](./DEMO.md).
 
 Perception/follow env knobs (read `server.py` for the full set): `YOLO_WEIGHTS`,
 `YOLO_IMGSZ`, `YOLO_CONF`, `YOLO_CLASSES`, `YOLO_COCO_WEIGHTS`, `YOLO_COCO_KEEP`,
 `DEPTH_MODEL` / `DEPTH_SCALE`, `ANCHOR_TAG_SIZE_M`, `FOLLOW_TAG_SIZE_M`,
-`FOLLOW_TAG_ID`, `PERCEPTION_FPS`, `TELLO_RETRY_S`, `BROADCAST_HZ`.
+`FOLLOW_TAG_ID`, `PERCEPTION_FPS`, `TELLO_RETRY_S`, `BROADCAST_HZ`,
+`TELLO_DISABLE` (`1` skips the laptop Tello controller — the dual-live demo mode).
 
 Tests: `cd backend && .venv/bin/python -m pytest -q` (`tests/`:
 `test_contracts`, `test_state_machine`, `test_video`, `test_world_model`,
@@ -123,10 +136,15 @@ Next.js 14 + Tailwind. Runs on its own port (3001) and pulls leader/follower
 video as JPEG/MJPEG from the brain; everything else arrives over the `/ws` stream
 (`src/lib/useWorldClient.ts`).
 
+- `src/app/`: `page.tsx` is the public-facing **marketing landing page** at `/`;
+  the **operator dashboard** (Feed/Map/Intel tabs) lives at `operator/page.tsx`,
+  route `/operator`.
 - `src/components/`: `Buildings`, `Clock`, `ConsolePanel`, `EntityList`,
-  `IntelChat`, `IntelPanel`, `IntelSummaryCard`, `LocalMap`, `LocalMap2D`,
-  `LocalMap3D`, `SourceSelector`, `StatusBar`, `ThreatAlert`, `VideoFeed`,
-  `VideoPlayer`.
+  `FollowInset`, `IntelChat`, `IntelPanel`, `IntelSummaryCard`, `LocalMap`,
+  `LocalMap2D`, `LocalMap3D`, `SourceSelector`, `StatusBar`, `ThreatAlert`,
+  `VideoFeed`, `VideoPlayer`. `FollowInset` renders the rebroadcast `follow_state`
+  as a small radar (soldier at centre, Tello range/bearing + phase) — deliberately
+  **not** co-registered with the SLAM map.
 - `src/lib/`: `contracts`, `entities`, `feedUrl`, `playback`, `projection`,
   `status`, `threats`, `useWorldClient`, `wsConfig` (+ vitest:
   `feedUrl.test.ts`, `wsConfig.test.ts`).

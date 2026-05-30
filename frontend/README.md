@@ -1,20 +1,33 @@
-# `frontend/` — Operator dashboard (Next.js)
+# `frontend/` — Marketing landing + operator dashboard (Next.js)
 
-The laptop-side operator view. A subscriber to the brain's WebSocket spine:
-renders the live leader (Mavic) feed with YOLO overlays, a top-down local-frame
-map over pre-cached OSM building footprints, an on-device intel reasoner
-(summary card + operator chat), a threat board, and a health strip. It never
-duplicates state and never commands the Tello. The WS hook (`useWorldClient`)
-exposes an `intent`-send path (same contract the [iOS app](../mobile/README.md)
-uses), but the current shell mounts no Tello controls, so in practice the
-dashboard is observe-only. Offline-only; no external dependencies at runtime.
+Two routes in one Next.js app:
+
+- **`/`** (`src/app/page.tsx`) — the SkyGuardian **marketing landing page**.
+  Static, animated, observe-nothing: hero with a CSS drone-flight + radar
+  telemetry visual, problem/capability/missions/market/roadmap sections, and a
+  CTA. Pure presentation (no WS, no video). Every "Operator" / "Open operator
+  UI" link points at `/operator`.
+- **`/operator`** (`src/app/operator/page.tsx`) — the laptop-side **operator
+  dashboard** (this used to live at `/`). A subscriber to the brain's WebSocket
+  spine: renders the live leader (Mavic) feed with YOLO overlays, a top-down (2D)
+  or three.js (3D) local-frame map over pre-cached OSM building footprints, an
+  on-device intel reasoner (summary card + operator chat), a threat board, a
+  health strip, and a soldier-centred follow radar (`FollowInset`). It never
+  duplicates state and never commands the Tello. The WS hook (`useWorldClient`)
+  exposes an `intent`-send path (same contract the [iOS app](../mobile/README.md)
+  uses), but the dashboard mounts no Tello controls, so in practice it is
+  observe-only. Offline-only; no external dependencies at runtime.
+
+**To reach the dashboard**, navigate to `/operator` (the root `/` is now the
+landing page) — e.g. `http://localhost:3001/operator`, or click "Operator" /
+"Open operator UI" in the landing header/hero/CTA.
 
 Stack: Next.js 14 (App Router) + React 18 + Tailwind 3 + TypeScript. The 3D map
 component (`LocalMap3D`) uses `@react-three/fiber` / `@react-three/drei`
-(three.js), but the live shell renders the 2D canvas map (`LocalMap2D`); the 3D
-scene and a few other components exist unmounted (see below). No state library —
-state is a single WS hook (`useWorldClient`) plus local component state. Tests
-run on Vitest.
+(three.js); the operator Map tab can toggle between `LocalMap2D` and
+`LocalMap3D` (persisted to `localStorage`). A few components exist unmounted
+(see below). No state library — state is a single WS hook (`useWorldClient`)
+plus local component state. Tests run on Vitest.
 
 ## How it talks to the brain
 
@@ -25,7 +38,9 @@ hit the same process:
 1. **WebSocket** — one durable connection in `src/lib/useWorldClient.ts`
    (`useWorldClient`). It decodes the `ServerMessage` union from
    [`shared/contracts.ts`](../shared/contracts.ts) (`world_snapshot`,
-   `mission_state`, `health`, `detections`) and publishes it to React state.
+   `mission_state`, `health`, `detections`, `follow_state`) and publishes it to
+   React state — including a `followState: FollowState | null` that drives the
+   `FollowInset` follow radar on the Map tab.
    Auto-reconnects every 1 s on drop (`RECONNECT_DELAY_MS`). The hook also
    returns a `send(command)` that wraps a `Command`
    (`follow_me | hold | recall | stop`) into an `IntentMessage`
@@ -33,8 +48,8 @@ hit the same process:
    currently calls it, so the dashboard sends nothing upstream today.
 2. **HTTP (MJPEG/JPEG + REST)** — `src/lib/feedUrl.ts#httpFromWs` derives the
    HTTP origin from the WS URL (`ws://` → `http://`, `wss://` → `https://`) so
-   video, intel, and REST stay on the same host/port. `page.tsx` derives both
-   the leader feed URL and an `apiBase` from the resolved WS URL.
+   video, intel, and REST stay on the same host/port. `operator/page.tsx` derives
+   both the leader feed URL and an `apiBase` from the resolved WS URL.
    - **Live leader feed:** `VideoFeed` polls `GET /video/leader.jpg` as single
      frames at ~10 Hz (Blob → object URL), *not* `multipart/x-mixed-replace` —
      a polled JPEG lets the tab settle between frames instead of spinning
@@ -77,17 +92,20 @@ single-origin invariant is pinned by `feedUrl.test.ts` and `wsConfig.test.ts`.
 
 ## Layout
 
-`src/app/page.tsx` is the whole shell. A header (logo lockup + live `Clock`),
-the `StatusBar` telemetry strip, and three tabs (persisted to `localStorage`
-under `sg.tab`):
+`src/app/operator/page.tsx` is the whole dashboard shell (`/operator`). A header
+(logo lockup + live `Clock`), the `StatusBar` telemetry strip, and three tabs
+(persisted to `localStorage` under `sg.tab`):
 
 - **Feed** — `SourceSelector` toolbar over either the live `VideoFeed` or the
   playback `VideoPlayer`, with a `ConsolePanel` detection log on the side.
-- **Map** — `LocalMap2D`, a pan/zoom top-down canvas of the local frame (launch
-  point at origin, north up, metric grid + scale bar). It draws the cached OSM
-  building footprints and operational world-model entities; SLAM landmark points
-  (`lm_*` ids) are filtered out via `lib/entities.ts`. A compact
-  `IntelSummaryCard` floats in the lower-left corner.
+- **Map** — a `LocalMap2D` / `LocalMap3D` pair toggled by a `MapViewToggle`
+  (view persisted under `sg.mapView`): a pan/zoom top-down canvas (2D) or a
+  three.js scene (3D) of the local frame (launch point at origin, north up,
+  metric grid + scale bar). Both draw the cached OSM building footprints and
+  operational world-model entities; SLAM landmark points (`lm_*` ids) are
+  filtered out via `lib/entities.ts`. A compact `IntelSummaryCard` floats in the
+  lower-left corner, and a `FollowInset` follow radar floats in the upper-right
+  whenever `followState` is present.
 - **Intel** — a full `IntelSummaryCard` (latest on-device assessment + threat
   level), the `IntelPanel` threat board (one row per detected class with count,
   average confidence, and time-since-last-seen), and an `IntelChat` operator
@@ -96,16 +114,31 @@ under `sg.tab`):
 `ThreatAlert` floats over every tab and fires when a weapon-class label
 (`lib/threats.ts`) is in a recent frame; it auto-clears on a clean frame.
 
+`FollowInset` (`src/components/FollowInset.tsx`) is a small **soldier-centred
+radar** on the Map tab. The soldier sits at centre (facing straight up = bearing
+0°, +deg clockwise); the companion Tello plots as a range/bearing dot on an
+adaptive ring scale, fed by the `followState.distance_m` / `bearing_deg` from the
+`follow_state` WS layer. It is deliberately **not** co-registered with the SLAM
+map — the phone's follow frame and the Mavic SLAM frame don't share a reference —
+so it stands alone, and renders nothing until the phone has reported. Phase
+colouring follows the C2 colour discipline: `following` is green (`--ok`);
+`manual` and `confirming` render in **amber** (`--accent`); and `lost` or
+`stale` render in **red** (`--fail`). `stale` specifically means the phone's link
+aged out (the brain's `_FOLLOW_STALE_S` fail-stale TTL fired), so the inset
+labels it "link lost" — a frozen reading can't be mistaken for a live follow.
+
 Both live and playback modes feed the same components: in file mode the page
 synthesises the same `Health`/`detections`/entity shapes from the playback JSON
 (`lib/playback.ts`) so downstream components need no special-casing.
 
 ### Components (`src/components/`)
-Mounted by `page.tsx`: `Clock`, `StatusBar`, `SourceSelector`, `VideoFeed`,
-`VideoPlayer`, `ConsolePanel`, `IntelSummaryCard`, `IntelPanel`, `IntelChat`,
-`LocalMap2D`, `ThreatAlert`.
-Present but **not** currently mounted: `LocalMap3D` (+ its `Buildings` R3F
-meshes), `LocalMap` (older 2D canvas), `EntityList`.
+Mounted by `operator/page.tsx`: `Clock`, `StatusBar`, `SourceSelector`,
+`VideoFeed`, `VideoPlayer`, `ConsolePanel`, `IntelSummaryCard`, `IntelPanel`,
+`IntelChat`, `LocalMap2D`, `LocalMap3D` (Map tab 2D/3D toggle; `LocalMap3D`
+renders its `Buildings` R3F meshes), `FollowInset`, `ThreatAlert`.
+Present but **not** currently mounted: `LocalMap` (older 2D canvas), `EntityList`.
+(The landing page at `src/app/page.tsx` uses no `src/components/` — its visuals
+are inline CSS-animated helpers.)
 
 ### Lib (`src/lib/`)
 `contracts.ts` (re-exports the shared wire types), `wsConfig.ts`
@@ -136,13 +169,15 @@ treats every channel as strictly binary — ONLINE or OFFLINE, no middle tier
 ```bash
 cd frontend
 npm install
-npm run dev                                            # http://localhost:3001
+npm run dev                                  # landing: http://localhost:3001
+                                             # dashboard: http://localhost:3001/operator
 # remote/LAN brain:
 NEXT_PUBLIC_WS_URL=ws://192.168.10.1:8000/ws npm run dev
 ```
 
-Dev/start ports are pinned to **3001** in `package.json` so the dashboard
-doesn't collide with anything else on 3000. Scripts:
+`http://localhost:3001/` serves the marketing landing page; the operator
+dashboard is at **`/operator`**. Dev/start ports are pinned to **3001** in
+`package.json` so the app doesn't collide with anything else on 3000. Scripts:
 
 - `npm run dev` — `next dev -p 3001`
 - `npm run build` — `next build`

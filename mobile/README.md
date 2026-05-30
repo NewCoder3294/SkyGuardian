@@ -21,7 +21,11 @@ and the team's Xcode workflow.)
 - **On-phone autonomous follow** — FEED can also host the soldier-follow loop
   (`FollowCoordinator`): decoded frames → AprilTag detection → a station-keeping
   `rc` stick controller → the Tello, entirely on the phone while it's on the Tello
-  AP. Explicit arm/takeoff, hover-on-tag-loss, auto-land if the tag stays lost. The
+  AP. Explicit arm/takeoff, hover-on-tag-loss, auto-land if the tag stays lost. After
+  takeoff the drone enters an **airborne target-confirmation** hover (`.confirming` phase):
+  it shows the lock and sends no follow/track motion until the operator hits **CONFIRM**
+  (the FEED `confirmBar`), auto-landing after 30 s if they never do — resuming from a manual
+  takeover keeps the confirmation, and TRACK re-locks the tracker fresh at hover. The
   coordinator runs two modes (`FollowCoordinator.Mode = .tag | .track`):
   - `.tag` — AprilTag worn by the soldier.
   - `.track` — **tag-free visual lock** (`ObjectTracker`, Vision saliency +
@@ -44,8 +48,9 @@ and the team's Xcode workflow.)
   land/up/down/left/right/forward/back/rotate_cw/rotate_ccw/emergency) execute directly
   on the Tello over UDP as SDK command strings; `track` arms (or relocks) the tag-free
   visual follow; *mission* intents (`follow_me`/`hold`/`recall`/`stop`) route to the
-  laptop over the WS. An always-visible hard **STOP** (ControlBar) and **LAND** (voice
-  bar) are first-class, never voice-only.
+  laptop over the WS. A hard **LAND** in the voice bar (always visible) and a hard **STOP**
+  in the laptop `ControlBar` (shown on the Map tab; on Feed the phone flies the Tello
+  directly, so STOP·LAND lives in the FEED follow controls) are first-class, never voice-only.
 - Provides its own **device location** (`LocationProvider`) to anchor the OSM map and
   for follow-me context.
 
@@ -54,9 +59,12 @@ Two distinct paths — the spec's "phone never commands the Tello" holds for the
 *mission* path; *direct* flight is the soldier's standalone mobile kit on the Tello AP.
 
 - **Spine (laptop):** `ws://<laptop>:8000/ws` (`WorldClient`). Subscribes to the
-  world model; sends `intent` only (the closed `Command` enum). Wire types mirror
-  `../shared/contracts.ts` / `../backend/app/contracts.py` via `Contracts.swift`.
-  The laptop stays the single source of truth — this client only renders + sends intent.
+  world model; sends `intent` (the closed `Command` enum) and `follow_state` — the Tello's
+  relative range/bearing/phase from the soldier (`WorldClient.sendFollowState`, fed by
+  `ContentView.publishFollow()`), which the laptop rebroadcasts to the dashboard's follow
+  inset. Wire types mirror `../shared/contracts.ts` / `../backend/app/contracts.py` via
+  `Contracts.swift`. The laptop stays the single source of truth — this client only renders +
+  sends intent/telemetry.
 - **Tello (direct):** the Tello AP at `192.168.10.1` — control over UDP `8889`
   (`TelloCommander`: the single owner of the control channel — `command`/`streamon`,
   flight commands, `rc` sticks, 5 s keepalive), inbound H.264 on UDP `11111`
@@ -71,9 +79,9 @@ mono type, shape-coded markers (● soldier, ▲ drone, ◇ POI, ✕ hazard).
 | File | Role |
 |---|---|
 | `ReconCompanionApp.swift` | `@main`, forced light mode |
-| `ContentView.swift` | UI shell: MAP/FEED toggle, map-mode picker, voice bar, first-launch model setup, voice→drone arbiter |
-| `Contracts.swift` | Codable mirror of Contract A (entities) + B (messages/intent) |
-| `WorldClient.swift` | WebSocket subscribe loop + intent send + movement trails |
+| `ContentView.swift` | UI shell: MAP/FEED toggle, map-mode picker, voice bar, first-launch model setup, voice→drone arbiter; laptop `ControlBar` on Map only; `publishFollow()` pushes follow_state to the laptop |
+| `Contracts.swift` | Codable mirror of Contract A (entities) + B (messages/intent + `FollowStateMessage`) |
+| `WorldClient.swift` | WebSocket subscribe loop + intent send + `sendFollowState` + movement trails |
 | `OSMMapView.swift` | 2D/3D OpenStreetMap basemap (MapKit + OSM tile overlay), local-frame→coord projection, trace polylines |
 | `LocalMapView.swift` | TAC: offline range/bearing tactical map (pure view) |
 | `MapProjection.swift` | local-frame metres → screen points for TAC (tested) |
@@ -81,12 +89,12 @@ mono type, shape-coded markers (● soldier, ▲ drone, ◇ POI, ✕ hazard).
 | `Localizer.swift` | phone-side map: places operator (GPS) + drone (tag distance/bearing × heading) in a launch frame with trails — no laptop needed |
 | `ObjectTracker.swift` | tag-free visual lock-and-follow (Vision saliency + `VNTrackObjectRequest`); class-agnostic ("track that boat") |
 | `TelloDirectStream.swift` | direct UDP H.264 receiver: NAL reassembly → VideoToolbox decode → `AVSampleBufferDisplayLayer`; optional pixel-buffer tap for follow |
-| `TelloVideoView.swift` | `TelloDirectView` — FEED view hosting the display layer + the follow loop (honest status, never fakes a frame) |
+| `TelloVideoView.swift` | `TelloDirectView` — FEED view hosting the display layer + the follow loop + the airborne CONFIRM/ABORT·LAND `confirmBar` (honest status, never fakes a frame) |
 | `TelloCommander.swift` | sole Tello control channel (UDP 8889): `command`/`streamon`, flight, `rc`, keepalive |
 | `MJPEGView.swift` | legacy laptop MJPEG-relay decoder (not wired into FEED) |
 | `AprilTagDetector.swift` | on-device AprilTag (vendored AprilRobotics C lib, tag36h11) → pose/bearing/distance |
 | `FollowController.swift` | pure station-keeping: tag → `rc` stick command (tested) |
-| `FollowCoordinator.swift` | the on-phone follow loop: detect (`.tag` AprilTag or `.track` `ObjectTracker`) → controller → Tello, with arm/disarm/manual/lost-land safety |
+| `FollowCoordinator.swift` | the on-phone follow loop: detect (`.tag` AprilTag or `.track` `ObjectTracker`) → controller → Tello, with arm/disarm/manual/lost-land safety + airborne target confirmation (`.confirming` phase, `confirmTarget()`, 30 s auto-land) |
 | `VoiceController.swift` | push-to-talk mic capture → Apple `SFSpeechRecognizer` on-device STT → `DroneIntent.match` → action (not Cactus) |
 | `DronePilot.swift` | transcript → `DroneAction` (Cactus/Gemma function-call, `DroneIntent` keyword fallback) |
 | `DroneFunction.swift` | the closed drone-function vocabulary + `DroneAction` (Tello SDK strings / mission routing) |
