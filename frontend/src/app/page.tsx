@@ -50,17 +50,7 @@ const domains = [
 export default function LandingPage() {
   return (
     <main className="min-h-screen overflow-x-hidden bg-bg text-text">
-      {/* Hackathon banner */}
-      <div className="fixed left-0 right-0 top-0 z-40 border-b border-border bg-surface">
-        <div className="mx-auto flex items-center justify-center gap-2 px-5 py-1.5">
-          <Image src="/bow-capital-logo.png" alt="Bow Capital" width={16} height={16} className="h-4 w-4 brightness-0" />
-          <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-text-muted">
-            Built at UCSD &middot; Bow Capital Hackathon
-          </p>
-        </div>
-      </div>
-
-      <header className="fixed left-0 right-0 top-[29px] z-30 border-b border-border bg-bg/88 backdrop-blur">
+      <header className="fixed left-0 right-0 top-0 z-30 border-b border-border bg-bg/88 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-6 px-5 py-4 md:px-8">
           <a href="#top" className="flex items-center gap-3" aria-label="SkyGuardian home">
             <Image
@@ -104,7 +94,7 @@ export default function LandingPage() {
       </header>
 
       {/* Hero */}
-      <section id="top" className="relative min-h-[82vh] overflow-hidden border-b border-border pt-32 md:min-h-[88vh]">
+      <section id="top" className="relative min-h-[82vh] overflow-hidden border-b border-border pt-24 md:min-h-[88vh]">
         <Image
           src="/hero-drone-city.png"
           alt="DJI Mavic drone flying over city skyline at dusk"
@@ -115,8 +105,16 @@ export default function LandingPage() {
         />
         <div className="absolute inset-0 bg-[linear-gradient(90deg,var(--bg)_0%,oklch(0.965_0.010_95_/_0.82)_25%,oklch(0.965_0.010_95_/_0.35)_55%,transparent_100%)]" />
 
-        <div className="relative z-10 mx-auto flex min-h-[calc(82vh-8rem)] max-w-7xl flex-col justify-center px-5 pb-8 md:min-h-[calc(88vh-8rem)] md:px-8">
+        <div className="relative z-10 mx-auto flex min-h-[calc(82vh-6rem)] max-w-7xl flex-col justify-center px-5 pb-8 md:min-h-[calc(88vh-6rem)] md:px-8">
           <div className="max-w-3xl">
+            <div className="mb-6 flex items-center gap-4">
+              <div className="flex items-center gap-2 border border-border-strong bg-surface/80 px-3 py-1.5 backdrop-blur-sm">
+                <Image src="/bow-capital-logo.png" alt="Bow Capital" width={14} height={14} className="h-3.5 w-3.5 brightness-0" />
+                <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-text-muted">
+                  Built at UCSD &middot; Bow Capital Hackathon
+                </p>
+              </div>
+            </div>
             <p className="mb-6 font-mono text-[11px] uppercase tracking-[0.42em] text-accent">
               Sea / Land / Air
             </p>
@@ -146,10 +144,10 @@ export default function LandingPage() {
             </div>
           </div>
 
-          <div className="mt-8 grid max-w-3xl grid-cols-1 border border-border-strong bg-surface/80 backdrop-blur-sm sm:grid-cols-3 md:mt-12">
+          <div className="mt-8 grid max-w-3xl grid-cols-1 border border-border-strong bg-bg backdrop-blur-sm sm:grid-cols-3 md:mt-12">
             {["Persistent", "Human-led", "Mission-aware"].map((item) => (
               <div key={item} className="border-b border-border px-3 py-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0 md:px-5">
-                <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-text-dim">{item}</p>
+                <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-text">{item}</p>
               </div>
             ))}
           </div>
