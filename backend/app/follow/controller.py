@@ -33,6 +33,7 @@ from ..tello.client import TelloClient, TelloState
 from ..tello.video import TelloVideoSource
 from ..world_model import WorldModel
 from .apriltag import TagReading, detect_soldier_tag
+from .arming import ArmingLock
 
 
 # Target stand-off distance from the soldier (metres). PD pushes us here.
@@ -64,6 +65,8 @@ class FollowController:
         world: WorldModel,
         mission: MissionStateMachine,
         clock: Clock | None = None,
+        arming: ArmingLock | None = None,
+        owner: str = "follow",
         img_width: int = 960,
         img_height: int = 720,
         tag_size_m: float = 0.18,
@@ -74,6 +77,8 @@ class FollowController:
         self._world = world
         self._mission = mission
         self._clock = clock or RealClock()
+        self._arming = arming
+        self._owner = owner
         self._camera = CameraModel.from_resolution(img_width, img_height)
         self._tag_size = float(tag_size_m)
         self._soldier_tag_id = soldier_tag_id
@@ -134,6 +139,10 @@ class FollowController:
     # --- control surface ---------------------------------------------------
 
     async def _drive_tello(self, reading: Optional[TagReading], now: float) -> None:
+        # Arming interlock: never command the drone unless we hold the lock.
+        if self._arming is not None and not self._arming.can_command(self._owner):
+            return
+
         stage = self._mission.stage
         if stage is Stage.STOPPED:
             # Emergency: land if airborne, no further commands.
