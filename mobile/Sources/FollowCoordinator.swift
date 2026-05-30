@@ -7,7 +7,7 @@ import QuartzCore
 /// from the (slower, variable) detection rate. Safety first: explicit arm/takeoff,
 /// hover when the tag is lost, and an automatic land if it stays lost.
 final class FollowCoordinator: ObservableObject {
-    enum Phase: Equatable { case disarmed, searching, following, lost }
+    enum Phase: Equatable { case disarmed, searching, following, lost, manual }
 
     @Published private(set) var phase: Phase = .disarmed
     @Published private(set) var distance: Double = 0          // meters to the tag
@@ -31,7 +31,8 @@ final class FollowCoordinator: ObservableObject {
     // Control state — only touched on rcQueue.
     private var latest: TagDetection?
     private var latestTime: CFTimeInterval = 0
-    private var armed = false
+    private var armed = false          // airborne under our control
+    private var followActive = false   // running the follow loop (false = manual hover)
 
     private let rcInterval = 0.066                   // ~15 Hz stick updates
     private let staleTimeout: CFTimeInterval = 0.5   // older detection = no lock
@@ -48,6 +49,7 @@ final class FollowCoordinator: ObservableObject {
     func arm(stream: TelloDirectStream) {
         guard phase == .disarmed else { return }
         self.stream = stream
+        stream.start()   // make sure video/detection is flowing (idempotent)
         detector.tagSizeMeters = tagSizeMeters
         controller.config = config
         stream.onPixelBuffer = { [weak self] pb in self?.ingest(pb) }
@@ -55,6 +57,7 @@ final class FollowCoordinator: ObservableObject {
         TelloCommander.shared.send("takeoff")
         rcQueue.async {
             self.armed = true
+            self.followActive = true
             self.latest = nil
             self.latestTime = CACurrentMediaTime()   // grace period before lost-land
         }
@@ -62,11 +65,31 @@ final class FollowCoordinator: ObservableObject {
         startRCLoop()
     }
 
+    /// Operator took manual control by voice — pause the follow loop and hover. The
+    /// drone stays airborne; "follow me" resumes. (Pause-and-hold model.)
+    func pauseToManual() {
+        guard isArmed else { return }
+        TelloCommander.shared.rc(.hover)            // neutralize follow motion
+        rcQueue.async { self.followActive = false }
+        setPhase(.manual)
+    }
+
+    /// Resume autonomous following after a manual takeover.
+    func resumeFollow() {
+        guard isArmed else { return }
+        rcQueue.async {
+            self.followActive = true
+            self.latest = nil
+            self.latestTime = CACurrentMediaTime()  // fresh grace before lost-land
+        }
+        setPhase(.searching)
+    }
+
     /// Stop following and land. Safe to call any time.
     func disarmAndLand() {
         stream?.onPixelBuffer = nil
         rcTimer?.cancel(); rcTimer = nil
-        rcQueue.async { self.armed = false }
+        rcQueue.async { self.armed = false; self.followActive = false }
         TelloCommander.shared.rc(.hover)
         TelloCommander.shared.send("land")
         setPhase(.disarmed)
@@ -128,6 +151,7 @@ final class FollowCoordinator: ObservableObject {
 
     private func tick() {
         guard armed else { return }
+        guard followActive else { return }   // manual takeover — operator flies, no follow rc
         let now = CACurrentMediaTime()
         let age = now - latestTime
         let fresh = age < staleTimeout && latest != nil

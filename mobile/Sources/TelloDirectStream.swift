@@ -29,8 +29,11 @@ final class TelloDirectStream: ObservableObject {
     private var sps: Data?
     private var pps: Data?
     private var assembly = Data()
+    private var started = false
 
     func start() {
+        guard !started else { return }   // may be started by the FEED view or the follow loop
+        started = true
         setState(.connecting)
         displayLayer.videoGravity = .resizeAspect
         // The shared commander owns the control channel (command/streamon/keepalive),
@@ -42,6 +45,7 @@ final class TelloDirectStream: ObservableObject {
     func stop() {
         // Leave the command channel up — voice may still control the drone after the
         // video tab is dismissed. Only the video listener is torn down here.
+        started = false
         video?.cancel(); video = nil
         if let d = decoder { VTDecompressionSessionInvalidate(d); decoder = nil }
         setState(.idle)

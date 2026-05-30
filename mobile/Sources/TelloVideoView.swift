@@ -32,8 +32,8 @@ struct SampleLayerView: UIViewRepresentable {
 /// the live camera. Also hosts the autonomous AprilTag follow loop. Honest status:
 /// never fakes a frame.
 struct TelloDirectView: View {
-    @StateObject private var stream = TelloDirectStream()
-    @StateObject private var follow = FollowCoordinator()
+    @ObservedObject var stream: TelloDirectStream
+    @ObservedObject var follow: FollowCoordinator
     @State private var confirmArm = false
 
     private let videoAspect: CGFloat = 4.0 / 3.0   // Tello stream is 4:3
@@ -66,7 +66,9 @@ struct TelloDirectView: View {
             .padding(8)
         }
         .onAppear { stream.start() }
-        .onDisappear { if follow.isArmed { follow.disarmAndLand() }; stream.stop() }
+        // Keep streaming while following even if the FEED tab is dismissed (the
+        // operator may watch the map while the drone follows). Only stop when idle.
+        .onDisappear { if !follow.isArmed { stream.stop() } }
         .confirmationDialog("Take off and follow the AprilTag?", isPresented: $confirmArm, titleVisibility: .visible) {
             Button("TAKE OFF & FOLLOW", role: .destructive) { follow.arm(stream: stream) }
             Button("Cancel", role: .cancel) {}
@@ -111,12 +113,14 @@ struct TelloDirectView: View {
         case .searching: return "● SEARCHING"
         case .following: return "● FOLLOWING"
         case .lost: return "○ TAG LOST"
+        case .manual: return "✋ MANUAL · say “follow me”"
         }
     }
     private var phaseColor: Color {
         switch follow.phase {
         case .following: return Theme.olive
         case .lost: return Theme.danger
+        case .manual: return Theme.brown
         default: return Theme.faint
         }
     }

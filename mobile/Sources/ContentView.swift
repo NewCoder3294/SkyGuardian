@@ -8,6 +8,8 @@ struct ContentView: View {
     @StateObject private var voice = VoiceController()
     @StateObject private var model = ModelDownloader()
     @StateObject private var location = LocationProvider()
+    @StateObject private var stream = TelloDirectStream()
+    @StateObject private var follow = FollowCoordinator()
     @State private var showConnect = true
     @State private var center: CenterView = .map
     @State private var mapMode: MapMode = .twoD
@@ -26,7 +28,7 @@ struct ContentView: View {
                 if center == .map {
                     mapBody
                 } else {
-                    TelloDirectView()   // direct phone↔Tello video, no laptop
+                    TelloDirectView(stream: stream, follow: follow)   // direct phone↔Tello, no laptop
                 }
                 if center == .map {
                     legend.padding(10)
@@ -193,15 +195,38 @@ struct ContentView: View {
         voice.toggle(onAction: handle)
     }
 
-    /// Route a resolved voice action: flight commands go straight to the Tello over
-    /// the shared UDP channel (works standalone); mission intents go to the laptop
-    /// brain over the WS when it's connected.
+    /// Route a resolved voice action through the single drone arbiter:
+    ///  - "follow me"        → start following (takeoff) or resume after a takeover,
+    ///  - land / stop / emerg → land and disarm (always wins),
+    ///  - any other flight    → take over (pause follow), then execute and hover,
+    ///  - hold / recall       → mission intents to the laptop when connected.
     private func handle(_ action: DroneAction) {
-        if action.function.isFlight {
-            TelloCommander.shared.execute(action)
-        } else if let command = action.function.missionCommand {
-            client.send(command)
+        let fn = action.function
+
+        if fn == .followMe {
+            if follow.phase == .disarmed { startFollow() } else { follow.resumeFollow() }
+            return
         }
+
+        if fn == .land || fn == .stop || fn == .emergency {
+            if follow.isArmed { follow.disarmAndLand() } else { TelloCommander.shared.execute(action) }
+            if fn == .stop, isConnected { client.send(.stop) }
+            return
+        }
+
+        if fn.isFlight {
+            if follow.isArmed { follow.pauseToManual() }   // voice takeover → pause-and-hold
+            TelloCommander.shared.execute(action)
+        } else if let command = fn.missionCommand {
+            client.send(command)                            // hold / recall → laptop
+        }
+    }
+
+    /// Voice/UI entry point to begin following: ensure video is flowing, then arm
+    /// (takeoff + follow). The Tello must be on its WiFi and able to see the hat tag.
+    private func startFollow() {
+        stream.start()
+        follow.arm(stream: stream)
     }
 
     /// Hard safety control — not voice-only (per spec): land the drone now and signal
