@@ -176,6 +176,13 @@ class BuildingsUpdated(BaseModel):
     t: float
 
 
+class MapAreaRequest(BaseModel):
+    """Operator request to re-fetch the OSM buildings layer for a new area."""
+    lat: float = Field(ge=-90.0, le=90.0)
+    lng: float = Field(ge=-180.0, le=180.0)
+    radius_m: int = Field(default=400, ge=50, le=2000)
+
+
 ServerMessage = Union[WorldSnapshot, MissionState, Health, Detections, FollowState, BuildingsUpdated]
 
 
