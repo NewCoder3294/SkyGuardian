@@ -72,7 +72,7 @@ class LocalMap:
             entities.append(Entity(
                 id="mavic_cam", type=EntityType.DRONE, position=self._vec3(cam),
                 confidence=1.0 if self.metric else 0.5, timestamp=t,
-                source=EntitySource.SLAM, label="mavic", ttl_s=3.0,
+                source=EntitySource.SLAM, label="leader", ttl_s=3.0,
             ))
         if tag_position is not None:
             entities.append(Entity(
