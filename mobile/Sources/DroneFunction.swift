@@ -15,7 +15,7 @@ enum DroneFunction: String, CaseIterable {
     case flip           // acrobatic forward flip
     case track          // tag-free visual object tracking ("track that boat")
     // mission intents (routed to the laptop when connected)
-    case followMe = "follow_me", hold, recall, stop
+    case followMe = "follow_me", hold, recall, stop, approach
 
     var isFlight: Bool { missionCommand == nil }
 
@@ -26,6 +26,7 @@ enum DroneFunction: String, CaseIterable {
         case .hold: return .hold
         case .recall: return .recall
         case .stop: return .stop
+        case .approach: return .approach
         default: return nil
         }
     }
@@ -66,6 +67,7 @@ enum DroneFunction: String, CaseIterable {
         case .hold: return "hold position"
         case .recall: return "return to the soldier"
         case .stop: return "stop and hold (safe abort)"
+        case .approach: return "autonomously approach and hold standoff on the selected target"
         }
     }
 }
@@ -167,6 +169,7 @@ enum DroneIntent {
         // by an on-screen confirmation; the voice path should be confirmed too
         // (see ContentView.handle) — this just stops accidental triggers at parse.
         if has(t, ["track that", "track the", "start tracking", "lock on", "lock onto", "follow that", "follow it", "follow him", "follow her"]) { return DroneAction(.track) }
+        if has(t, ["investigate", "approach the target", "approach target", "investigate that", "go investigate", "move in on"]) { return DroneAction(.approach) }
         if has(t, ["follow", "on me", "come with"]) { return DroneAction(.followMe) }
 
         // Movement.

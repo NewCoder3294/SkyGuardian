@@ -23,6 +23,14 @@ final class VoiceController: ObservableObject {
     private var onAction: ((DroneAction) -> Void)?
     private var authorized = false
 
+    /// Resolves a transcript to a drone action: on-device LLM (Gemma via Cactus)
+    /// first, deterministic keyword matcher as a fallback so voice never breaks.
+    private let pilot: DronePilot
+
+    init(pilot: DronePilot? = nil) {
+        self.pilot = pilot ?? DronePilot(service: CactusFactory.make())
+    }
+
     var sourceLabel: String { available ? "ON-DEVICE STT" : "VOICE" }
     /// Available only when on-device recognition is supported. SkyGuardian is
     /// offline-only (no cloud calls at runtime), so cloud-backed STT does not
@@ -120,9 +128,30 @@ final class VoiceController: ObservableObject {
         cleanup()
         let cleaned = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { state = .error("NO SPEECH"); return }
-        if let action = DroneIntent.match(cleaned) {
+        // Route through the on-device LLM first (keyword matcher backs it up inside
+        // DronePilot.resolve). resolve is async, so hop onto a MainActor task.
+        state = .thinking
+        Task { @MainActor in
+            if let action = await pilot.resolve(cleaned) {
+                lastAction = action
+                onAction?(action)
+                state = .idle
+            } else {
+                state = .error("NO INTENT")
+            }
+        }
+    }
+
+    /// Test seam: runs the same transcript → resolve → onAction path as `finalize`,
+    /// without any audio/STT setup. Awaits the pilot directly so tests are
+    /// deterministic and don't race a detached Task.
+    func finalizeForTesting(_ transcript: String, onAction: @escaping (DroneAction) -> Void) async {
+        let cleaned = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { state = .error("NO SPEECH"); return }
+        state = .thinking
+        if let action = await pilot.resolve(cleaned) {
             lastAction = action
-            onAction?(action)
+            onAction(action)
             state = .idle
         } else {
             state = .error("NO INTENT")
