@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Entity, EntityType } from "@/lib/contracts";
+import { TrailStore } from "@/lib/trails";
 
 /**
  * Top-down 2D tactical map. Renders building footprints (offline, from the
@@ -55,6 +56,7 @@ export function LocalMap2D({
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<ViewState>({ scale: 1, cx: 0, cy: 0 });
   const entitiesRef = useRef<Entity[]>(entities);
+  const trailsRef = useRef<TrailStore>(new TrailStore());
   const buildingsRef = useRef<BuildingRecord[]>([]);
   const hoverRef = useRef<{ x: number; y: number } | null>(null);
   const [buildingsState, setBuildingsState] = useState<
@@ -63,6 +65,9 @@ export function LocalMap2D({
 
   // Keep entities visible to imperative draw() without re-binding the effect.
   entitiesRef.current = entities;
+  trailsRef.current.update(
+    entities.map((e) => ({ id: e.id, type: e.type, x: e.position.x, y: e.position.y })),
+  );
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -87,6 +92,7 @@ export function LocalMap2D({
     drawGrid(ctx, w, h, v);
     drawBuildings(ctx, w, h, v, buildingsRef.current);
     drawOrigin(ctx, w, h, v);
+    drawTrails(ctx, w, h, v, trailsRef.current);
     drawEntities(ctx, w, h, v, entitiesRef.current);
     drawScaleBar(ctx, w, h, v);
     if (hoverRef.current) drawCursor(ctx, w, h, v, hoverRef.current);
@@ -441,6 +447,27 @@ function drawOrigin(
   ctx.fillStyle = "#d9a441";
   ctx.fillStyle = "#a76b1c";
   ctx.fillText("LAUNCH", x + 16, y);
+}
+
+function drawTrails(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  v: ViewState,
+  trails: TrailStore,
+) {
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = "rgba(167, 107, 28, 0.45)"; // amber, matches drone glyph
+  for (const pts of trails.all().values()) {
+    if (pts.length < 2) continue;
+    ctx.beginPath();
+    for (let i = 0; i < pts.length; i++) {
+      const [sx, sy] = worldToScreen(pts[i].x, pts[i].y, w, h, v);
+      if (i === 0) ctx.moveTo(sx, sy);
+      else ctx.lineTo(sx, sy);
+    }
+    ctx.stroke();
+  }
 }
 
 function drawEntities(
