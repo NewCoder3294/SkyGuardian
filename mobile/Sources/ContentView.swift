@@ -22,7 +22,7 @@ struct ContentView: View {
                     LocalMapView(entities: client.entities, trails: client.trails,
                                  projection: MapProjection(spanMeters: 24))
                 } else {
-                    MJPEGView(serverURL: client.serverURL, path: "/video/tello")
+                    TelloDirectView()   // direct phone↔Tello video, no laptop
                 }
                 if center == .map { legend.padding(10) }
                 viewToggle.frame(maxWidth: .infinity, alignment: .top).padding(.top, 8)
