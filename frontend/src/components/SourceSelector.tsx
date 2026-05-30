@@ -56,6 +56,14 @@ interface Props {
   onState?: (state: SourceState | null) => void;
 }
 
+function requestErrorMessage(err: unknown, apiBase: string): string {
+  if (err instanceof TypeError) {
+    return `Backend unavailable · start API at ${apiBase}`;
+  }
+  if (err instanceof Error) return err.message;
+  return "Request failed";
+}
+
 /**
  * Toolbar that lets the operator pick the leader video source — live RTMP or
  * a pre-recorded clip. RTMP uses the live perception pipeline; file uploads
@@ -100,7 +108,7 @@ export function SourceSelector({ apiBase, onState }: Props) {
         setError(body?.detail ?? `HTTP ${res.status}`);
       }
     } catch (e) {
-      setError(String(e));
+      setError(requestErrorMessage(e, apiBase));
     } finally {
       setBusy("");
       refresh();
@@ -124,7 +132,7 @@ export function SourceSelector({ apiBase, onState }: Props) {
         setError(body?.detail ?? `HTTP ${res.status}`);
       }
     } catch (err) {
-      setError(String(err));
+      setError(requestErrorMessage(err, apiBase));
     } finally {
       setBusy("");
       e.target.value = "";

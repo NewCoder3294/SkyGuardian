@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "SkyGuardian — Operator Dashboard",
-  description: "Local-frame map + intent controls. Offline-only.",
+  title: "SkyGuardian - Persistent Situational Awareness",
+  description:
+    "Autonomous aerial teammates for persistent situational awareness across sea, land, and air missions.",
   applicationName: "SkyGuardian",
   icons: {
     icon: [
@@ -15,7 +16,9 @@ export const metadata: Metadata = {
 };
 
 export const viewport = {
-  themeColor: "#f4f1e8",
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#f6f3ea",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
