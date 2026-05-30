@@ -5,16 +5,20 @@ controller in [`../follow/`](../follow/README.md) stays testable without
 hardware. See [`../../../CLAUDE.md`](../../../CLAUDE.md) and
 [`../../../docs/VIDEO.md`](../../../docs/VIDEO.md).
 
-This package is the **only** code in the system that talks to the Tello. The
-laptop is the sole Tello controller — these modules are never imported by the
-phone, the dashboard, or perception, and clients never command the Tello
-directly. Both control and video are `djitellopy`-backed.
+This package is the **only** *backend* code that talks to the Tello: it is the
+laptop-side flight path, never imported by the dashboard or perception. Note the
+current architecture (see [`../../../CLAUDE.md`](../../../CLAUDE.md)) — the
+**phone** is the primary Tello controller (on-device follow + voice, commanding
+the Tello directly over its AP). This `TelloClient` is an **alternate** backend
+controller and must stay disarmed while the phone is flying; only one controller
+is armed against the Tello at a time (an operating rule — there is no code
+interlock yet). Both control and video here are `djitellopy`-backed.
 
 ## Responsibility
 - Connect to the Tello AP and keep the SDK link alive across dropouts.
-- Send `rc`/`takeoff`/`land` primitives; the Tello drops out of SDK mode
-  without periodic commands, so a supervisor thread polls it as a heartbeat.
-- Expose connection state as a single string for `health` reporting.
+- Send `rc`/`takeoff`/`land` primitives; the supervisor thread also polls the
+  Tello (`get_battery` once per second) as a cheap heartbeat to detect dropouts.
+- Expose connection state as a single enum for `health` reporting.
 - Expose video frames through a `FrameSource`-compatible adapter so the
   perception pipeline and follow controller consume Tello frames uniformly.
 
@@ -22,9 +26,9 @@ directly. Both control and video are `djitellopy`-backed.
 - **Reads:** UDP from the Tello (state telemetry, H.264 video) via djitellopy.
 - **Writes:** RC/takeoff/land commands to the Tello; latest JPEG frame +
   connection state to its callers.
-- `TelloClient` is constructed once at startup and shared by reference; the
-  [`FollowController`](../follow/README.md) is the only legitimate caller of
-  `send_rc`, and mission/state transitions call `takeoff`/`land`.
+- `TelloClient` is constructed once at startup and shared by reference; on the
+  backend the [`FollowController`](../follow/README.md) is the only legitimate
+  caller of `send_rc`, and mission/state transitions call `takeoff`/`land`.
 
 ## Modules
 
@@ -51,7 +55,9 @@ never raise — failures are recorded in `last_error`):
 - `hover()` — convenience for `send_rc(0, 0, 0, 0)`.
 - `takeoff()` / `land()` — for mission stage transitions.
 - `battery_percent()` — returns `int` or `None`.
-- `enable_stream()` — `streamon`; idempotent, tracks a `_streaming` flag.
+- `enable_stream()` — `streamon`; idempotent, tracks a `_streaming` flag and
+  returns the current flag value (no-op returning `_streaming` when already
+  streaming or the link is down).
 
 Supervisor loop (`_supervisor`): imports `djitellopy` lazily (sets `ERROR` and
 exits if unavailable), connects (retrying every `retry_seconds`, default 3.0,

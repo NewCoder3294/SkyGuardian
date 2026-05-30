@@ -23,19 +23,23 @@ Full theory in [`../../../../docs/SLAM.md`](../../../../docs/SLAM.md).
 A single moving camera recovers structure and motion **only up to scale** — the
 map's *shape* is right, its absolute *size* floats. With no GPS, stereo, or IMU,
 metres are unknowable from pixels alone. So:
-1. `MonocularVO` builds a `Trajectory` in arbitrary VO units (frame 0 = VO origin),
-   propagating inter-frame scale by triangulation overlap.
+1. `MonocularVO` builds a `Trajectory` in arbitrary VO units (frame 0 = VO origin,
+   `R_wc = I`, `C = 0`), propagating inter-frame scale by triangulation overlap
+   (`relative_scale` on the index-aligned 3D point overlap between consecutive steps).
 2. A known-size AprilTag (the same soldier-follow tag) observed from two frames
-   gives a **metric baseline** between camera centres via PnP; VO gives the same
-   baseline in its units. `scale = metric / vo` (`metric_scale_from_tag`).
+   whose VO camera centres are known gives a **metric baseline** between those
+   centres via PnP; VO gives the same baseline in its units. `scale = metric / vo`
+   (`metric_scale_from_tag`).
 3. `LocalMap.set_anchor(scale, origin)` fixes metres and makes the launch point the
    local-frame **origin (0,0,0)**; `LocalMap.integrate` then upserts entities into the
    world model.
 
 Frame convention: right-handed, metres, `Xw = R_wc @ Xc + C` (camera-centre `C` in
-the local frame). Tracking loss (`< 12` matches, degenerate geometry) holds the
-last pose rather than fabricating motion; a near-stationary step (median feature
-displacement `< 1.5 px`) is also held, so a hovering drone stays put on the map.
+the local frame); the projection side uses `[R_cw | t_cw]` with `R_cw = R_wc.T`,
+`t_cw = -R_wc.T @ C`. Tracking loss (`< _MIN_MATCHES` = 12 matches, or degenerate
+geometry raising `ValueError`) holds the last pose rather than fabricating motion;
+a near-stationary step (median feature displacement `< _ZERO_MOTION_PX` = 1.5 px)
+is also held, so a hovering drone stays put on the map.
 
 ## Pose / local-map data flow
 ```
@@ -50,16 +54,21 @@ Frame[] + CameraModel
 ```
 A `Pose` carries `R_wc` + `position` in VO units while `scale_known=False`;
 `LocalMap._to_metric` applies `(position − origin) * scale` per read (it does not
-mutate the stored poses). `camera_position()` returns the latest metric centre.
+mutate the stored poses; pre-anchor it falls back to `scale=1.0`).
+`camera_position()` returns the latest metric centre, or `None` if no poses are
+ingested. `Pose.scaled(scale, origin)` is the one helper that returns a *new* metric
+pose (`scale_known=True`); `LocalMap` itself converts on read rather than calling it.
+`LocalMap.metric` flips True once `set_anchor` runs; `anchored` mirrors it.
 
 ## Interfaces
 - **Reads:** ordered `Frame` sequence (Mavic stream / `captures/` clips) + a
   `CameraModel` (pinhole `K`; `from_resolution(w, h)` gives default intrinsics —
   `focal_factor 0.78 * max(dim)` — when uncalibrated); `TagObservation`s for the anchor.
 - **Writes:** `WorldModel.upsert` via `LocalMap.integrate` — `mavic_cam` (`drone`,
-  label `mavic`, ttl 3s), `anchor_tag` (`poi` launch marker, ttl 10s, emitted only
-  when a `tag_position` is passed), sparse landmarks `lm_{i}` (`object`, ttl 10s),
-  all `source=slam`. Mavic confidence is `1.0` once metric, `0.5` while pre-metric.
+  label `mavic`, ttl 3s), `anchor_tag` (`poi`, label `launch anchor`, ttl 10s,
+  emitted only when a `tag_position` is passed), sparse landmarks `lm_{i}`
+  (`object`, label inherited from `Landmark.label`, ttl 10s), all `source=slam`.
+  Mavic confidence is `1.0` once metric, `0.5` while pre-metric.
 
 ## Build notes
 - `MonocularVO` always runs (pure Python/OpenCV); the geometry core
@@ -75,13 +84,21 @@ mutate the stored poses). `camera_position()` returns the latest metric centre.
   (13 tests; synthetic fixtures in `synth.py`, deterministic, no images required).
 
 ## Modules
-- `types.py` ✅ — `CameraModel`, `Frame`, `Pose`, `Landmark`, `Trajectory`; frame convention.
-- `backend.py` ✅ — abstract `SlamBackend` seam.
-- `vo.py` ✅ — `MonocularVO` + the testable geometry core.
-- `anchor.py` ✅ — AprilTag PnP, metric-scale recovery, lazy tag detector.
-- `local_map.py` ✅ — metric re-frame + `WorldModel` entity bridge.
-- `euroc.py` ✅ — EuRoC/TUM `ts tx ty tz qx qy qz qw` trajectory parser (GPS-free).
-- `orbslam3_runner.py` ✅ — optional ORB-SLAM3 subprocess backend (needs external build).
+- `types.py` ✅ — `CameraModel` (`from_resolution`, `K`), `Frame`, `Pose` (`scaled`),
+  `Landmark`, `Trajectory`; frame convention documented in the module docstring.
+- `backend.py` ✅ — abstract `SlamBackend` seam (`name`, `process_sequence`).
+- `vo.py` ✅ — `MonocularVO` (`name="python-vo"`) + the testable geometry core
+  (`estimate_relative_pose`, `triangulate`, `relative_scale`, `integrate_step`,
+  `R_wc_prev_dot`). Module-level gates `_MIN_MATCHES`/`_ZERO_MOTION_PX`.
+- `anchor.py` ✅ — `TagObservation`, `tag_object_points`, `tag_camera_pose` (PnP,
+  `SOLVEPNP_IPPE_SQUARE`), `metric_scale_from_tag`, lazy `detect_tags`
+  (`tag36h11`, reorders pupil corners to TL,TR,BR,BL).
+- `local_map.py` ✅ — `LocalMap`: `ingest`/`set_anchor`/`camera_position`/`to_entities`/
+  `integrate`; metric re-frame + `WorldModel` entity bridge.
+- `euroc.py` ✅ — `parse_euroc_trajectory`: EuRoC/TUM `ts tx ty tz qx qy qz qw`
+  parser (`_quat_to_R`, skips blanks/`#`; GPS-free, `scale_known=False`).
+- `orbslam3_runner.py` ✅ — optional `ORBSLAM3Runner` subprocess backend
+  (`name="orbslam3"`) + `orbslam_available`; needs external C++ build.
 
 ## Planned
 - ⬜ Live anchor resolution loop (auto-detect tag from the stream, call `set_anchor`).

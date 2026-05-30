@@ -66,13 +66,17 @@ output always in arbitrary VO units until a metric anchor is applied downstream.
 
 - **MonocularVO** (`vo.py`, `name = "python-vo"`) — pure Python/OpenCV, always
   runs, no native build. Per step: ORB features (1500 by default) →
-  brute-force Hamming match (cross-check) → essential matrix
-  (`cv2.findEssentialMat`, RANSAC) → `cv2.recoverPose` for relative pose →
-  triangulation. Inter-frame scale is propagated by comparing inter-point
-  distances of overlapping triangulated landmarks across consecutive steps
-  (`relative_scale`, median ratio). The geometry core (`estimate_relative_pose`,
-  `triangulate`, `relative_scale`, `integrate_step`) is plain numpy/OpenCV and is
-  unit-tested with synthetic 3D→2D projections — no images needed.
+  brute-force Hamming match (cross-check, sorted by distance) → essential matrix
+  (`cv2.findEssentialMat`, RANSAC, `prob=0.999`, `threshold=1.0`) →
+  `cv2.recoverPose` for the relative pose (returns a **unit-norm** translation
+  direction) → triangulation of the inliers. Inter-frame scale is propagated by
+  comparing inter-point distances of overlapping triangulated landmarks across
+  consecutive steps (`relative_scale`, the **median** over all point-pair distance
+  ratios `d_prev / d_curr`); the running `step_scale` is multiplied by that factor
+  each step and fed to `integrate_step` as the step translation magnitude. The
+  geometry core (`estimate_relative_pose`, `triangulate`, `relative_scale`,
+  `integrate_step`) is plain numpy/OpenCV and is unit-tested with synthetic 3D→2D
+  projections — no images needed.
 
   Two honesty gates keep a *hovering* drone from drifting on the map:
   - **Tracking loss**: fewer than `_MIN_MATCHES` (12) matches, or a failed

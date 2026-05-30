@@ -52,18 +52,27 @@ highest priority, honored from any stage (see `PRIORITY_COMMANDS` in
 - `mission_state { stage, last_error, t }`
 - `health { tello, mavic, perception, t }`
 - `detections { source, boxes[], image_w, image_h, t }` — most-recent YOLO boxes
-  for one video stream (`source` = `"mavic"` | `"tello"`). Each
+  for one video stream. `source` = `"leader"` (recon Mavic) | `"follower"`
+  (companion Tello) — it names the stream the boxes belong to so the dashboard
+  knows which `<img>` to overlay. Each
   `DetectionBox { label, confidence (0..1), cx, cy, w, h }` is centre + size in
   normalised image-plane units (0..1), so the dashboard overlay scales to any
-  source resolution; `image_w/h` are advisory pixel dimensions.
+  source resolution; `image_w/h` are advisory pixel dimensions (Python ints,
+  default `0`).
 
 **clients → server** (`ClientMessage`):
 
 - `intent { command, source, t }` — `source` = `"phone"` | `"dashboard"`.
 - `device_location { position, source, t }` — `source` = `"phone"`.
 
-Each message is discriminated on the `type` field. Clients **never** command the
-Tello directly — they send `intent`; the backend state machine arbitrates.
+Each message is discriminated on the `type` field. This contract carries only
+**mission-level** intent (`hold` / `recall` / `follow_me` / `stop`) and device
+location to the backend — it is *not* the Tello flight-control path. In the
+current build the phone is the primary Tello controller and flies the drone
+directly over the Tello AP (`192.168.10.1:8889`); the backend's `FollowController`
+is an alternate controller, armed one-at-a-time (no code interlock yet — see
+CLAUDE.md). So `intent` here is advisory mission state the backend arbitrates into
+the world model, not a command relayed to the drone.
 
 ## Build notes
 

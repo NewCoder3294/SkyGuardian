@@ -5,15 +5,27 @@ with a PD regulator, and command the Tello. See
 [`../../../CLAUDE.md`](../../../CLAUDE.md) and
 [`../../../docs/VIDEO.md`](../../../docs/VIDEO.md).
 
+> **Controller role: backend / alternate.** In the current build the **phone is the
+> primary Tello controller** — it runs its own on-device AprilTag follow loop and
+> voice control and commands the Tello directly over the Tello AP
+> (`192.168.10.1:8889`). This module is the laptop-side `FollowController`, an
+> **alternate** flight path wired into `server.py` (constructed at module load,
+> `follow.start()` from the startup hook). Per CLAUDE.md only **one controller may be
+> armed at a time**; there is **no code interlock yet**, so keeping the backend
+> controller disarmed while the phone is flying is an operating rule, not an enforced
+> guard. "Armed" here means the Tello link is up and the mission stage permits RC —
+> see the no-op behaviour below for how this loop stays inert when the link is down.
+
 ## Responsibility
 Detect the soldier-worn AprilTag from the Tello forward camera → bearing + distance →
 station-keep with a PD regulator → send RC commands to the Tello. Handle tag loss
 (hover/coast) and the `holding` / `recall` / `stopped` mission stages.
 
 ## Owns
-The follow loop. The **only** Tello connection lives in [`../tello/`](../tello/);
-`FollowController` is the only legitimate caller of `TelloClient.send_rc`. Nothing
-else commands the Tello.
+The follow loop on the **laptop**. The only Tello connection on the backend lives in
+[`../tello/`](../tello/); `FollowController` is the only backend caller of
+`TelloClient.send_rc`. (The phone has its own independent Tello link via
+`TelloCommander` — that is a separate controller, not this one.)
 
 ## Interfaces
 - **Reads:** mission stage from [`../state_machine.py`](../state_machine.py)
@@ -53,6 +65,16 @@ else commands the Tello.
 Construct once at startup; call `start()` from the server's startup hook (it schedules
 `_run()` as an asyncio task). Constructor wiring:
 `FollowController(tello, video, world, mission, clock=None, img_width=960, img_height=720, tag_size_m=0.18, soldier_tag_id=None)`.
+
+`server.py` builds it with the shared `TelloClient` / `TelloVideoSource` / `WorldModel`
+/ `MissionStateMachine` and two env knobs:
+- `FOLLOW_TAG_SIZE_M` — physical tag edge length in metres (default `0.18`); must match
+  the printed soldier badge for distance to be metric.
+- `FOLLOW_TAG_ID` — integer `tag36h11` id of the soldier badge; unset → `soldier_tag_id`
+  is `None` and the detector accepts any tag in frame (bring-up mode).
+
+`img_width` / `img_height` keep their constructor defaults (`960×720`); they size the
+`CameraModel` used for PnP, so they should match the Tello stream resolution.
 
 Loop (`_run`, paced at `_LOOP_HZ = 15`):
 1. `video.read_jpeg()` → decode with cv2 (`cv2`/`numpy` imported lazily; the loop

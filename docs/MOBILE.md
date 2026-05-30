@@ -15,37 +15,59 @@ the per-file breakdown.
 The soldier's phone client. It does two distinct things, depending on which network
 it's on:
 
-- **MAP** (subscribe to the laptop brain over WebSocket): renders the live world model
-  — entities + movement trails — and sends **mission intent** (`follow_me` / `hold` /
-  `recall` / `stop`) to the laptop. It never commands the Tello on this path; the
-  laptop arbitrates. Three map modes: 2D / 3D ride on an OpenStreetMap basemap
-  (anchored to the device location), TAC is the offline, GPS-less range/bearing
-  tactical plot.
+- **MAP**: renders the live world model — entities + movement trails — and sends
+  **mission intent** (`follow_me` / `hold` / `recall` / `stop`) to the laptop over a
+  `/ws` WebSocket. It never commands the Tello on this path. Two sources of map data are
+  merged: the laptop world model (`WorldClient`, when a mission link is connected) **and**
+  a fully on-device, GPS-anchored phone-side fix (`Localizer`) computed from the AprilTag
+  follow loop — so the operator, the drone, and their trails plot even with no laptop in
+  the loop. Three map modes: **2D / 3D** ride on an OpenStreetMap raster basemap (anchored
+  to the device location), **TAC** is the offline, GPS-less range/bearing tactical plot.
 - **FEED** (direct phone↔Tello, no laptop): joins the Tello AP, shows the live H.264
-  camera, and runs the **autonomous AprilTag follow loop on the phone** — takeoff,
-  station-keep on the hat tag, hover/land when lost. This path is the soldier's
-  standalone mobile kit; the laptop is not in the loop. (Note: this contradicts the
-  "phone never commands the Tello" line in CLAUDE.md — the direct-control FEED is a
-  deliberate addition.)
+  camera, and runs an **autonomous on-device follow loop** — takeoff, station-keep on the
+  target, hover/land when lost. Two follow modes:
+  - **FOLLOW TAG** — AprilTag (tag36h11) station-keeping on the soldier's hat tag.
+  - **TRACK** — tag-free visual tracking: lock onto whatever the operator has centered
+    ("track that boat") via Vision saliency + `VNTrackObjectRequest`, then hold its
+    apparent size as the standoff reference.
 
-Voice is push-to-talk: mic → 16 kHz PCM → on-device Gemma 3n (Cactus) transcription →
-function-call / keyword fallback → drone action. Flight verbs go straight to the Tello;
-mission verbs route to the laptop. A dominant **STOP**/**LAND** button is always
-visible (hard safety control, not voice-only).
+  This FEED path is the soldier's standalone mobile kit; the laptop is not in the loop.
+  Per `../CLAUDE.md`, exactly one Tello controller is armed at a time — on this path the
+  phone is the sole controller (no laptop `FollowController` armed against the same drone).
+
+Voice is push-to-talk: mic → Apple's **on-device `SFSpeechRecognizer`** (offline STT) →
+closed-vocabulary keyword/intent match (`DroneIntent.match`) → drone action. Flight verbs
+go straight to the Tello; mission verbs (`hold` / `recall` / `stop`) route to the laptop
+when connected. A dominant **LAND** / **STOP** button is always visible (hard safety
+control, not voice-only).
+
+> **Voice note:** STT runs on `SFSpeechRecognizer` (`VoiceController.swift`), *not* on
+> Cactus/Gemma — Gemma 3n's `cactus_transcribe` path has no STT backend and null-derefs,
+> so the deterministic Apple recognizer + keyword matcher is used for the live control
+> loop. The Cactus/Gemma function-calling path (`DronePilot` + `CactusService.complete`)
+> and the on-device vision analysis path (`CactusService.analyze`) are compiled in and
+> wired, but the shipped voice→action route is the deterministic one.
 
 ## On-device model (first-launch setup)
 
 `cactus.xcframework` is bundled (`mobile/Frameworks/cactus.xcframework`, embedded), so
-voice/vision are compiled in. The Gemma 3n weights are **not** shipped in the IPA —
-`ModelDownloader` fetches them once, automatically, on first launch:
+the Cactus inference surface (vision + function-calling completion) is compiled in. The
+Gemma weights are **not** shipped in the IPA — `ModelDownloader` fetches them once,
+automatically, on first launch:
 
-- Source: HuggingFace `Cactus-Compute/gemma-4-E2B-it`, the int4-apple build, pinned to
-  an immutable commit. ~4.7 GB; SHA-256 verified before unzip; resumable across drops
-  and relaunches. Unzipped into the app's Documents (`models/gemma-4-e2b-it`).
+- Source: HuggingFace `Cactus-Compute/gemma-4-E2B-it`, the int4-apple build
+  (`weights/gemma-4-e2b-it-int4-apple.zip`), pinned to an immutable commit. ~4.7 GB
+  (`expectedBytes` 4,679,429,616); SHA-256 verified (`expectedSHA256`) before unzip;
+  resumable across drops and relaunches (resume token + partial live in Caches, not
+  iCloud-backed). Unzipped into the app's Documents (`models/gemma-4-e2b-it`), with a
+  disk preflight (~+0.6 GB headroom) so it fails clearly rather than mid-unzip.
 - A blocking **SYSTEM SETUP** overlay covers the UI until the model is present. This
   download is **online** — run it on real WiFi (not the Tello AP). Inference afterward
   is fully offline.
-- With no model present, voice reports `UNAVAILABLE` and never fakes a command.
+- With no model present, the Cactus-backed services report `UNAVAILABLE` and never fake
+  output (`UnavailableCactusService` throws from every call). The voice control loop
+  itself does not depend on the model — it uses Apple STT — but the SETUP screen still
+  blocks the UI until the model is installed.
 
 ## Build & test
 ```bash
@@ -54,9 +76,11 @@ xcodegen generate
 xcodebuild test -project ReconCompanion.xcodeproj -scheme ReconCompanion \
   -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
-Tests live in `mobile/Tests/` (pure logic: `ContractsTests`, `FollowControllerTests`,
-`IntentParserTests`, `MapProjectionTests`). The follow controller, intent parser, map
-projection, and wire contracts are all unit-tested without hardware.
+Tests live in `mobile/Tests/` (pure logic, no hardware): `ContractsTests`,
+`FollowControllerTests`, `IntentParserTests`, `MapProjectionTests`, and
+`WorldClientConfigTests` (pins the mobile default brain URL to `ws://…:8000/ws`, matching
+the backend bind and the dashboard default so port drift fails loudly). The follow
+controller, intent parser, map projection, and wire contracts are all unit-tested.
 
 Debug launch arg (simulator): `-feed` opens straight to the FEED tab and points the
 mission link at a local backend on `ws://127.0.0.1:8001/ws`.
@@ -69,7 +93,7 @@ export ASC_ISSUER_ID=<issuer-uuid> ASC_KEY_ID=42PM72NJQX \
        ASC_KEY_PATH="$HOME/.appstoreconnect/private_keys/AuthKey_42PM72NJQX.p8"
 
 cd mobile
-# bump CURRENT_PROJECT_VERSION in project.yml (currently 7), then:
+# bump CURRENT_PROJECT_VERSION in project.yml (currently 13), then:
 xcodegen generate
 KEY="$ASC_KEY_PATH"
 xcodebuild archive -project ReconCompanion.xcodeproj -scheme ReconCompanion \
@@ -101,12 +125,20 @@ The simplest path: only the **iPhone** on the **Tello's WiFi AP** (`TELLO-XXXXXX
 
 1. Power the Tello, join its WiFi on the phone.
 2. Open SkyGuardian → tap **FEED** → live Tello camera appears (`● TELLO LIVE`).
-3. **START FOLLOW** → confirmation dialog → takeoff + AprilTag station-keeping. The
-   on-device follow loop holds standoff (default 2 m) and lands automatically if the
-   tag stays lost. **STOP · LAND** ends it.
+3. **FOLLOW TAG** (or **TRACK**) → confirmation dialog → takeoff + station-keeping. The
+   on-device follow loop holds standoff (default 2 m, `FollowConfig.targetDistance`),
+   hovers when the target is briefly lost, and lands automatically if it stays lost past
+   the lost-land timeout. **STOP · LAND** ends it; the LAND button in the voice bar and
+   an `emergency` voice verb (motor cut, no land) are also wired through the same arbiter.
 
-The phone owns the Tello control channel directly here (UDP `192.168.10.1:8889` for
-SDK commands + keepalive, UDP `:11111` inbound for the H.264 stream).
+The phone owns the Tello control channel directly here. `TelloCommander` (the single
+owner of the channel) sends SDK commands + keepalive over UDP `192.168.10.1:8889`;
+`TelloDirectStream` receives the H.264 stream inbound on UDP `:11111`, reassembles NAL
+units, and decodes via VideoToolbox both to the on-screen `AVSampleBufferDisplayLayer`
+and (tapped) to CVPixelBuffers for AprilTag/track detection. The follow loop
+(`FollowCoordinator`) runs detection on its own queue (~10 Hz cap) and streams `rc` stick
+commands at ~15 Hz on a separate queue; a takeoff-settle delay holds off follow `rc` until
+the climb finishes.
 
 ## Device test — MAP + mission link (with the laptop)
 
@@ -123,23 +155,61 @@ uvicorn app.server:app --host 0.0.0.0 --port 8001
 # wait for health to report the Tello / Mavic / perception link state
 ```
 (`backend/run.sh` runs the same server on port 8000; the device-test convention here
-uses 8001 to match the DEBUG `-feed` arg.)
+uses 8001 to match the DEBUG `-feed` arg. The mobile default and `WorldClientConfigTests`
+pin to 8000, matching `backend/run.sh` and the dashboard default.)
 
 **iPhone (TestFlight → SkyGuardian):**
 1. MISSION LINK → set `ws://<mac-ip>:8001/ws` (the IP from `ipconfig`, **not**
    `127.0.0.1`).
 2. CONNECT → MAP and StatusBar (link / mission stage / TELLO·MAVIC·PERC health) go
-   live. The MAP plots only real world-model entities.
+   live. The MAP plots real world-model entities from the laptop plus the phone-side
+   `Localizer` operator/drone fix; no mock data anywhere.
 3. Allow location when prompted — the 2D/3D OSM basemap is anchored to the device
-   location; TAC works without it.
+   location (and the heading is used to place the drone relative to the operator); TAC
+   works without GPS.
+
+## Phone-side localization (no laptop needed for the map)
+
+`Localizer` builds a minimal world model entirely on the phone so the MAP is useful even
+when standalone:
+
+- The operator is anchored by GPS (`LocationProvider`, coarse `kCLLocationAccuracyNearestTenMeters`
+  + 4 m distance filter to avoid constant re-anchoring); the first fix becomes the launch
+  origin.
+- The drone is placed relative to the operator using the AprilTag follow's distance +
+  bearing, rotated into the world by the device compass heading.
+- Both accumulate fixed-frame movement trails (≥ 0.5 m to log a point, capped at 240
+  points). `ContentView` merges `Localizer.entities`/`trails` with any `WorldClient`
+  entities/trails for rendering.
+
+## Voice → action routing (the arbiter)
+
+`ContentView.handle(_:)` is the single drone arbiter for resolved voice actions:
+
+- `follow_me` → start following (takeoff) when disarmed, else resume after a manual takeover.
+- `track` → start tag-free tracking when disarmed, else re-lock the centered object.
+- `emergency` → cut motors (no land) — always wins.
+- `land` → land and disarm.
+- `stop` → stop the follow loop / hover, and send a mission `stop` to the laptop if connected.
+- any other flight verb (up/down/left/right/forward/back/rotate) → take over (pause-and-hold
+  the follow loop), then execute the discrete move via `TelloCommander.execute`.
+- `hold` / `recall` → mission intents to the laptop over the WS (no Tello command).
+
+Flight magnitudes are clamped to the Tello's accepted ranges (`DroneAction`: move 20–500
+cm, rotate 1–360°) so a malformed command can't be rejected by the drone.
 
 ## Gotchas
 - The mission-link default is `ws://127.0.0.1:8000/ws` (simulator). Change it on the
   phone to the Mac's LAN IP and the port you actually ran.
-- 2D/3D map tiles come from OpenStreetMap over HTTP — they only render with internet;
-  use **TAC** when offline. Entity/trail rendering itself needs no network.
+- 2D/3D map tiles come from OpenStreetMap over HTTP (`tile.openstreetmap.org`, capped at
+  z19) — they only render with internet; use **TAC** when offline. Entity/trail rendering
+  itself needs no network. ATS allows local networking and the OSM HTTP tile fetch sends a
+  descriptive User-Agent per OSM policy.
 - The Gemma model download needs real WiFi, not the Tello AP. Do the one-time SETUP
-  before going to the field; voice shows `UNAVAILABLE` / `TAP TO GET MODEL` until it's
-  installed.
-- The phone keeps the Tello AP fine with no internet for the FEED path; the MAP path
-  needs reachability to the Mac.
+  before going to the field. Voice control (Apple STT) works without the model, but the
+  SETUP overlay blocks the UI until the model is installed.
+- The phone keeps the Tello AP fine with no internet for the FEED path; the MAP path's
+  laptop world model needs reachability to the Mac (the phone-side `Localizer` plot does
+  not).
+- Print the hat tag in the **tag36h11** family at the size set on the follow loop
+  (`tagSizeMeters`, default 0.16 m) — distance estimation depends on the printed size.

@@ -32,7 +32,9 @@ MAVIC_SOURCE=file:../captures/mavic/clip.mp4 backend/run.sh
 
 `video.make_source` parses the `file:` spec (`Path(value).expanduser()`) and
 builds a `StreamVideoSource` (cv2.VideoCapture-backed, background reader
-thread). The perception loop then samples it at `PERCEPTION_FPS` (default
+thread). A bare spec with no `kind:` prefix is also accepted and handed to
+`cv2.VideoCapture` as-is, but prefer the explicit `file:` form. The perception
+loop then samples it at `PERCEPTION_FPS` (default
 5 Hz) exactly as it would a live stream, running SLAM + YOLO and upserting
 entities into the world model — so a recorded clip drives the dashboard like a
 real Mavic feed. Unset `MAVIC_SOURCE` yields a `NullSource` (idle, no frames).

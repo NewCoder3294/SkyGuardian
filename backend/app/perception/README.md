@@ -8,16 +8,37 @@ write detected entities (with local-frame position) into the `WorldModel`.
 - **Reads:** Mavic video (server `FrameSource`); dev against recorded clips in
   `captures/`.
 - **Writes:** entities via `WorldModel.upsert` — YOLO-derived detections
-  (`source = yolo`) and SLAM map entities (`source = slam`): the `mavic_cam`
-  drone pose, a `launch anchor` POI once the tag is seen, and sparse landmarks.
+  (`source = yolo`, `EntitySource.YOLO`) and SLAM map entities
+  (`source = slam`, `EntitySource.SLAM`): the `mavic_cam` drone pose
+  (`EntityType.DRONE`), sparse landmarks (`lm_*`, `EntityType.OBJECT`), and —
+  only when a tag position is passed to `LocalMap.integrate`/`to_entities` — an
+  `anchor_tag` POI labelled `launch anchor`. The live loop integrates **without**
+  a tag position, so the launch-anchor POI currently appears only on the VOD
+  (`file_processor`) path.
 
 ## Build notes
 - Local weights only (no cloud) — see `models/`.
 - SLAM gives camera pose + a local map frame anchored to launch point +
   landmarks. No GPS.
-- Detection runs at recon-rate (default 5 Hz), well below the 20 Hz MJPEG
-  relay so the relay is never starved. It never sits in a real-time control
-  loop.
+- Detection runs at recon-rate (`PERCEPTION_FPS`, default 5 Hz), well below the
+  20 Hz MJPEG relay so the relay is never starved. It never sits in a real-time
+  control loop.
+
+### Config (env, read by `server.py` when it constructs the pipeline)
+- `YOLO_WEIGHTS` — primary detector weights path (unset → SLAM-only/degraded).
+- `YOLO_CLASSES` — comma-separated open-vocab prompt list. Unset defaults to
+  `server.py` `_DEFAULT_VOCAB` (defense-relevant prompts) **only** when the
+  weights filename contains `world`; for a stock COCO model it stays `None`.
+- `YOLO_IMGSZ` (default `960`), `YOLO_CONF` (default `0.20`).
+- `YOLO_COCO_WEIGHTS` / `YOLO_COCO_KEEP` — optional second supervised COCO
+  detector and the class set it is filtered to (default keep set applied when
+  COCO weights are set; classes in the keep set are stripped from the
+  open-vocab prompt list so the two detectors don't overlap).
+- `DEPTH_MODEL` (default `depth-anything/Depth-Anything-V2-Small-hf`, `off`
+  disables), `DEPTH_SCALE` (default `5.0`).
+- `ANCHOR_TAG_SIZE_M` (default `0.20`) — physical AprilTag edge length used for
+  metric-scale anchoring.
+- `PERCEPTION_FPS` (default `5`) — also drives `file_processor`'s `sample_fps`.
 
 ## Data flow
 The live loop lives in `pipeline.py` (`PerceptionPipeline`), started once from
@@ -32,8 +53,11 @@ The live loop lives in `pipeline.py` (`PerceptionPipeline`), started once from
    motion between them, then calls `metric_scale_from_tag` and
    `LocalMap.set_anchor(scale)` to make the map metric. Until anchored, the map
    is up-to-scale only.
-4. **SLAM entities** — `LocalMap.integrate(world, t)` pushes the mavic_cam drone
-   pose and landmarks into the world model.
+4. **SLAM entities** — `LocalMap.integrate(world, t)` pushes the `mavic_cam`
+   drone pose, sparse landmarks, and (when a tag position is passed) a `launch
+   anchor` POI into the world model. The live loop currently integrates without
+   a tag position; `LocalMap.to_entities` is the same path `file_processor` uses
+   to emit those entities for the VOD sidecar.
 5. **YOLO** — runs the configured detector(s) on the same frame.
 6. **Depth (optional)** — when a depth model is loaded and YOLO produced boxes,
    estimates a per-pixel depth map for the frame.
@@ -74,16 +98,25 @@ invalid in the new feed's coordinate frame.
   SLAM pose → local-frame `Entity` (`source = yolo`). With a depth map, scales
   the unprojected camera ray by per-pixel depth for a real 3D position;
   otherwise intersects the ray with the ground plane (z=0). When the pose is
-  missing/unscaled (`slam_pose is None or not scale_known`), places the entity
-  at the origin with confidence ×0.4 rather than dropping it; when the ground
-  ray misses (parallel/behind camera) it falls 3 m down the ray at ×0.5. Maps
-  YOLO labels to `EntityType` via `_LABEL_TO_TYPE` (unknown labels → `OBJECT`);
-  entities carry a 3 s TTL.
+  missing/unscaled (`slam_pose is None or not slam_pose.scale_known`), places the
+  entity at the origin with confidence ×0.4 rather than dropping it; when the
+  ground ray misses (parallel/behind camera) it falls 3 m down the ray at ×0.5.
+  Maps YOLO labels to `EntityType` via `_LABEL_TO_TYPE` (`person`/`soldier` →
+  `SOLDIER`; `hazard`/`debris`/`obstacle` → `HAZARD`; `door`/`doorway`/
+  `entrance`/`building` → `POI`; `car`/`truck`/`vehicle` and any unlisted label →
+  `OBJECT`). Entity IDs bucket the pixel centre to 32 px (`yolo_<label>_<bx>_<by>`)
+  so a detection re-uses its world-model slot across frames; entities carry a 3 s
+  TTL (`source = yolo`).
 - `file_processor.py` — `process_video_file`: the VOD path. Reuses the same
-  primitives (`YoloDetector`, `DepthEstimator`, `fuse_detections`,
-  `MonocularVO` + AprilTag, `LocalMap`) across every Nth frame of an uploaded
-  video and writes a time-indexed `ProcessedVideo` JSON sidecar so the dashboard
-  can scrub detections over an HTML5 `<video>` element.
+  primitives (`YoloDetector` + the optional COCO ensemble, `DepthEstimator`,
+  `fuse_detections`, `MonocularVO`, `LocalMap`) across every Nth frame
+  (`sample_stride = round(source_fps / sample_fps)`) of an uploaded video and
+  writes a time-indexed `ProcessedVideo` JSON sidecar so the dashboard can scrub
+  detections over an HTML5 `<video>` element. Each frame snapshot carries both
+  normalised image-plane boxes and the merged YOLO + SLAM (`LocalMap.to_entities`)
+  3D entities for the Map tab. Defaults differ from the live loop: `yolo_imgsz`
+  960, `yolo_conf` 0.20. SLAM/AprilTag anchoring here is best-effort (logged
+  only on error); it never raises out of the per-frame tick.
 - `slam/` — **GPS-less monocular mapping.** Pure-Python `MonocularVO` default +
   optional ORB-SLAM3 backend (`ORBSLAM3Runner`), AprilTag metric-scale anchor,
   and `LocalMap` that bridges the trajectory + landmarks into the world model.
