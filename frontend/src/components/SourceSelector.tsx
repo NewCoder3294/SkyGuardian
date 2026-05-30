@@ -30,6 +30,19 @@ function UploadIcon({ className = "" }: { className?: string }) {
   );
 }
 
+function CloseIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden className={className}>
+      <path
+        d="M4 4l8 8M12 4l-8 8"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 interface UploadStatus {
   name: string | null;
   state: "idle" | "uploading" | "processing" | "ready" | "error";
@@ -206,6 +219,28 @@ export function SourceSelector({ apiBase, onState }: Props) {
         <span className="border border-border bg-surface-elevated px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest text-text-muted">
           {upload.frame_count} frames · {upload.detection_count} det
         </span>
+      )}
+
+      {/* Clear / discard the uploaded clip. Hits the same /video/source/rtmp
+          reset the RTMP button uses — kept as a separate control so operators
+          who just want "remove this file" don't have to deduce that toggling
+          the source is what discards it. Shown for any file-loaded state
+          (uploading, processing, ready, error). */}
+      {state?.kind === "file" && (
+        <button
+          type="button"
+          onClick={switchToRtmp}
+          disabled={busy !== ""}
+          title="Discard uploaded clip"
+          className={`inline-flex items-center gap-1.5 border px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.18em] transition-colors duration-100 ${
+            busy !== ""
+              ? "cursor-not-allowed border-border-strong bg-surface-elevated text-text-muted opacity-60"
+              : "border-fail/60 bg-fail/5 text-fail hover:bg-fail/10"
+          }`}
+        >
+          <CloseIcon className="h-3 w-3" />
+          Clear
+        </button>
       )}
 
       <div className="flex items-stretch gap-0">
