@@ -11,20 +11,26 @@ bring-up. No app runtime depends on these; they are dev/ops convenience only.
   secrets in the repo): `ASC_ISSUER_ID`, `ASC_KEY_ID`, `ASC_KEY_PATH` (the
   `AuthKey_<KEY_ID>.p8`). Commands: `whoami` (auth check), `list-bundles`,
   `register-bundle <id> <name>`, `create-app <bundleId> <name> <sku> [locale]`.
-  Run from `scripts/`. Pairs with the archive/upload lane referenced in the root
-  [`README.md`](../README.md#build--ship-the-ios-app). Deps: `pyjwt`, `requests`.
+  Running with no args (or an unknown command) prints the module docstring. Run
+  from `scripts/`. JWT lifetime is 20 min (`exp = iat + 1200`). Deps: `pyjwt`,
+  `requests`.
 
 - ✅ **`run_slam_video.py`** — offline GPS-less monocular mapping on a recorded
-  clip. Samples frames from a video, runs the backend SLAM stack
-  (`ORBSLAM3Runner` if `ORB_SLAM3_ROOT` is built, else the pure-Python
-  `MonocularVO`), and reports the local-frame trajectory + path length. Optional
-  `--tag-size` anchors metric scale from an AprilTag of known edge length seen in
-  the clip; otherwise the map stays in VO units. No lat/lng projection — local
-  frame, origin at launch. Imports
+  clip. Samples frames at `--fps` (default 8) by decimating the video's native
+  rate, builds a `CameraModel` from the frame resolution, then runs the backend
+  SLAM stack: `ORBSLAM3Runner` if its binary `available()`, else the pure-Python
+  `MonocularVO`. Feeds the trajectory into a `LocalMap` and prints the backend
+  name, pose/landmark counts, and total path length. Optional `--tag-size`
+  (AprilTag edge length, m) anchors metric scale: it looks for the first two
+  frames containing a tag, computes the scale via `metric_scale_from_tag`, and
+  calls `LocalMap.set_anchor`; if fewer than two tag observations are found the
+  map stays in VO units. Output unit is `m` once anchored, else `VO-units`. No
+  lat/lng projection — local frame, origin at launch. Inserts `backend/` on
+  `sys.path` and imports
   [`backend/app/perception/slam`](../backend/app/perception/slam/) directly.
   Usage: `python scripts/run_slam_video.py path/to/clip.mp4 [--fps 8] [--tag-size 0.20]`.
-  See [`docs/SLAM.md`](../docs/SLAM.md). Deps: `opencv-python`, `numpy` (+ the
-  backend SLAM module).
+  See [`docs/SLAM.md`](../docs/SLAM.md). Deps: `opencv-python` (`cv2`), `numpy`
+  (+ the backend SLAM module).
 
 ## Build notes
 

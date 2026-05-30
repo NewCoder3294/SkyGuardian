@@ -9,11 +9,13 @@ Full theory in [`../../../../docs/SLAM.md`](../../../../docs/SLAM.md).
 
 ## Owns
 - `SlamBackend` seam (`backend.py`) — `process_sequence(frames, camera) → Trajectory`
-  in arbitrary VO units (`scale_known=False`) until a metric anchor is applied.
+  in arbitrary VO units (`Pose.scale_known=False`) until a metric anchor is applied.
 - `MonocularVO` (`vo.py`) — default backend, pure numpy/OpenCV. ORB match →
-  essential matrix → `recoverPose` → triangulate → scale-propagated trajectory.
+  essential matrix → `recoverPose` → triangulate → scale-propagated trajectory,
+  with a zero-motion gate so a hovering drone doesn't fake drift.
 - AprilTag metric anchor (`anchor.py`) — `solvePnP` on a known-size tag → VO-unit→metre scale + origin.
-- `LocalMap` (`local_map.py`) — metric re-frame + `WorldModel` entity emission.
+- `LocalMap` (`local_map.py`) — `ingest` a trajectory, `set_anchor` the metric
+  scale/origin, then `integrate` entities into the `WorldModel`.
 - Core types (`types.py`), EuRoC/TUM trajectory parser (`euroc.py`), optional
   ORB-SLAM3 subprocess backend (`orbslam3_runner.py`).
 
@@ -27,18 +29,37 @@ metres are unknowable from pixels alone. So:
    gives a **metric baseline** between camera centres via PnP; VO gives the same
    baseline in its units. `scale = metric / vo` (`metric_scale_from_tag`).
 3. `LocalMap.set_anchor(scale, origin)` fixes metres and makes the launch point the
-   local-frame **origin (0,0,0)**, then upserts entities into the world model.
+   local-frame **origin (0,0,0)**; `LocalMap.integrate` then upserts entities into the
+   world model.
 
 Frame convention: right-handed, metres, `Xw = R_wc @ Xc + C` (camera-centre `C` in
-the local frame). Tracking loss holds the last pose rather than fabricating motion.
+the local frame). Tracking loss (`< 12` matches, degenerate geometry) holds the
+last pose rather than fabricating motion; a near-stationary step (median feature
+displacement `< 1.5 px`) is also held, so a hovering drone stays put on the map.
+
+## Pose / local-map data flow
+```
+Frame[] + CameraModel
+   └─ SlamBackend.process_sequence ─► Trajectory   (poses + landmarks, VO units)
+        MonocularVO (default)  |  ORBSLAM3Runner (optional)
+   LocalMap.ingest(traj)
+   LocalMap.set_anchor(scale, origin)              (scale from metric_scale_from_tag)
+        scale = metric baseline (PnP) / VO baseline
+   LocalMap.integrate(world_model, t, tag_position)
+        └─ to_entities ─► WorldModel.upsert         (mavic_cam, anchor_tag, lm_i)
+```
+A `Pose` carries `R_wc` + `position` in VO units while `scale_known=False`;
+`LocalMap._to_metric` applies `(position − origin) * scale` per read (it does not
+mutate the stored poses). `camera_position()` returns the latest metric centre.
 
 ## Interfaces
 - **Reads:** ordered `Frame` sequence (Mavic stream / `captures/` clips) + a
-  `CameraModel` (pinhole `K`; `from_resolution` gives default intrinsics when
-  uncalibrated); `TagObservation`s for the anchor.
-- **Writes:** `WorldModel.upsert` via `LocalMap.integrate` — `mavic_cam` (`drone`),
-  `anchor_tag` (`poi` launch marker), sparse landmarks (`object`), all
-  `source=slam`. Confidence drops to 0.5 while the map is pre-metric.
+  `CameraModel` (pinhole `K`; `from_resolution(w, h)` gives default intrinsics —
+  `focal_factor 0.78 * max(dim)` — when uncalibrated); `TagObservation`s for the anchor.
+- **Writes:** `WorldModel.upsert` via `LocalMap.integrate` — `mavic_cam` (`drone`,
+  label `mavic`, ttl 3s), `anchor_tag` (`poi` launch marker, ttl 10s, emitted only
+  when a `tag_position` is passed), sparse landmarks `lm_{i}` (`object`, ttl 10s),
+  all `source=slam`. Mavic confidence is `1.0` once metric, `0.5` while pre-metric.
 
 ## Build notes
 - `MonocularVO` always runs (pure Python/OpenCV); the geometry core
@@ -66,4 +87,10 @@ the local frame). Tracking loss holds the last pose rather than fabricating moti
 - ⬜ Live anchor resolution loop (auto-detect tag from the stream, call `set_anchor`).
 - ⬜ Bundle adjustment / loop closure (today's two-view VO drifts — swap in ORB-SLAM3
   for accuracy behind the same seam).
-- ⬜ Wire into `../fusion.py` so YOLO boxes get local-frame positions from SLAM pose.
+
+## Done since first draft
+- ✅ Wired into `../fusion.py`: `detection_to_entity` / `fuse_detections` take a `Pose`
+  and place YOLO boxes in the local frame — unproject the box centre to a camera ray,
+  rotate by `Pose.R_wc`, intersect the ground plane (or scale by a depth map). Falls back
+  to the world origin with reduced confidence when `slam_pose` is `None` or not yet metric
+  (`scale_known=False`).

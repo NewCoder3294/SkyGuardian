@@ -1,4 +1,4 @@
-# CLAUDE.md — Recon & Companion Drone System (working title, rename freely)
+# CLAUDE.md — SkyGuardian (Recon & Companion Drone System)
 
 ## Mission
 
@@ -59,6 +59,56 @@ Built for environments with no connectivity. Everything runs locally. No cloud, 
                           (both subscribe to the same local server)
 ```
 
+## Repo structure (current)
+
+```
+backend/                 # the brain (Python, FastAPI)
+  app/
+    server.py            # FastAPI app + WebSocket endpoint; binds 0.0.0.0:8000
+    contracts.py         # wire format (source of truth; mirrored by shared/ + mobile)
+    world_model.py       # single source of truth for entities
+    state_machine.py     # mission/connection state
+    ws_hub.py            # WebSocket fan-out to both clients
+    clock.py video.py    # shared clock; Mavic video source handling
+    tello/               # only code that talks to the Tello
+      client.py          #   TelloClient (djitellopy-backed)
+      video.py           #   TelloVideoSource
+    follow/              # soldier-follow (AprilTag)
+      apriltag.py        #   tag detection
+      controller.py      #   FollowController (bearing/distance station-keeping)
+    perception/          # Mavic feed: detect + map
+      pipeline.py yolo.py depth.py fusion.py file_processor.py
+      slam/              #   vo.py anchor.py backend.py local_map.py types.py
+                         #   euroc.py orbslam3_runner.py
+  run.sh                 # uvicorn app.server:app --host 0.0.0.0 --port 8000
+  requirements.txt
+  tests/                 # pytest; run: cd backend && .venv/bin/python -m pytest -q
+
+frontend/                # web dashboard (Next.js + Tailwind, runs on port 3001)
+  src/app/               # layout.tsx page.tsx globals.css
+  src/components/        # Clock ConsolePanel EntityList IntelPanel LocalMap
+                         # LocalMap3D SourceSelector StatusBar ThreatAlert
+                         # VideoFeed VideoPlayer
+  src/lib/               # contracts entities feedUrl playback projection
+                         # status threats useWorldClient
+                         # Pulls MJPEG/JPEG from the brain.
+
+mobile/                  # iOS / SwiftUI client (pairs with Cactus/Gemma on-device)
+  Sources/               # ReconCompanionApp ContentView WorldClient OSMMapView
+                         # LocalMapView MapProjection AprilTagDetector
+                         # FollowController FollowCoordinator Cactus CactusService
+                         # VoiceController IntentParser DroneFunction DronePilot
+                         # TelloCommander TelloDirectStream TelloVideoView MJPEGView
+                         # ModelDownloader LocationProvider StatusBar ControlBar
+                         # Theme Contracts
+  Tests/                 # ContractsTests FollowControllerTests
+                         # IntentParserTests MapProjectionTests
+
+shared/contracts.ts      # TS mirror of backend/app/contracts.py
+scripts/                 # asc.py, run_slam_video.py
+models/  captures/       # local data dirs (weights, recorded feeds)
+```
+
 ## Tech stack
 
 **Brain (laptop, Python)**
@@ -73,11 +123,11 @@ Built for environments with no connectivity. Everything runs locally. No cloud, 
 - Constrain output to a fixed command vocabulary (structured intent enum), not free text.
 
 **Web dashboard (laptop)**
-- Next.js + Tailwind + shadcn. React Flow for any graph view. Motion for transitions.
+- Next.js 14 + Tailwind. Runs on port 3001; pulls MJPEG/JPEG video from the brain.
 - Dark tactical aesthetic. Define design tokens first (layered near-black, one accent, hairline borders, mono numerals). Avoid generic defaults.
 
 **Mobile app (phone)**
-- React Native (pairs with Cactus). Map view plus voice control plus device location.
+- iOS / SwiftUI (pairs with Cactus on-device). Map view plus voice control plus device location.
 
 ## World model / data
 

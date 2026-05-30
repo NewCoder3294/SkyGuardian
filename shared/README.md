@@ -11,8 +11,7 @@ shape** — keep them in sync by hand:
   `Codable` mirror for the iOS app.
 
 The Python file owns the shape; the TS and Swift files mirror it. There is no
-codegen — a change to one is a manual change to all three. See the spine section
-in [`../README.md`](../README.md#the-spine--two-contracts-everything-meets-at).
+codegen — a change to one is a manual change to all three.
 
 **Owns**
 
@@ -20,7 +19,9 @@ in [`../README.md`](../README.md#the-spine--two-contracts-everything-meets-at).
 
 **Interfaces**
 
-- *Imported by:* the web dashboard (⬜ not started). No runtime deps; types only.
+- *Imported by:* the web dashboard via `../frontend/src/lib/contracts.ts`, which
+  re-exports this file (`export * from "../../../shared/contracts"`). No runtime
+  deps; types only.
 - *Mirrors:* `contracts.py` (Pydantic) ↔ `Contracts.swift` (Codable).
 
 ## Contract A — world model entity
@@ -30,20 +31,36 @@ The shared world-model shape. Local frame, metres, no GPS.
 - `EntityType` = `poi · hazard · object · soldier · drone`
 - `EntityStatus` = `active · stale · lost` (owned by the world model, not producers)
 - `EntitySource` = `yolo · slam · follow · manual`
+- `Vec3 { x, y, z }` — Python defaults `z` to `0.0`; TS/Swift always carry all three.
 - `Entity { id, type, position: Vec3, confidence (0..1), timestamp (unix s),
   source, label?, ttl_s, status }`
-- `Vec3 { x, y, z }`
+
+Python defaults `confidence=1.0`, `label=None`, `ttl_s=5.0`, `status=active` on
+upsert, but the world model always emits a fully-populated entity — so the TS and
+Swift mirrors treat `ttl_s` and `status` as required (only `label` is optional).
 
 ## Contract B — WebSocket protocol
 
 Closed intent vocabulary (`Command` = `follow_me · hold · recall · stop`) — voice
 and UI map onto exactly these, no free text. `stop` / `recall` are always-live and
-highest priority (see `PRIORITY_COMMANDS` in `contracts.py`).
+highest priority, honored from any stage (see `PRIORITY_COMMANDS` in
+`contracts.py`).
 
-- **server → clients** (`ServerMessage`): `world_snapshot { entities[], t }` ·
-  `mission_state { stage, last_error, t }` · `health { tello, mavic, perception, t }`
-- **clients → server** (`ClientMessage`): `intent { command, source, t }` ·
-  `device_location { position, source, t }`
+**server → clients** (`ServerMessage`):
+
+- `world_snapshot { entities[], t }`
+- `mission_state { stage, last_error, t }`
+- `health { tello, mavic, perception, t }`
+- `detections { source, boxes[], image_w, image_h, t }` — most-recent YOLO boxes
+  for one video stream (`source` = `"mavic"` | `"tello"`). Each
+  `DetectionBox { label, confidence (0..1), cx, cy, w, h }` is centre + size in
+  normalised image-plane units (0..1), so the dashboard overlay scales to any
+  source resolution; `image_w/h` are advisory pixel dimensions.
+
+**clients → server** (`ClientMessage`):
+
+- `intent { command, source, t }` — `source` = `"phone"` | `"dashboard"`.
+- `device_location { position, source, t }` — `source` = `"phone"`.
 
 Each message is discriminated on the `type` field. Clients **never** command the
 Tello directly — they send `intent`; the backend state machine arbitrates.
@@ -51,15 +68,26 @@ Tello directly — they send `intent`; the backend state machine arbitrates.
 ## Build notes
 
 - TS source mirrors Python field-for-field. Snake_case wire keys (`ttl_s`,
-  `last_error`) are preserved; the Swift side maps them via `CodingKeys`.
-- The TS `Entity.status` / `ttl_s` are present here even though the Python
-  producer defaults them — the world model always emits a fully-populated entity.
+  `last_error`, `image_w`, `image_h`) are on the wire as-is. The Swift side maps
+  the keys it decodes via `CodingKeys` — `ttl_s` on `Entity` and `last_error` on
+  `MissionState`. `image_w` / `image_h` belong to `detections`, which has no Swift
+  struct (see below), so they are never decoded there.
+- **Swift mirror is partial on the server side.** `ServerMessage` in
+  `Contracts.swift` decodes `world_snapshot` / `mission_state` / `health` and
+  folds everything else (including `detections`) into `.unknown(type)` — there is
+  no Swift `Detections` struct. The phone client doesn't render detection
+  overlays, so this is intentional, not drift. If the phone ever needs boxes, add
+  the struct + a `case "detections"` there.
+- Validation is one-directional: Python rejects malformed/unknown **client**
+  payloads at the WS boundary (`parse_client_message` raises on unknown `type`,
+  Pydantic raises on a bad enum/field), so the backend fails loud, not silent.
+  There is no symmetric validation of server messages on the TS/Swift side beyond
+  the type discriminator.
 - When you add/rename a field or enum case, edit **all three** files in the same
-  change. Python validation will reject any drifted client payload at the WS
-  boundary (`parse_client_message`), so the backend fails loud, not silent.
+  change (and check whether the Swift `ServerMessage` switch needs a new case).
 
-## Planned
+## Notes on tooling
 
-- ⬜ Web dashboard consuming these types (`../README.md` lists it not started).
-- ⬜ No build step / type-check wiring lives here yet; this is a standalone `.ts`
-  with no `package.json` or `tsconfig` in `shared/`.
+- This is a standalone `.ts` with no `package.json` or `tsconfig` in `shared/`;
+  no build step or type-check wiring lives here. Type-checking happens in the
+  consuming `frontend/` project.
