@@ -103,8 +103,10 @@ def detection_to_entity(
     bucket_y = int(det.cy_px / 32)
     entity_id = f"{entity_id_prefix}_{det.label}_{bucket_x}_{bucket_y}"
 
-    if slam_pose is None or not slam_pose.scale_known:
-        # No pose yet — place at a nominal position with reduced confidence.
+    if slam_pose is None:
+        # No SLAM pose at all: we have no basis for a world-frame position.
+        # Place at origin with halved confidence so the operator sees the
+        # detection exists but knows it's unlocalised — not silently dropped.
         position = Vec3(x=0.0, y=0.0, z=0.0)
         confidence = det.confidence * 0.4
     else:
@@ -112,7 +114,13 @@ def detection_to_entity(
         ray_cam = _unproject_ray(det.cx_px, det.cy_px, camera)
         cam_pos = slam_pose.position
 
-        if depth_map is not None:
+        # Depth-map fusion mixes metric depth (~metres) with the camera-pose
+        # position. That only stays self-consistent once SLAM is anchored;
+        # before then `cam_pos` is in arbitrary VO units and adding metric
+        # depth to it produces a meaningless sum. Until anchored, fall back to
+        # the ground-plane intersection — it stays in pose-units throughout,
+        # so YOLO entities sit in the same frame as `mavic_cam` and landmarks.
+        if depth_map is not None and slam_pose.scale_known:
             # Monocular depth path: scale the ray by the per-pixel depth.
             cy_int = int(np.clip(round(det.cy_px), 0, depth_map.shape[0] - 1))
             cx_int = int(np.clip(round(det.cx_px), 0, depth_map.shape[1] - 1))
@@ -126,12 +134,13 @@ def detection_to_entity(
             )
             confidence = det.confidence
         else:
-            # Ground-plane fallback (original 2D path).
+            # Ground-plane fallback. Pre-anchor, confidence is reduced to
+            # signal the position is in unscaled units, not metres.
             ray_world = slam_pose.R_wc @ ray_cam
             ground_pt = _ray_ground_intersect(ray_world, cam_pos)
             if ground_pt is not None:
                 position = Vec3(x=float(ground_pt[0]), y=float(ground_pt[1]), z=0.0)
-                confidence = det.confidence
+                confidence = det.confidence if slam_pose.scale_known else det.confidence * 0.6
             else:
                 fallback = cam_pos + ray_world * 3.0
                 position = Vec3(
