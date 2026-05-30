@@ -8,6 +8,7 @@ struct ContentView: View {
     @StateObject private var model = ModelDownloader()
     @State private var showConnect = true
     @State private var center: CenterView = .map
+    @State private var setupStarted = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -37,6 +38,70 @@ struct ContentView: View {
         .background(Theme.paper)
         .preferredColorScheme(.light)   // forced light mode
         .onAppear(perform: maybeLoadDemo)
+        .overlay { if needsSetup { setupOverlay } }
+        .task { await startModelIfNeeded() }
+    }
+
+    // MARK: first-launch model setup
+
+    /// The on-device model is fetched once, automatically, on first launch. Until it's
+    /// present the SETUP screen blocks the UI (it's required for voice/vision).
+    private var needsSetup: Bool {
+        if ModelDownloader.isPresent { return false }
+        if case .ready = model.state { return false }
+        return true
+    }
+
+    private func startModelIfNeeded() async {
+        guard !ModelDownloader.isPresent, !setupStarted else { return }
+        setupStarted = true
+        await model.ensureModel()
+        if case .ready = model.state { voice.reloadService() }
+    }
+
+    private var setupOverlay: some View {
+        VStack(spacing: 18) {
+            Text("SYSTEM SETUP").font(Theme.mono(15, weight: .bold)).foregroundColor(Theme.ink)
+            Text("Installing the on-device AI model (one-time, ~4.7 GB).\nNeeds WiFi — not the Tello network. Keep the app open.")
+                .font(Theme.mono(10)).foregroundColor(Theme.inkSecondary)
+                .multilineTextAlignment(.center)
+
+            setupProgress
+
+            if case .failed(let e) = model.state {
+                Text(e).font(Theme.mono(9)).foregroundColor(Theme.danger)
+                    .multilineTextAlignment(.center).padding(.horizontal, 24)
+                Button("RETRY") { setupStarted = false; Task { await startModelIfNeeded() } }
+                    .font(Theme.mono(12, weight: .semibold)).foregroundColor(Theme.panel)
+                    .padding(.horizontal, 18).padding(.vertical, 9).background(Theme.olive)
+            }
+        }
+        .padding(28)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.paper)
+    }
+
+    @ViewBuilder private var setupProgress: some View {
+        switch model.state {
+        case .downloading(let p):
+            VStack(spacing: 6) {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Rectangle().fill(Theme.panel).overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
+                        Rectangle().fill(Theme.olive).frame(width: max(geo.size.width * p, 2))
+                    }
+                }.frame(width: 220, height: 14)
+                Text("DOWNLOADING \(Int(p * 100))%").font(Theme.mono(11, weight: .semibold)).foregroundColor(Theme.ink)
+            }
+        case .verifying:
+            Text("VERIFYING INTEGRITY…").font(Theme.mono(11, weight: .semibold)).foregroundColor(Theme.ink)
+        case .unzipping:
+            Text("INSTALLING MODEL…").font(Theme.mono(11, weight: .semibold)).foregroundColor(Theme.ink)
+        case .failed:
+            Text("SETUP FAILED").font(Theme.mono(11, weight: .semibold)).foregroundColor(Theme.danger)
+        default:
+            Text("PREPARING…").font(Theme.mono(11, weight: .semibold)).foregroundColor(Theme.inkSecondary)
+        }
     }
 
     private func maybeLoadDemo() {
@@ -122,11 +187,9 @@ struct ContentView: View {
     private var micGlyph: String { isListening ? "■" : "🎙" }
 
     private func onMicTap() {
-        if ModelDownloader.isPresent {
-            voice.toggle(onAction: handle)
-        } else {
-            Task { await model.ensureModel(); if model.state == .ready { voice.reloadService() } }
-        }
+        // The SETUP screen guarantees the model is present before the UI is usable.
+        guard ModelDownloader.isPresent else { return }
+        voice.toggle(onAction: handle)
     }
 
     /// Route a resolved voice action: flight commands go straight to the Tello over

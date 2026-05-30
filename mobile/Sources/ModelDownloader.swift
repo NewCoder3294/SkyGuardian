@@ -2,88 +2,151 @@ import CryptoKit
 import Foundation
 import ZIPFoundation
 
-/// Downloads the on-device Gemma 3n model (Cactus int4-apple weights) on first run
-/// and unzips it into the app's Documents, so Cactus can load it locally. The
-/// download is online (one-time, setup); inference afterward is fully offline.
-@MainActor
-final class ModelDownloader: ObservableObject {
-    enum State: Equatable { case absent, downloading(Double), unzipping, ready, failed(String) }
+/// Fetches the on-device Gemma 3n model (Cactus int4-apple weights) once, on first
+/// launch, and unzips it into the app's Documents so Cactus can load it locally.
+/// The download is online (one-time setup); inference afterward is fully offline.
+///
+/// Built on URLSessionDownloadTask for an efficient chunked transfer of a multi-GB
+/// file, with progress and resume-on-drop. Integrity is enforced: the URL is pinned
+/// to an immutable commit and the finished file's SHA-256 must match a constant
+/// compiled into the app before it is unzipped.
+final class ModelDownloader: NSObject, ObservableObject, URLSessionDownloadDelegate {
+    enum State: Equatable { case absent, downloading(Double), verifying, unzipping, ready, failed(String) }
     @Published private(set) var state: State = .absent
 
     // Cactus hub (HuggingFace), int4 Apple build of Gemma 3n (E2B: audio + vision + text).
-    nonisolated static let modelId = "Cactus-Compute/gemma-4-E2B-it"
-    nonisolated static let weightsKey = "gemma-4-e2b-it"
+    static let modelId = "Cactus-Compute/gemma-4-E2B-it"
+    static let weightsKey = "gemma-4-e2b-it"
 
     // Supply-chain hardening: pin to an IMMUTABLE commit (not mutable `main`) and verify
     // a SHA-256 baked into the app before unzipping. HuggingFace's LFS oid is the file's
     // SHA-256, so a mismatch means the artifact changed — refuse and delete.
-    nonisolated static let pinnedRevision = "7a1d39f97bbd1f87ba1d00f641f04991d6eb9fbb"
-    nonisolated static let expectedSHA256 = "3a6e33eb5a1b1d9cb9046ca2687d3dedbb564066d9925ebc51e142a788af8a22"
-    nonisolated static let expectedBytes: Int64 = 4_679_429_616
-    nonisolated private static var zipURL: URL {
+    static let pinnedRevision = "7a1d39f97bbd1f87ba1d00f641f04991d6eb9fbb"
+    static let expectedSHA256 = "3a6e33eb5a1b1d9cb9046ca2687d3dedbb564066d9925ebc51e142a788af8a22"
+    static let expectedBytes: Int64 = 4_679_429_616
+    private static var zipURL: URL {
         URL(string: "https://huggingface.co/\(modelId)/resolve/\(pinnedRevision)/weights/\(weightsKey)-int4-apple.zip")!
     }
 
     /// Final on-device model directory (what cactus_init is pointed at).
-    nonisolated static var modelDir: URL {
+    static var modelDir: URL {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         return docs.appendingPathComponent("models/\(weightsKey)")
     }
 
-    nonisolated static var isPresent: Bool {
+    static var isPresent: Bool {
         FileManager.default.fileExists(atPath: modelDir.path) &&
             ((try? FileManager.default.contentsOfDirectory(atPath: modelDir.path))?.isEmpty == false)
     }
 
+    // The big download + its resume token live in Caches (not backed up to iCloud).
+    private static var cachesDir: URL { FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0] }
+    private static var partURL: URL { cachesDir.appendingPathComponent("\(weightsKey).zip") }
+    private static var resumeURL: URL { cachesDir.appendingPathComponent("\(weightsKey).resume") }
+
+    private lazy var session: URLSession = {
+        let cfg = URLSessionConfiguration.default
+        cfg.waitsForConnectivity = true            // wait out brief connectivity gaps
+        cfg.timeoutIntervalForResource = 24 * 60 * 60
+        return URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
+    }()
+    private var task: URLSessionDownloadTask?
+    private var continuation: CheckedContinuation<URL, Error>?
+
+    /// Idempotent: download (resuming if a partial exists), verify, unzip. Safe to call
+    /// again after a failure to retry.
     func ensureModel() async {
-        if Self.isPresent { state = .ready; return }
+        if Self.isPresent { setState(.ready); return }
         do {
-            state = .downloading(0)
-            let (zip, digestHex) = try await download(Self.zipURL)
-            // Integrity gate: refuse anything whose SHA-256 doesn't match the pinned hash.
-            guard digestHex == Self.expectedSHA256 else {
+            setState(.downloading(0))
+            let zip = try await runDownload()
+
+            setState(.verifying)
+            let digest = try Self.sha256(ofFileAt: zip)
+            guard digest == Self.expectedSHA256 else {
                 try? FileManager.default.removeItem(at: zip)
-                state = .failed("integrity check failed (hash mismatch)")
+                setState(.failed("integrity check failed (hash mismatch)"))
                 return
             }
-            state = .unzipping
+
+            setState(.unzipping)
             try unzip(zip, to: Self.modelDir)
             try? FileManager.default.removeItem(at: zip)
-            state = Self.isPresent ? .ready : .failed("unzip produced no files")
+            try? FileManager.default.removeItem(at: Self.resumeURL)
+            setState(Self.isPresent ? .ready : .failed("unzip produced no files"))
         } catch {
-            state = .failed(error.localizedDescription)
+            setState(.failed(error.localizedDescription))
         }
     }
 
-    /// Streams the download to disk while computing its SHA-256 incrementally
-    /// (no second pass over a multi-GB file). Returns the temp path and hex digest.
-    private func download(_ url: URL) async throws -> (URL, String) {
-        let (bytes, response) = try await URLSession.shared.bytes(from: url)
-        // Reject up front if the server advertises a different size than we pinned.
-        let advertised = response.expectedContentLength
-        if advertised > 0, advertised != Self.expectedBytes {
-            throw CactusError.failed("unexpected model size \(advertised)")
+    func cancel() { task?.cancel() }
+
+    // MARK: download (URLSession delegate-driven)
+
+    private func runDownload() async throws -> URL {
+        try await withCheckedThrowingContinuation { cont in
+            self.continuation = cont
+            let t: URLSessionDownloadTask
+            if let resume = try? Data(contentsOf: Self.resumeURL), !resume.isEmpty {
+                t = session.downloadTask(withResumeData: resume)   // pick up where we left off
+            } else {
+                t = session.downloadTask(with: Self.zipURL)
+            }
+            self.task = t
+            t.resume()
         }
-        let total = Self.expectedBytes
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("model.zip")
-        try? FileManager.default.removeItem(at: tmp)
-        FileManager.default.createFile(atPath: tmp.path, contents: nil)
-        let handle = try FileHandle(forWritingTo: tmp)
+    }
+
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
+                    didWriteData bytesWritten: Int64, totalBytesWritten: Int64,
+                    totalBytesExpectedToWrite: Int64) {
+        let total = totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : Self.expectedBytes
+        setState(.downloading(min(max(Double(totalBytesWritten) / Double(total), 0), 1)))
+    }
+
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
+                    didFinishDownloadingTo location: URL) {
+        // Must move the file out synchronously — `location` is deleted when this returns.
+        let dest = Self.partURL
+        do {
+            try? FileManager.default.removeItem(at: dest)
+            try FileManager.default.moveItem(at: location, to: dest)
+            try? FileManager.default.removeItem(at: Self.resumeURL)
+            resume(returning: dest)
+        } catch {
+            resume(throwing: error)
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        guard let error else { return }   // success is handled in didFinishDownloadingTo
+        // Persist the resume token so a retry (even after relaunch) continues the transfer.
+        if let resumeData = (error as NSError).userInfo[NSURLSessionDownloadTaskResumeData] as? Data {
+            try? resumeData.write(to: Self.resumeURL)
+        }
+        resume(throwing: error)
+    }
+
+    private func resume(returning url: URL) {
+        let c = continuation; continuation = nil
+        c?.resume(returning: url)
+    }
+    private func resume(throwing error: Error) {
+        let c = continuation; continuation = nil
+        c?.resume(throwing: error)
+    }
+
+    // MARK: integrity + unzip
+
+    /// Streaming SHA-256 over the downloaded file (chunked, constant memory).
+    private static func sha256(ofFileAt url: URL) throws -> String {
+        let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         var hasher = SHA256()
-        var buf = Data(); var written: Int64 = 0; var lastReport = 0.0
-        for try await byte in bytes {
-            buf.append(byte)
-            if buf.count >= 1 << 20 {
-                hasher.update(data: buf)
-                handle.write(buf); written += Int64(buf.count); buf.removeAll(keepingCapacity: true)
-                let p = Double(written) / Double(total)
-                if p - lastReport > 0.01 { lastReport = p; state = .downloading(p) }
-            }
+        while case let chunk = handle.readData(ofLength: 1 << 20), !chunk.isEmpty {
+            hasher.update(data: chunk)
         }
-        if !buf.isEmpty { hasher.update(data: buf); handle.write(buf) }
-        let hex = hasher.finalize().map { String(format: "%02x", $0) }.joined()
-        return (tmp, hex)
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     private func unzip(_ zip: URL, to dir: URL) throws {
@@ -102,5 +165,9 @@ final class ModelDownloader: ObservableObject {
                 }
             }
         }
+    }
+
+    private func setState(_ s: State) {
+        DispatchQueue.main.async { if self.state != s { self.state = s } }
     }
 }
