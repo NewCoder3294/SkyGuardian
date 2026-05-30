@@ -187,28 +187,6 @@ export function SourceSelector({ apiBase, onState }: Props) {
 
   const live = state?.streaming || upload?.state === "ready";
 
-  // While we're armed for RTMP but no frames are decoding yet, surface the
-  // publish URL so the operator (or pilot's app) knows where to point the
-  // drone. Goes away the moment a frame lands.
-  const rtmpWaiting =
-    state?.kind === "rtmp" && !state.streaming && (state?.rtmp_default?.length ?? 0) > 0;
-  // Prefer the backend's LAN-reachable hint (handles 127.0.0.1 → laptop IP).
-  // Fall back to stripping `url:` off the raw spec.
-  const publishUrl =
-    state?.publish_url && state.publish_url.length > 0
-      ? state.publish_url
-      : (state?.rtmp_default ?? "").replace(/^url:/i, "");
-  const [copied, setCopied] = useState(false);
-  const copyUrl = async () => {
-    try {
-      await navigator.clipboard.writeText(publishUrl);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard may be unavailable on http://; silently no-op.
-    }
-  };
-
   return (
     <div className="flex flex-wrap items-center justify-end gap-2 py-2">
       <div className="flex items-center gap-2 border border-border bg-surface-elevated px-3 py-1.5">
@@ -285,29 +263,6 @@ export function SourceSelector({ apiBase, onState }: Props) {
               className="h-full bg-accent transition-[width]"
               style={{ width: `${Math.round((upload.progress || 0) * 100)}%` }}
             />
-          </div>
-        </div>
-      )}
-
-      {rtmpWaiting && (
-        <div className="basis-full">
-          <div className="flex flex-wrap items-center gap-3 border border-accent/40 bg-accent/5 px-3 py-2">
-            <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-accent">
-              ◢ Awaiting stream
-            </span>
-            <span className="font-mono text-[10px] uppercase tracking-widest text-text-dim">
-              publish to
-            </span>
-            <code className="select-all break-all border border-border-strong bg-surface px-2 py-1 font-mono text-[12px] tracking-wide text-text">
-              {publishUrl}
-            </code>
-            <button
-              type="button"
-              onClick={copyUrl}
-              className="border border-border-strong bg-surface-elevated px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-text-muted transition hover:border-accent/60 hover:text-accent"
-            >
-              {copied ? "Copied" : "Copy"}
-            </button>
           </div>
         </div>
       )}
