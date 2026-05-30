@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Clock } from "@/components/Clock";
 import { ConsolePanel } from "@/components/ConsolePanel";
 import { IntelPanel } from "@/components/IntelPanel";
+import { IntelSummaryCard } from "@/components/IntelSummaryCard";
 import { LocalMap3D } from "@/components/LocalMap3D";
 import { SourceSelector, type SourceState } from "@/components/SourceSelector";
 import { StatusBar } from "@/components/StatusBar";
@@ -250,10 +251,16 @@ export default function Page() {
                   <> · t={playbackTime.toFixed(1)}s</>
                 )}
               </div>
+              <div className="pointer-events-auto absolute left-3 bottom-3 right-3 md:right-auto md:max-w-md">
+                <IntelSummaryCard apiBase={apiBase} variant="compact" />
+              </div>
             </div>
           )}
           {tab === "intel" && (
             <div className="min-h-0 flex-1 overflow-auto">
+              <div className="bg-bg p-5">
+                <IntelSummaryCard apiBase={apiBase} />
+              </div>
               <IntelPanel detections={effectiveDetections} detectionLog={effectiveDetectionLog} />
             </div>
           )}
