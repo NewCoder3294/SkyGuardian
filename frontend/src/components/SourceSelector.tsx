@@ -2,26 +2,38 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-interface SourceState {
+interface UploadStatus {
+  name: string | null;
+  state: "idle" | "uploading" | "processing" | "ready" | "error";
+  progress: number;
+  error: string | null;
+  duration_s: number;
+  frame_count: number;
+  detection_count: number;
+}
+
+export interface SourceState {
   kind: "rtmp" | "file" | "device" | "none";
   label: string;
   streaming: boolean;
   rtmp_default: string;
+  upload?: UploadStatus;
 }
 
 interface Props {
   /** http origin of the backend (derived from the WS URL upstream). */
   apiBase: string;
+  /** Notified whenever the polled source state changes. The parent uses this
+   *  to swap between live VideoFeed and playback VideoPlayer. */
+  onState?: (state: SourceState | null) => void;
 }
 
 /**
  * Toolbar that lets the operator pick the leader video source — live RTMP or
- * a pre-recorded clip uploaded from the local machine. Both paths run through
- * the exact same perception pipeline (YOLO + depth + SLAM); the source swap
- * is server-side via SwitchableSource so neither perception nor the dashboard
- * needs to know which one is feeding pixels.
+ * a pre-recorded clip. RTMP uses the live perception pipeline; file uploads
+ * are pre-processed once and then played back natively with a scrubber.
  */
-export function SourceSelector({ apiBase }: Props) {
+export function SourceSelector({ apiBase, onState }: Props) {
   const [state, setState] = useState<SourceState | null>(null);
   const [busy, setBusy] = useState<"" | "rtmp" | "upload">("");
   const [error, setError] = useState<string | null>(null);
@@ -30,17 +42,25 @@ export function SourceSelector({ apiBase }: Props) {
   const refresh = useCallback(async () => {
     try {
       const res = await fetch(`${apiBase}/video/source`, { cache: "no-store" });
-      if (res.ok) setState(await res.json());
+      if (res.ok) {
+        const s = (await res.json()) as SourceState;
+        setState(s);
+        onState?.(s);
+      }
     } catch {
       // Ignore; we'll retry on the interval.
     }
-  }, [apiBase]);
+  }, [apiBase, onState]);
 
   useEffect(() => {
     refresh();
-    const t = window.setInterval(refresh, 2000);
+    // Poll faster during upload/processing so the progress bar feels live.
+    const isActive =
+      state?.upload?.state === "uploading" || state?.upload?.state === "processing";
+    const interval = isActive ? 500 : 2000;
+    const t = window.setInterval(refresh, interval);
     return () => window.clearInterval(t);
-  }, [refresh]);
+  }, [refresh, state?.upload?.state]);
 
   const switchToRtmp = async () => {
     setBusy("rtmp");
@@ -85,6 +105,7 @@ export function SourceSelector({ apiBase }: Props) {
   };
 
   const kind = state?.kind ?? "none";
+  const upload = state?.upload;
   const labelText = state
     ? state.kind === "rtmp"
       ? "RTMP"
@@ -94,6 +115,9 @@ export function SourceSelector({ apiBase }: Props) {
       ? `Device · ${state.label}`
       : "No source"
     : "…";
+
+  const showProcessing =
+    upload?.state === "uploading" || upload?.state === "processing";
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-border bg-surface px-3 py-2">
@@ -105,10 +129,16 @@ export function SourceSelector({ apiBase }: Props) {
       </span>
       <span
         className={`inline-block h-2 w-2 rounded-full ${
-          state?.streaming ? "bg-ok" : "bg-fail"
+          state?.streaming || upload?.state === "ready" ? "bg-ok" : "bg-fail"
         }`}
         aria-hidden
       />
+
+      {upload?.state === "ready" && state?.kind === "file" && (
+        <span className="font-mono text-[10px] uppercase tracking-widest text-text-dim">
+          · {upload.frame_count} frames · {upload.detection_count} detections
+        </span>
+      )}
 
       <div className="ml-auto flex items-center gap-2">
         <button
@@ -129,7 +159,7 @@ export function SourceSelector({ apiBase }: Props) {
             kind === "file"
               ? "border-text bg-text text-bg"
               : "border-border-strong text-text hover:border-text"
-          } ${busy !== "" ? "cursor-not-allowed opacity-50" : ""}`}
+          } ${busy !== "" || showProcessing ? "cursor-not-allowed opacity-50" : ""}`}
         >
           {busy === "upload" ? "uploading…" : "Upload video"}
           <input
@@ -138,14 +168,32 @@ export function SourceSelector({ apiBase }: Props) {
             accept="video/*"
             className="hidden"
             onChange={onFilePicked}
-            disabled={busy !== ""}
+            disabled={busy !== "" || showProcessing}
           />
         </label>
       </div>
 
-      {error && (
+      {showProcessing && upload && (
+        <div className="basis-full">
+          <div className="flex items-baseline justify-between font-mono text-[10px] uppercase tracking-widest text-text-dim">
+            <span>
+              {upload.state === "uploading" ? "uploading" : "processing"} ·{" "}
+              {upload.name}
+            </span>
+            <span>{Math.round((upload.progress || 0) * 100)}%</span>
+          </div>
+          <div className="mt-1 h-1 w-full overflow-hidden bg-border">
+            <div
+              className="h-full bg-text transition-[width]"
+              style={{ width: `${Math.round((upload.progress || 0) * 100)}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {(error || upload?.error) && (
         <div className="basis-full font-mono text-[10px] uppercase tracking-widest text-fail">
-          ▲ {error}
+          ▲ {error || upload?.error}
         </div>
       )}
     </div>

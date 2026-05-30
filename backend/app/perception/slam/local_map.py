@@ -78,7 +78,10 @@ class LocalMap:
             entities.append(Entity(
                 id="anchor_tag", type=EntityType.POI, position=self._vec3(self._to_metric(tag_position)),
                 confidence=1.0, timestamp=t, source=EntitySource.SLAM,
-                label="launch anchor", ttl_s=1e9,
+                # 10s TTL so the anchor disappears from the dashboard when SLAM
+                # stops refreshing it (e.g. the operator switched video source).
+                # As long as the tag is visible, the entity stays fresh.
+                label="launch anchor", ttl_s=10.0,
             ))
         for i, lm in enumerate(self._landmarks):
             entities.append(Entity(

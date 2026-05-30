@@ -73,11 +73,28 @@ export function VideoFeed({ src, detections, label, pollMs = 100 }: Props) {
   }, [src, pollMs]);
 
   // --- box overlay -------------------------------------------------------
+  // Only draws when a real frame is loaded (`hasFrame`). Without that gate,
+  // the canvas re-renders on every WS detection tick even after a tab switch
+  // — producing stretched orphan rectangles floating over the "linking feed"
+  // overlay (no <img> for them to align to). The clear-when-not-live path
+  // also wipes any previously-drawn boxes the moment the feed drops.
   useEffect(() => {
     const img = imgRef.current;
     const canvas = canvasRef.current;
     if (!img || !canvas) return;
     const dpr = window.devicePixelRatio || 1;
+
+    const clear = () => {
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    };
+
+    if (!hasFrame) {
+      clear();
+      return;
+    }
 
     const draw = () => {
       const rect = img.getBoundingClientRect();
@@ -98,22 +115,25 @@ export function VideoFeed({ src, detections, label, pollMs = 100 }: Props) {
       // normalised boxes onto the actually-displayed image rect, not the box.
       const natW = img.naturalWidth || (detections?.imageW ?? 0);
       const natH = img.naturalHeight || (detections?.imageH ?? 0);
+      // If we still don't know the image's natural aspect, skip drawing —
+      // projecting onto the raw container produces stretched boxes that don't
+      // match the visible video.
+      if (natW <= 0 || natH <= 0) return;
+
       let dispW = containerW;
       let dispH = containerH;
       let offX = 0;
       let offY = 0;
-      if (natW > 0 && natH > 0) {
-        const containerAspect = containerW / containerH;
-        const imgAspect = natW / natH;
-        if (imgAspect > containerAspect) {
-          dispW = containerW;
-          dispH = containerW / imgAspect;
-          offY = (containerH - dispH) / 2;
-        } else {
-          dispH = containerH;
-          dispW = containerH * imgAspect;
-          offX = (containerW - dispW) / 2;
-        }
+      const containerAspect = containerW / containerH;
+      const imgAspect = natW / natH;
+      if (imgAspect > containerAspect) {
+        dispW = containerW;
+        dispH = containerW / imgAspect;
+        offY = (containerH - dispH) / 2;
+      } else {
+        dispH = containerH;
+        dispW = containerH * imgAspect;
+        offX = (containerW - dispW) / 2;
       }
 
       const boxes = detections?.boxes ?? [];
@@ -142,7 +162,7 @@ export function VideoFeed({ src, detections, label, pollMs = 100 }: Props) {
     const ro = new ResizeObserver(draw);
     ro.observe(img);
     return () => ro.disconnect();
-  }, [detections]);
+  }, [detections, hasFrame]);
 
   // 1x1 transparent placeholder so the <img> has a valid src before the first
   // polled frame arrives. Without this, browsers render a "broken image" icon
@@ -165,10 +185,15 @@ export function VideoFeed({ src, detections, label, pollMs = 100 }: Props) {
         ref={canvasRef}
         className="pointer-events-none absolute inset-0 m-auto h-full w-full"
       />
-      {!hasFrame && (
+      {/* No "linking feed…" placeholder. When nothing's connected the pane
+          stays visually empty — the LEADER status dot + the "Source" toolbar
+          already tell the operator what's going on. A pulsing prompt here
+          would just imply something is actively trying. The fault state
+          ("feed offline") is preserved because it's actionable. */}
+      {errored && (
         <div className="absolute inset-0 grid place-items-center">
-          <div className="rounded-sm border border-border bg-surface px-3 py-2 font-mono text-[10px] uppercase tracking-[0.3em] text-text-dim">
-            {errored ? "feed offline" : "linking feed…"}
+          <div className="rounded-sm border border-fail bg-surface px-3 py-2 font-mono text-[10px] uppercase tracking-[0.3em] text-fail">
+            feed offline
           </div>
         </div>
       )}

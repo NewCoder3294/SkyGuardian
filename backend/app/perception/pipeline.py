@@ -77,6 +77,7 @@ class PerceptionPipeline:
         self._depth = None          # DepthEstimator | None
         self._health = "starting"
         self._task: asyncio.Task | None = None
+        self._needs_slam_reset = False
         # Latest normalised YOLO boxes + the frame dims they were measured on.
         # Read by the broadcast loop and overlay-rendered on the dashboard.
         self._latest_boxes: list[DetectionBox] = []
@@ -118,11 +119,38 @@ class PerceptionPipeline:
     def health_str(self) -> str:
         return self._health
 
+    # Detections expire if no new perception frame arrived within this window.
+    # Prevents stale boxes from being broadcast forever once the video source
+    # disconnects (was producing phantom dashboard detections after RTMP dropped).
+    _STALENESS_WINDOW_S = 2.0
+
     def latest_boxes(self) -> tuple[list[DetectionBox], int, int, float]:
         """Snapshot the latest YOLO boxes (normalised), the source frame dims,
-        and the timestamp they were captured at. Empty list when YOLO isn't
-        running or no frames have been processed yet."""
+        and the timestamp they were captured at. Returns empty list when no
+        recent perception frame has been processed — so the dashboard's
+        Leader/Perception/Detections all go clean the moment the feed drops."""
+        if self._latest_boxes_t <= 0:
+            return [], 0, 0, 0.0
+        age = self._clock.now() - self._latest_boxes_t
+        if age > self._STALENESS_WINDOW_S:
+            return [], 0, 0, 0.0
         return list(self._latest_boxes), self._latest_dims[0], self._latest_dims[1], self._latest_boxes_t
+
+    def reset(self) -> None:
+        """Clear all derived state (detection buffer, SLAM map) so a freshly
+        attached source starts from a clean slate. The server calls this when
+        the operator swaps the leader source (RTMP ↔ uploaded video).
+        Important: does NOT stop the loop — the worker thread just sees an
+        empty buffer next tick and re-fills as soon as new frames arrive."""
+        self._latest_boxes = []
+        self._latest_dims = (0, 0)
+        self._latest_boxes_t = 0.0
+        # SLAM anchor + landmark drift from a previous feed are no longer valid
+        # in the new feed's coordinate system. Set a flag the loop reads to
+        # rebuild local_map / vo on the next iteration.
+        self._needs_slam_reset = True
+        if self._health not in ("error", "degraded"):
+            self._health = "running"
 
     def start(self) -> None:
         """Schedule the perception loop as an asyncio task.
@@ -144,6 +172,15 @@ class PerceptionPipeline:
 
         while True:
             t_start = time.monotonic()
+
+            # --- handle source-switch reset ---
+            if self._needs_slam_reset:
+                local_map = LocalMap()
+                vo = MonocularVO()
+                frames = []
+                tag_obs_buffer = []
+                anchored = False
+                self._needs_slam_reset = False
 
             # --- read frame ---
             # read_jpeg() is sync and may block briefly; run off the event loop.

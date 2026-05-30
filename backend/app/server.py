@@ -29,7 +29,7 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import ValidationError
 
 from .clock import RealClock
@@ -47,6 +47,7 @@ from .contracts import (
     parse_client_message,
 )
 from .follow.controller import FollowController
+from .perception.file_processor import process_video_file
 from .perception.pipeline import PerceptionPipeline
 from .state_machine import MissionStateMachine
 from .tello.client import TelloClient, TelloState
@@ -80,6 +81,26 @@ mavic_camera = SwitchableSource(
 
 # Uploaded video files live here. Gitignored; created on first upload.
 _UPLOADS_DIR = Path(__file__).resolve().parent.parent.parent / ".context" / "uploads"
+
+
+def _detections_path_for(video_name: str) -> Path:
+    """Sidecar JSON path next to the uploaded video."""
+    return _UPLOADS_DIR / f"{video_name}.detections.json"
+
+
+# Single-slot upload status registry. The dashboard polls this while a file
+# is being processed so it can show progress + flip into playback mode when
+# processing completes. We don't need multi-job tracking — one operator,
+# one feed at a time.
+_upload_status: dict = {
+    "name": None,                  # str | None
+    "state": "idle",               # idle | uploading | processing | ready | error
+    "progress": 0.0,               # 0..1 (processing fraction)
+    "error": None,                 # str | None
+    "duration_s": 0.0,
+    "frame_count": 0,
+    "detection_count": 0,
+}
 
 # YOLO weights — optional. Without weights, perception runs SLAM-only.
 _YOLO_WEIGHTS = os.environ.get("YOLO_WEIGHTS") or None
@@ -313,18 +334,28 @@ async def follower_jpg() -> Response:
 
 @app.get("/video/source")
 async def get_source() -> dict:
-    """Current video source state — mode + label (URL or filename)."""
+    """Current video source state — mode + label + (when in file mode) the
+    processing/playback status the dashboard needs to switch UI modes."""
     return {
         "kind": mavic_camera.kind,
         "label": mavic_camera.label,
         "streaming": mavic_camera.is_streaming,
         "rtmp_default": _MAVIC_SOURCE_ENV,
+        "upload": dict(_upload_status),
     }
+
+
+@app.get("/video/upload/status")
+async def get_upload_status() -> dict:
+    """Granular processing status (polled by SourceSelector during upload).
+    Same shape as `_upload_status`."""
+    return dict(_upload_status)
 
 
 @app.post("/video/source/rtmp")
 async def use_rtmp_source() -> dict:
-    """Switch the leader source back to the env-configured RTMP feed."""
+    """Switch the leader source back to the env-configured RTMP feed.
+    Clears any upload-in-progress status so the dashboard exits playback mode."""
     if not _MAVIC_SOURCE_ENV:
         raise HTTPException(
             status_code=400,
@@ -332,24 +363,124 @@ async def use_rtmp_source() -> dict:
         )
     new = make_source(_MAVIC_SOURCE_ENV)
     await asyncio.to_thread(mavic_camera.replace, new, "rtmp", _MAVIC_SOURCE_ENV)
+    # Clear perception/SLAM state so the new feed isn't anchored against
+    # landmarks/tags from the previous one (different coordinate system).
+    perception.reset()
+    _upload_status.update({
+        "name": None, "state": "idle", "progress": 0.0,
+        "error": None, "duration_s": 0.0, "frame_count": 0, "detection_count": 0,
+    })
     return {"ok": True, "kind": "rtmp", "label": _MAVIC_SOURCE_ENV}
 
 
 @app.post("/video/source/upload")
 async def upload_source_video(file: UploadFile = File(...)) -> dict:
-    """Accept a pre-recorded video file and run it through the same perception
-    pipeline as a live RTMP feed. Saves to .context/uploads/ (gitignored) and
-    swaps the leader source to a StreamVideoSource pointed at the file."""
+    """Accept a pre-recorded video and run perception over the entire clip
+    *before* returning the dashboard to playback. The browser then plays the
+    raw file natively (HTML5 <video controls>) and overlays detections by
+    looking up sidecar JSON at video.currentTime.
+
+    Why pre-process synchronously instead of streaming through the live
+    pipeline:
+      - The operator needs to scrub backwards/forwards arbitrarily; the live
+        path emits over WebSocket once.
+      - YOLO + depth latency (~150 ms/frame) makes real-time playback impossible
+        for HD video on CPU. Doing it once up front and caching is the only
+        sensible answer.
+
+    The leader's SwitchableSource flips to NullSource so the live perception
+    loop goes idle while a file is loaded — the dashboard reads detections
+    from JSON, not from the WS stream, in this mode.
+    """
     name = file.filename or f"upload-{int(time.time())}.mp4"
-    # Reject path traversal / odd names.
     safe_name = Path(name).name
     _UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     dest = _UPLOADS_DIR / safe_name
+
+    # Save synchronously (small payload typical for a demo clip).
+    _upload_status.update({
+        "name": safe_name, "state": "uploading", "progress": 0.0,
+        "error": None, "duration_s": 0.0, "frame_count": 0, "detection_count": 0,
+    })
     with dest.open("wb") as out:
         await asyncio.to_thread(shutil.copyfileobj, file.file, out)
-    new = StreamVideoSource(str(dest))
-    await asyncio.to_thread(mavic_camera.replace, new, "file", safe_name)
-    return {"ok": True, "kind": "file", "label": safe_name}
+
+    # Park the live source — the dashboard will switch to playback UI on the
+    # next /video/source poll.
+    await asyncio.to_thread(mavic_camera.replace, NullSource(), "file", safe_name)
+    perception.reset()
+
+    # Run perception async so the upload POST returns immediately. The
+    # dashboard polls /video/upload/status until state == "ready".
+    _upload_status["state"] = "processing"
+    asyncio.create_task(_process_uploaded_file(safe_name, dest))
+
+    return {"ok": True, "kind": "file", "label": safe_name, "status_url": "/video/upload/status"}
+
+
+async def _process_uploaded_file(safe_name: str, dest: Path) -> None:
+    """Background task: run process_video_file in a worker thread so it doesn't
+    block the event loop, update status as it goes."""
+
+    def _on_progress(frac: float) -> None:
+        _upload_status["progress"] = frac
+
+    try:
+        result = await asyncio.to_thread(
+            process_video_file,
+            dest,
+            _detections_path_for(safe_name),
+            yolo_weights=_YOLO_WEIGHTS,
+            yolo_classes=_YOLO_CLASSES,
+            yolo_imgsz=_YOLO_IMGSZ,
+            yolo_conf=_YOLO_CONF,
+            depth_model=_DEPTH_MODEL,
+            depth_scale=_DEPTH_SCALE,
+            sample_fps=float(os.environ.get("PERCEPTION_FPS", "5")),
+            on_progress=_on_progress,
+        )
+        _upload_status.update({
+            "state": "ready",
+            "progress": 1.0,
+            "duration_s": result.duration_s,
+            "frame_count": result.summary["frame_count"],
+            "detection_count": result.summary["detection_count"],
+        })
+    except Exception as exc:
+        _upload_status.update({
+            "state": "error",
+            "error": f"{type(exc).__name__}: {exc}",
+        })
+
+
+@app.get("/video/file/{name}")
+async def serve_video_file(name: str) -> Response:
+    """Serve a previously-uploaded video file with HTTP byte-range support
+    (FastAPI/Starlette FileResponse does this automatically). The browser's
+    <video> element needs ranges so the scrubber can seek without re-downloading."""
+    safe_name = Path(name).name
+    src = _UPLOADS_DIR / safe_name
+    if not src.exists():
+        raise HTTPException(status_code=404, detail=f"video not found: {safe_name}")
+    return FileResponse(src, media_type="video/mp4")
+
+
+@app.get("/video/detections/{name}")
+async def serve_detections_json(name: str) -> Response:
+    """Pre-computed per-timestamp detections + entities for an uploaded video.
+    The dashboard fetches this once after `state == ready`, then runs all
+    overlay math client-side off the cached array."""
+    safe_name = Path(name).name
+    src = _detections_path_for(safe_name)
+    if not src.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"detections not ready for {safe_name}. "
+                "Poll /video/upload/status until state=='ready'."
+            ),
+        )
+    return FileResponse(src, media_type="application/json")
 
 
 def _apply_device_location(msg: DeviceLocation) -> None:
