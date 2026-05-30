@@ -84,7 +84,9 @@ export default function LandingPage() {
               Operator
             </a>
             <a
-              href="#demo"
+              href="https://strvx.com/book"
+              target="_blank"
+              rel="noopener noreferrer"
               className="hidden border border-text bg-text px-4 py-2 font-mono text-[10px] uppercase tracking-[0.26em] text-bg transition-colors hover:bg-cta sm:inline-flex"
             >
               Request demo
