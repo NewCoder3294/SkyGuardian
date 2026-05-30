@@ -7,6 +7,7 @@ import {
   leaderTier,
   linkTier,
   perceptionTier,
+  tierLabel,
   type StatusTier,
 } from "@/lib/status";
 
@@ -19,10 +20,8 @@ interface Props {
 }
 
 /**
- * Read-only telemetry strip. Two visually distinct groups so the eye can land
- * fast: SYSTEM (link health, traffic-light) on the left; COUNTERS (numeric
- * world / detections, neutral) on the right. Bigger value type, smaller
- * label, separator divider between groups.
+ * Read-only telemetry strip. Every channel is binary: ONLINE (green) or
+ * OFFLINE (red) — no intermediate states. The eye doesn't have to think.
  */
 export function StatusBar({
   connection,
@@ -31,12 +30,16 @@ export function StatusBar({
   entityCount,
   detectionCount,
 }: Props) {
+  const linkT = linkTier(connection.kind);
+  const leaderT = leaderTier(health?.mavic);
+  const percT = perceptionTier(health?.perception);
+
   return (
     <div className="border-b border-border bg-surface px-4 py-3">
       <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
-        <SystemChannel label="Link" value={linkLabel(connection)} tier={linkTier(connection.kind)} />
-        <SystemChannel label="Leader" value={(health?.mavic ?? "—").toUpperCase()} tier={leaderTier(health?.mavic)} />
-        <SystemChannel label="Perception" value={(health?.perception ?? "—").toUpperCase()} tier={perceptionTier(health?.perception)} />
+        <SystemChannel label="Link" value={tierLabel(linkT)} tier={linkT} />
+        <SystemChannel label="Leader" value={tierLabel(leaderT)} tier={leaderT} />
+        <SystemChannel label="Perception" value={tierLabel(percT)} tier={percT} />
 
         <span className="h-6 w-px bg-border" aria-hidden />
 
@@ -99,13 +102,4 @@ function Dot({ tier }: { tier: StatusTier }) {
       <span className={`relative h-2.5 w-2.5 rounded-full ${dotClass(tier)}`} />
     </span>
   );
-}
-
-function linkLabel(c: ConnectionState): string {
-  switch (c.kind) {
-    case "disconnected": return "OFFLINE";
-    case "connecting": return "LINKING";
-    case "connected": return "ONLINE";
-    case "failed": return "FAULT";
-  }
 }

@@ -22,9 +22,12 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import shutil
+import time
+from pathlib import Path
 from typing import AsyncIterator
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from pydantic import ValidationError
@@ -48,7 +51,7 @@ from .perception.pipeline import PerceptionPipeline
 from .state_machine import MissionStateMachine
 from .tello.client import TelloClient, TelloState
 from .tello.video import TelloVideoSource
-from .video import NullSource, make_source
+from .video import NullSource, StreamVideoSource, SwitchableSource, make_source
 from .world_model import WorldModel
 from .ws_hub import Hub
 
@@ -61,7 +64,22 @@ mission = MissionStateMachine(clock=clock)
 hub = Hub()
 
 # Mavic source — env-driven. Unset → NullSource (perception idles).
-mavic_camera = make_source(os.environ.get("MAVIC_SOURCE"))
+# Wrapped in SwitchableSource so the operator can hot-swap to an uploaded
+# video file from the dashboard without restarting the backend.
+_MAVIC_SOURCE_ENV = os.environ.get("MAVIC_SOURCE") or ""
+_initial_mavic = make_source(_MAVIC_SOURCE_ENV or None)
+_initial_kind = (
+    "rtmp" if _MAVIC_SOURCE_ENV.lower().startswith("url:") else
+    "file" if _MAVIC_SOURCE_ENV.lower().startswith("file:") else
+    "device" if _MAVIC_SOURCE_ENV.lower().startswith("device:") else
+    "none"
+)
+mavic_camera = SwitchableSource(
+    _initial_mavic, initial_kind=_initial_kind, initial_label=_MAVIC_SOURCE_ENV,
+)
+
+# Uploaded video files live here. Gitignored; created on first upload.
+_UPLOADS_DIR = Path(__file__).resolve().parent.parent.parent / ".context" / "uploads"
 
 # YOLO weights — optional. Without weights, perception runs SLAM-only.
 _YOLO_WEIGHTS = os.environ.get("YOLO_WEIGHTS") or None
@@ -130,7 +148,7 @@ app = FastAPI(title="SkyGuardian — local brain")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -171,8 +189,12 @@ async def _broadcast_loop() -> None:
         boxes, iw, ih, bt = perception.latest_boxes()
         # The dashboard speaks "leader" (recon) / "follower" (companion) — abstracts
         # away the actual airframe make. The brain still tracks them by hardware.
+        # IMPORTANT: t = bt (the real perception-frame timestamp), NOT `bt or now`.
+        # The dashboard uses t==0 as the signal that no frame has actually been
+        # processed yet; falling back to `now` makes the Leader badge falsely
+        # pulse green when nothing is connected.
         await hub.broadcast(Detections(
-            source="leader", boxes=boxes, image_w=iw, image_h=ih, t=bt or now,
+            source="leader", boxes=boxes, image_w=iw, image_h=ih, t=bt,
         ))
         await asyncio.sleep(interval)
 
@@ -287,6 +309,47 @@ async def follower_jpg() -> Response:
         media_type="image/jpeg",
         headers={"Cache-Control": "no-store"},
     )
+
+
+@app.get("/video/source")
+async def get_source() -> dict:
+    """Current video source state — mode + label (URL or filename)."""
+    return {
+        "kind": mavic_camera.kind,
+        "label": mavic_camera.label,
+        "streaming": mavic_camera.is_streaming,
+        "rtmp_default": _MAVIC_SOURCE_ENV,
+    }
+
+
+@app.post("/video/source/rtmp")
+async def use_rtmp_source() -> dict:
+    """Switch the leader source back to the env-configured RTMP feed."""
+    if not _MAVIC_SOURCE_ENV:
+        raise HTTPException(
+            status_code=400,
+            detail="No MAVIC_SOURCE env var configured at startup.",
+        )
+    new = make_source(_MAVIC_SOURCE_ENV)
+    await asyncio.to_thread(mavic_camera.replace, new, "rtmp", _MAVIC_SOURCE_ENV)
+    return {"ok": True, "kind": "rtmp", "label": _MAVIC_SOURCE_ENV}
+
+
+@app.post("/video/source/upload")
+async def upload_source_video(file: UploadFile = File(...)) -> dict:
+    """Accept a pre-recorded video file and run it through the same perception
+    pipeline as a live RTMP feed. Saves to .context/uploads/ (gitignored) and
+    swaps the leader source to a StreamVideoSource pointed at the file."""
+    name = file.filename or f"upload-{int(time.time())}.mp4"
+    # Reject path traversal / odd names.
+    safe_name = Path(name).name
+    _UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    dest = _UPLOADS_DIR / safe_name
+    with dest.open("wb") as out:
+        await asyncio.to_thread(shutil.copyfileobj, file.file, out)
+    new = StreamVideoSource(str(dest))
+    await asyncio.to_thread(mavic_camera.replace, new, "file", safe_name)
+    return {"ok": True, "kind": "file", "label": safe_name}
 
 
 def _apply_device_location(msg: DeviceLocation) -> None:

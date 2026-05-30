@@ -31,9 +31,11 @@ export function VideoFeed({ src, detections, label, pollMs = 100 }: Props) {
   const [hasFrame, setHasFrame] = useState(false);
   const [errored, setErrored] = useState(false);
 
-  // Live signal: perception is publishing detections frames (even empty ones).
-  // True ≈ the backend pipeline is alive end-to-end.
-  const isLive = (detections?.t ?? 0) > 0;
+  // Live signal: a real JPEG frame has been fetched. Don't trust the
+  // detections timestamp alone — backend keeps broadcasting empty-detection
+  // frames before any video has connected, which would falsely flip the
+  // Leader badge green.
+  const isLive = hasFrame;
 
   // --- frame polling loop ------------------------------------------------
   useEffect(() => {
@@ -177,14 +179,11 @@ export function VideoFeed({ src, detections, label, pollMs = 100 }: Props) {
           )}
           <span
             className={`relative inline-block h-2 w-2 rounded-full ${
-              isLive ? "bg-ok" : errored ? "bg-fail" : "bg-warn"
+              isLive ? "bg-ok" : "bg-fail"
             }`}
           />
         </span>
         {label}
-      </div>
-      <div className="pointer-events-none absolute right-2 top-2 rounded-sm border border-border bg-surface/90 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.3em] text-text-muted">
-        {detections?.boxes?.length ?? 0} det
       </div>
     </div>
   );

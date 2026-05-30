@@ -47,6 +47,90 @@ class NullSource:
     def is_streaming(self) -> bool: return False
 
 
+class SwitchableSource:
+    """Hot-swappable FrameSource. The perception pipeline + MJPEG endpoints
+    hold a reference to a single SwitchableSource; we mutate which inner
+    source it delegates to without rewiring those consumers.
+
+    Use cases: operator clicks "Upload video" → the laptop's RTMP receiver
+    pipe is replaced by a file-backed StreamVideoSource; clicking "RTMP"
+    restores the env-configured source. The active source's lifecycle (start/
+    stop) is managed here so consumers never have to know about the swap.
+    """
+
+    def __init__(self, initial: "FrameSource", initial_kind: str = "rtmp", initial_label: str = "") -> None:
+        self._inner: "FrameSource" = initial
+        self._kind = initial_kind
+        self._label = initial_label
+        self._lock = threading.Lock()
+        self._started = False
+
+    # --- read path ----------------------------------------------------------
+
+    def read_jpeg(self) -> Optional[bytes]:
+        with self._lock:
+            inner = self._inner
+        return inner.read_jpeg()
+
+    @property
+    def is_streaming(self) -> bool:
+        with self._lock:
+            inner = self._inner
+        return bool(getattr(inner, "is_streaming", False))
+
+    # --- lifecycle ----------------------------------------------------------
+
+    def start(self) -> None:
+        with self._lock:
+            inner = self._inner
+            self._started = True
+        try:
+            inner.start()
+        except Exception:
+            pass
+
+    def stop(self) -> None:
+        with self._lock:
+            inner = self._inner
+            self._started = False
+        try:
+            inner.stop()
+        except Exception:
+            pass
+
+    # --- swap ---------------------------------------------------------------
+
+    def replace(self, new: "FrameSource", kind: str, label: str = "") -> None:
+        """Swap the inner source atomically. Best-effort stop the old source
+        AFTER the swap so reads briefly fall through to the new one; the new
+        source is started if the wrapper was already started."""
+        with self._lock:
+            old = self._inner
+            started = self._started
+            self._inner = new
+            self._kind = kind
+            self._label = label
+        if started:
+            try:
+                new.start()
+            except Exception:
+                pass
+        try:
+            old.stop()
+        except Exception:
+            pass
+
+    @property
+    def kind(self) -> str:
+        with self._lock:
+            return self._kind
+
+    @property
+    def label(self) -> str:
+        with self._lock:
+            return self._label
+
+
 class StreamVideoSource:
     """cv2.VideoCapture-backed source with a background reader thread.
 

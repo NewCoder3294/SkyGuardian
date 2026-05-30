@@ -1,61 +1,32 @@
-/** Maps a channel's raw value to a traffic-light tier. Keep this module the
- *  single source of truth so StatusBar, sidebar widgets, and any future status
- *  surface all classify state the same way. */
+/** Binary status — every channel is either ONLINE (green) or OFFLINE (red).
+ *  No amber/yellow/intermediate tier. If a system isn't actively producing
+ *  what it's supposed to, it's offline. */
 
-export type StatusTier = "ok" | "warn" | "fail" | "neutral";
+export type StatusTier = "ok" | "fail";
 
 export function linkTier(kind: string): StatusTier {
-  switch (kind) {
-    case "connected": return "ok";
-    case "connecting": return "warn";
-    case "failed": return "fail";
-    case "disconnected":
-    default: return "fail";
-  }
+  return kind === "connected" ? "ok" : "fail";
 }
 
-/** Leader video link health: `mavic` field in the Health message. */
+/** Leader video link health: `mavic` field in the Health message.
+ *  ONLINE only when real frames are being decoded. */
 export function leaderTier(value: string | undefined): StatusTier {
-  switch (value) {
-    case "streaming": return "ok";
-    case "linking": return "warn";
-    case "offline": return "fail";
-    case undefined: return "neutral";
-    default: return "neutral";
-  }
+  return value === "streaming" ? "ok" : "fail";
 }
 
-/** Follower (companion) link health: `tello` field. */
-export function followerTier(value: string | undefined): StatusTier {
-  switch (value) {
-    case "connected": return "ok";
-    case "connecting": return "warn";
-    case "lost":
-    case "error":
-    case "disconnected": return "fail";
-    case undefined: return "neutral";
-    default: return "neutral";
-  }
-}
-
-/** Perception pipeline health: `perception` field. */
+/** Perception pipeline health: `perception` field.
+ *  ONLINE only when the SLAM anchor is locked and YOLO is loaded —
+ *  i.e. the brain is actually mapping things. */
 export function perceptionTier(value: string | undefined): StatusTier {
-  switch (value) {
-    case "ok": return "ok";
-    case "running":
-    case "degraded": return "warn";
-    case "error": return "fail";
-    case undefined: return "neutral";
-    default: return "neutral";
-  }
+  return value === "ok" ? "ok" : "fail";
 }
 
 /** Tailwind bg class for a tier dot. */
 export function dotClass(tier: StatusTier): string {
-  switch (tier) {
-    case "ok": return "bg-ok";
-    case "warn": return "bg-warn";
-    case "fail": return "bg-fail";
-    case "neutral": return "bg-text-dim";
-  }
+  return tier === "ok" ? "bg-ok" : "bg-fail";
+}
+
+/** Display label for a tier — always one of two words. */
+export function tierLabel(tier: StatusTier): string {
+  return tier === "ok" ? "ONLINE" : "OFFLINE";
 }

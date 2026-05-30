@@ -3,6 +3,7 @@ fastapi>=0.110
 uvicorn[standard]>=0.29
 pydantic>=2.6
 websockets>=12.0
+python-multipart>=0.0.9   # FastAPI file uploads (operator video source upload)
 
 # Perception — GPS-less monocular mapping (Track 2, built)
 numpy>=1.26

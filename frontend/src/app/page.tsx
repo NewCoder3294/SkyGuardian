@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Clock } from "@/components/Clock";
 import { ConsolePanel } from "@/components/ConsolePanel";
 import { IntelPanel } from "@/components/IntelPanel";
 import { LocalMap3D } from "@/components/LocalMap3D";
+import { SourceSelector } from "@/components/SourceSelector";
 import { StatusBar } from "@/components/StatusBar";
 import { ThreatAlert } from "@/components/ThreatAlert";
 import { VideoFeed } from "@/components/VideoFeed";
@@ -34,6 +36,7 @@ export default function Page() {
   // streams keep the browser tab's loading spinner perpetually active, which
   // looks to operators like the tab is constantly refreshing.
   const leaderSrc = useMemo(() => httpFromWs(wsUrl, "/video/leader.jpg"), [wsUrl]);
+  const apiBase = useMemo(() => httpFromWs(wsUrl, ""), [wsUrl]);
 
   const { connection, entities, lastError, health, detections, detectionLog } = useWorldClient(wsUrl);
   // Persist the active tab so a Fast Refresh / hard reload doesn't snap the
@@ -79,9 +82,7 @@ export default function Page() {
             Operator
           </span>
         </div>
-        <span className="font-mono text-[10px] uppercase tracking-widest text-text-dim">
-          {wsUrl}
-        </span>
+        <Clock />
       </header>
 
       <StatusBar
@@ -117,19 +118,20 @@ export default function Page() {
       <main className="flex min-h-0 flex-1">
         <section className="flex min-h-0 flex-1 flex-col">
           {tab === "feed" && (
-            // Flex row (not grid) so the row height stretches to fill the
-            // parent flex column even when the <img> hasn't loaded a real
-            // frame yet — grid auto-rows collapse to their intrinsic content.
-            <div className="flex min-h-0 flex-1">
-              <div className="flex min-w-0 flex-1">
-                <VideoFeed
-                  src={leaderSrc}
-                  detections={detections["leader"]}
-                  label="Leader · Recon"
-                />
-              </div>
-              <div className="hidden w-80 shrink-0 md:block">
-                <ConsolePanel log={detectionLog} />
+            // Flex column so the source selector sits above the video pane.
+            <div className="flex min-h-0 flex-1 flex-col">
+              <SourceSelector apiBase={apiBase} />
+              <div className="flex min-h-0 flex-1">
+                <div className="flex min-w-0 flex-1">
+                  <VideoFeed
+                    src={leaderSrc}
+                    detections={detections["leader"]}
+                    label="Leader · Recon"
+                  />
+                </div>
+                <div className="hidden w-80 shrink-0 md:block">
+                  <ConsolePanel log={detectionLog} />
+                </div>
               </div>
             </div>
           )}
