@@ -18,7 +18,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 
 from .clock import RealClock
-from .video import MJPEG_MEDIA_TYPE, MockCameraSource, mjpeg_stream
+from .video import MJPEG_MEDIA_TYPE, make_source, mjpeg_stream
 from .contracts import (
     Command,
     DeviceLocation,
@@ -42,10 +42,12 @@ mission = MissionStateMachine(clock=clock)
 hub = Hub()
 mock = MockSource(world, clock=clock) if USE_MOCK else None
 
-# Video relay sources. Mock until real Tello/Mavic sources are wired in.
+# Video relay sources, selected by env. Real by default — no mock in the path:
+#   TELLO_SOURCE=tello (default) | url:<stream> | mock
+#   MAVIC_SOURCE=url:<rtsp/http stream> | tello | mock   (unset -> disabled, empty feed)
 # phone reads /video/tello (companion view); dashboard reads /video/mavic (recon view).
-tello_camera = MockCameraSource("TELLO", clock=clock)
-mavic_camera = MockCameraSource("MAVIC", clock=clock)
+tello_camera = make_source(os.environ.get("TELLO_SOURCE", "tello"), "TELLO", clock=clock)
+mavic_camera = make_source(os.environ.get("MAVIC_SOURCE", ""), "MAVIC", clock=clock)
 
 app = FastAPI(title="Recon & Companion — local brain")
 
@@ -67,9 +69,22 @@ async def _broadcast_loop() -> None:
         await asyncio.sleep(interval)
 
 
+async def _start_camera(cam, name: str) -> None:
+    start = getattr(cam, "start", None)
+    if start is None:
+        return
+    try:
+        await asyncio.to_thread(start)  # blocking connect/open off the event loop
+        print(f"[video] {name} source connected")
+    except Exception as exc:  # honest: log and leave the feed empty until it's up
+        print(f"[video] {name} source not available: {exc}")
+
+
 @app.on_event("startup")
 async def _startup() -> None:
     app.state.broadcast_task = asyncio.create_task(_broadcast_loop())
+    asyncio.create_task(_start_camera(tello_camera, "tello"))
+    asyncio.create_task(_start_camera(mavic_camera, "mavic"))
 
 
 @app.on_event("shutdown")

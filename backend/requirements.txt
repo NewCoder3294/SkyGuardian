@@ -12,5 +12,5 @@ pupil-apriltags>=1.0          # metric scale anchor + follow controller (Track 1
 # Perception — added when YOLO lands:
 # ultralytics>=8.1
 
-# Track 1 robotics — added when follow controller lands:
-# djitellopy>=2.5             # Tello control
+# Tello control + video relay (real source)
+djitellopy>=2.5

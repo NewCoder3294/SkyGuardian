@@ -57,11 +57,12 @@ class MockCameraSource:
         return buf.tobytes() if ok else None
 
 
-async def mjpeg_stream(source: FrameSource, fps: float = 12.0) -> AsyncIterator[bytes]:
-    """Yield a multipart MJPEG stream from a frame source."""
+async def mjpeg_stream(source: FrameSource, fps: float = 20.0) -> AsyncIterator[bytes]:
+    """Yield a multipart MJPEG stream from a frame source. The (possibly blocking)
+    frame read + JPEG encode runs off the event loop so the server stays responsive."""
     interval = 1.0 / fps
     while True:
-        jpeg = source.read_jpeg()
+        jpeg = await asyncio.to_thread(source.read_jpeg)
         if jpeg is not None:
             yield (
                 b"--" + BOUNDARY.encode() + b"\r\n"
@@ -70,6 +71,84 @@ async def mjpeg_stream(source: FrameSource, fps: float = 12.0) -> AsyncIterator[
                 + jpeg + b"\r\n"
             )
         await asyncio.sleep(interval)
+
+
+class DisabledSource:
+    """No source configured -> no frames. Honest empty feed (not a mock)."""
+
+    def read_jpeg(self) -> bytes | None:
+        return None
+
+
+class StreamVideoSource:
+    """Latest frame from any OpenCV-openable stream (RTSP/HTTP/MJPEG). Used for the
+    Mavic, whose video arrives via the existing server stream. `start()` opens the
+    capture (blocking) once at startup; read_jpeg is non-blocking after that."""
+
+    def __init__(self, url: str) -> None:
+        self._url = url
+        self._cap = None
+
+    def start(self) -> None:
+        cap = cv2.VideoCapture(self._url)
+        if cap.isOpened():
+            self._cap = cap
+
+    def read_jpeg(self) -> bytes | None:
+        if self._cap is None or not self._cap.isOpened():
+            return None
+        ok, frame = self._cap.read()
+        if not ok:
+            return None
+        ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+        return buf.tobytes() if ok else None
+
+
+class TelloVideoSource:
+    """Live Tello camera via djitellopy. The laptop is the sole Tello controller;
+    this ingests its video and the relay re-streams it to the phone.
+
+    `start()` does the blocking connect + streamon once (call it off the event loop
+    at startup). read_jpeg returns the latest decoded frame, non-blocking, or None
+    until connected — no mock, just an honest empty feed before the link is up.
+    """
+
+    def __init__(self) -> None:
+        self._reader = None
+        self._connected = False
+
+    def start(self) -> None:
+        from djitellopy import Tello  # optional dep; required for real flights
+        tello = Tello()
+        tello.connect()           # blocks ~seconds; raises if the Tello isn't reachable
+        tello.streamon()
+        self._reader = tello.get_frame_read()  # background thread keeps .frame fresh
+        self._connected = True
+
+    def read_jpeg(self) -> bytes | None:
+        if not self._connected or self._reader is None:
+            return None
+        frame = getattr(self._reader, "frame", None)
+        if frame is None:
+            return None
+        ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+        return buf.tobytes() if ok else None
+
+
+def make_source(spec: str, label: str, clock: Clock | None = None) -> FrameSource:
+    """Select a frame source from a spec string:
+      'tello'      -> live Tello via djitellopy (the phone feed)
+      'url:<URL>'  -> any OpenCV stream (Mavic server stream / RTSP / HTTP)
+      'mock'       -> synthetic frames (explicit opt-in for hardware-free UI dev)
+      anything else / unset -> DisabledSource (honest empty feed, no mock)
+    """
+    if spec == "tello":
+        return TelloVideoSource()
+    if spec.startswith("url:"):
+        return StreamVideoSource(spec[len("url:"):])
+    if spec == "mock":
+        return MockCameraSource(label, clock=clock)
+    return DisabledSource()
 
 
 MJPEG_MEDIA_TYPE = f"multipart/x-mixed-replace; boundary={BOUNDARY}"

@@ -1,5 +1,27 @@
 from app.clock import FakeClock
-from app.video import BOUNDARY, MockCameraSource
+from app.video import (
+    BOUNDARY,
+    DisabledSource,
+    MockCameraSource,
+    StreamVideoSource,
+    TelloVideoSource,
+    make_source,
+)
+
+
+def test_make_source_selects_type():
+    assert isinstance(make_source("tello", "TELLO"), TelloVideoSource)
+    assert isinstance(make_source("url:rtsp://x/y", "MAVIC"), StreamVideoSource)
+    assert isinstance(make_source("mock", "TELLO", clock=FakeClock()), MockCameraSource)
+    # unset/unknown -> honest empty feed, never a mock
+    assert isinstance(make_source("", "MAVIC"), DisabledSource)
+    assert isinstance(make_source("bogus", "TELLO"), DisabledSource)
+
+
+def test_tello_source_returns_none_until_connected():
+    # Before start()/connect, read_jpeg is non-blocking and returns None.
+    assert TelloVideoSource().read_jpeg() is None
+    assert DisabledSource().read_jpeg() is None
 
 
 def test_mock_source_produces_jpeg():
