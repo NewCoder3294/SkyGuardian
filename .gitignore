@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# Node
+node_modules/
+.next/
+dist/
+build/
+*.log
+
+# Large binaries — distribute out-of-band
+models/**/*.pt
+models/**/*.pth
+models/**/*.onnx
+models/**/*.bin
+captures/**/*.mp4
+captures/**/*.mov
+captures/**/*.avi
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

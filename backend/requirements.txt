@@ -1,0 +1,11 @@
+# Backend (laptop brain) runtime deps.
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+websockets>=12.0
+
+# Perception (Track 2) — added when YOLO/SLAM land:
+# ultralytics>=8.1
+# opencv-python>=4.9
+# pupil-apriltags>=1.0   # follow controller (Track 1)
+# djitellopy>=2.5        # Tello control (Track 1)
