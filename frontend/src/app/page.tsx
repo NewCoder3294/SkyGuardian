@@ -53,7 +53,7 @@ export default function LandingPage() {
       {/* Hackathon banner */}
       <div className="fixed left-0 right-0 top-0 z-40 border-b border-border bg-surface">
         <div className="mx-auto flex items-center justify-center gap-2 px-5 py-1.5">
-          <span className="inline-flex h-5 w-5 items-center justify-center bg-accent text-[10px] font-bold text-bg">B</span>
+          <Image src="/bow-capital-logo.png" alt="Bow Capital" width={16} height={16} className="h-4 w-4 brightness-0" />
           <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-text-muted">
             Built at UCSD &middot; Bow Capital Hackathon
           </p>
