@@ -5,7 +5,7 @@ import { Clock } from "@/components/Clock";
 import { ConsolePanel } from "@/components/ConsolePanel";
 import { IntelPanel } from "@/components/IntelPanel";
 import { IntelSummaryCard } from "@/components/IntelSummaryCard";
-import { LocalMap3D } from "@/components/LocalMap3D";
+import { LocalMap2D } from "@/components/LocalMap2D";
 import { SourceSelector, type SourceState } from "@/components/SourceSelector";
 import { StatusBar } from "@/components/StatusBar";
 import { ThreatAlert } from "@/components/ThreatAlert";
@@ -45,14 +45,18 @@ export default function Page() {
   const { connection, lastError, health } = wsLive;
 
   // Persist the active tab so a Fast Refresh / hard reload doesn't snap the
-  // operator back to Feed every time.
-  const [tab, setTab] = useState<Tab>(() => {
-    if (typeof window === "undefined") return "feed";
+  // operator back to Feed every time. The localStorage read MUST happen in
+  // useEffect after mount — reading it inside the lazy initializer would
+  // cause SSR/CSR markup mismatch (server has no localStorage; renders
+  // "feed"; client renders the saved tab) and throw a React hydration error.
+  const [tab, setTab] = useState<Tab>("feed");
+  useEffect(() => {
+    if (typeof window === "undefined") return;
     const saved = window.localStorage.getItem("sg.tab");
-    return saved === "feed" || saved === "map" || saved === "intel"
-      ? (saved as Tab)
-      : "feed";
-  });
+    if (saved === "feed" || saved === "map" || saved === "intel") {
+      setTab(saved as Tab);
+    }
+  }, []);
   useEffect(() => {
     if (typeof window === "undefined") return;
     window.localStorage.setItem("sg.tab", tab);
@@ -90,11 +94,6 @@ export default function Page() {
     () => operationalEntities(wsLive.entities),
     [wsLive.entities],
   );
-  const liveLandmarks = useMemo(
-    () => wsLive.entities.filter((e) => e.id.startsWith("lm_")),
-    [wsLive.entities],
-  );
-
   const playbackEntities = useMemo<Entity[]>(() => {
     if (!playbackData) return [];
     return cumulativeEntitiesAt(playbackData.frames, playbackTime).map((e) =>
@@ -134,7 +133,6 @@ export default function Page() {
   const effectiveOpEntities = isPlayback
     ? operationalEntities(playbackEntities)
     : liveOpEntities;
-  const effectiveLandmarks = isPlayback ? [] : liveLandmarks;
   const effectiveDetections: Record<string, DetectionLayer> = isPlayback
     ? playbackDetectionLayer
       ? { leader: playbackDetectionLayer }
@@ -239,13 +237,9 @@ export default function Page() {
           )}
           {tab === "map" && (
             <div className="relative min-h-0 flex-1">
-              <LocalMap3D
+              <LocalMap2D
                 entities={effectiveOpEntities}
-                landmarks={effectiveLandmarks}
-                spanMeters={20}
-                showLandmarks={false}
                 apiBase={apiBase}
-                buildingsRadiusM={200}
               />
               <div className="pointer-events-none absolute right-3 top-3 font-mono text-[10px] uppercase tracking-widest text-text-dim">
                 {effectiveOpEntities.length} entities

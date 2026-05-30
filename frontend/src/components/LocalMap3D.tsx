@@ -40,10 +40,14 @@ export function LocalMap3D({
   apiBase,
   buildingsRadiusM = 0,
 }: Props) {
+  // When a buildings layer is configured we frame the camera against the
+  // building radius (not the SLAM span) so the campus is visible on first
+  // paint. Otherwise stick with the tight SLAM-only default.
+  const cameraSpan = buildingsRadiusM > 0 ? buildingsRadiusM * 0.9 : spanMeters;
   return (
     <div className="relative h-full w-full bg-bg">
       <Canvas
-        camera={{ position: [spanMeters * 0.8, spanMeters * 0.8, spanMeters * 0.8], fov: 45 }}
+        camera={{ position: [cameraSpan, cameraSpan, cameraSpan], fov: 45 }}
         style={{ background: "#06121f" }}
         dpr={[1, 2]}
       >
@@ -51,7 +55,7 @@ export function LocalMap3D({
         <directionalLight position={[10, 20, 10]} intensity={0.45} color="#22d3ee" />
         <directionalLight position={[-10, 15, -10]} intensity={0.25} color="#3b82f6" />
 
-        <SceneFloor span={spanMeters} />
+        <SceneFloor span={cameraSpan} />
         <OriginMarker />
         {apiBase && (
           <Buildings apiBase={apiBase} clipRadiusM={buildingsRadiusM} />
@@ -70,7 +74,9 @@ export function LocalMap3D({
           makeDefault
           enablePan
           minDistance={2}
-          maxDistance={spanMeters * 4}
+          // Allow zooming far enough to see the full buildings cache when
+          // present; otherwise stick with a comfortable SLAM-only range.
+          maxDistance={Math.max(spanMeters * 4, buildingsRadiusM * 2.5, 50)}
           target={[0, 0, 0]}
         />
       </Canvas>
@@ -84,15 +90,20 @@ export function LocalMap3D({
 // ---------------------------------------------------------------------------
 
 function SceneFloor({ span }: { span: number }) {
+  // Scale grid cell + section sizes with the camera span so the floor stays
+  // readable from a 20 m SLAM view all the way out to an 800 m AO overview.
+  // Roughly: ~50 cells per side, with major lines every 5 cells.
+  const cellSize = Math.max(1, Math.round(span / 50));
+  const sectionSize = cellSize * 5;
   return (
     <>
       <Grid
         args={[span * 4, span * 4]}
         position={[0, 0, 0]}
-        cellSize={1}
+        cellSize={cellSize}
         cellThickness={0.6}
         cellColor="#1c3149"
-        sectionSize={5}
+        sectionSize={sectionSize}
         sectionThickness={1.2}
         sectionColor="#22d3ee"
         fadeDistance={span * 3}
