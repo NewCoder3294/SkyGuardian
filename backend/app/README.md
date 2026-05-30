@@ -1,7 +1,7 @@
 # `app/` — the spine (laptop brain, Python)
 
 The core package both clients read from and command through. Producers (perception,
-follow, mock) write entities into one world model; consumers (iOS app, dashboard)
+follow, device location) write entities into one world model; consumers (iOS app, dashboard)
 subscribe over a WebSocket; the state machine arbitrates client intent into Tello
 stage. `stop`/`recall` are always-live and highest priority. Clients **never**
 command the Tello directly.
@@ -14,9 +14,9 @@ dashboard reach it on the local network.
 ## Flow
 
 ```
- perception/ (yolo+slam) ─┐
- follow/      (apriltag)  ├─upsert──► WorldModel ──snapshot──┐
- mock_source  (dev only)  ─┘          (TTL lifecycle)        │
+ perception/     (yolo+slam) ─┐
+ follow/         (apriltag)  ├─upsert──► WorldModel ──snapshot──┐
+ device_location (phone)     ─┘          (TTL lifecycle)        │
                                                              ├─► Hub.broadcast ──► clients
  clients ──intent──► server ──► MissionStateMachine.apply ──┘   (world_snapshot,
             (Contract B)         (arbiter → stage → follow/)     mission_state, health)
@@ -38,27 +38,25 @@ Every interface meets at two contracts (`contracts.py`):
 | [`world_model.py`](./world_model.py) | Single source of truth. `upsert`/`remove`/`snapshot`; owns the `active → stale → lost` TTL lifecycle (producers never set `lost`) and GC | ✅ |
 | [`state_machine.py`](./state_machine.py) | The arbiter. `idle/following/holding` transitions + always-live `stop`/`recall`; named-failure log. Drives `follow/` once wired | ✅ skeleton |
 | [`ws_hub.py`](./ws_hub.py) | WebSocket fan-out; `Connection` Protocol so it tests without a real socket; drops clients that error on send | ✅ |
-| [`video.py`](./video.py) | MJPEG relay. `FrameSource` Protocol + `TelloVideoSource` (raw SDK/UDP + OpenCV decode, not djitellopy), `StreamVideoSource` (Mavic RTSP/HTTP), `MockCameraSource`, `DisabledSource`; `make_source(spec)` | ✅ |
-| [`server.py`](./server.py) | FastAPI app: `/ws`, `/health`, `/video/{tello,mavic}`; the broadcast loop at `BROADCAST_HZ`; wires all of the above | ✅ |
+| [`video.py`](./video.py) | Frame source abstraction. `NullSource` for no configured source and `StreamVideoSource` for URL/file/device streams; `make_source(spec)` | ✅ |
+| [`server.py`](./server.py) | FastAPI app: `/ws`, `/health`, leader/follower video endpoints; the broadcast loop at `BROADCAST_HZ`; wires all of the above | ✅ |
 | [`clock.py`](./clock.py) | Injectable clock (`RealClock` / `FakeClock`) so TTL + broadcast timing are deterministic under test | ✅ |
-| [`mock_source.py`](./mock_source.py) | Dev-only entity injector (drifting soldier/drone/POI/hazard) for hardware-free UI work; opt-in via `USE_MOCK` | ✅ |
 
 ## Subpackages
 
-- [`perception/`](./perception/) — Mavic recon: YOLO + SLAM → entities (Track 2).
-  `slam/` is ✅ built ([`docs/SLAM.md`](../../docs/SLAM.md)); `yolo.py` / `fusion.py` ⬜ planned.
-- [`follow/`](./follow/) — Tello soldier-follow controller, AprilTag station-keep (Track 1, the make-or-break). ⬜ stub (README only).
-- [`tello/`](./tello/) — low-level Tello transport, isolated from follow policy. ⬜ stub (README only). Note: live Tello video already lives in `video.py`; this package is for the control link `follow/` will use.
+- [`perception/`](./perception/) — Mavic recon: YOLO + SLAM -> entities (Track 2).
+  `slam/`, `yolo.py`, `depth.py`, and `fusion.py` are wired through `pipeline.py`.
+- [`follow/`](./follow/) — Tello soldier-follow controller, AprilTag station-keep (Track 1, the make-or-break).
+- [`tello/`](./tello/) — low-level Tello transport and video source, isolated from follow policy.
 
 ## Build notes
 - Producers only ever `upsert`; the world model alone owns status. Read the latest
   via `snapshot()` (applies the TTL tick first).
 - `parse_client_message` rejects unknown/malformed intent (`continue`, no guess).
 - `stop`/`recall` bypass the transition table — honored from any stage.
-- Run from `backend/`: `uvicorn app.server:app --host 0.0.0.0 --port 8011`.
-  Env: `TELLO_SOURCE=tello|url:<stream>|mock` (default `tello`),
-  `MAVIC_SOURCE=url:<stream>` (unset → empty feed), `USE_MOCK=1` to inject demo
-  entities, `BROADCAST_HZ` (default `10`). Tests use `FakeClock` — deterministic.
+- Run from `backend/`: `uvicorn app.server:app --host 0.0.0.0 --port 8001`.
+  Env: `MAVIC_SOURCE=url:<stream>|file:<path>|device:<index>` (unset -> empty feed)
+  and `BROADCAST_HZ` (default `10`). Tests use `FakeClock` where timing matters.
 
 See [`../README.md`](../README.md) for run/test, [`../../CLAUDE.md`](../../CLAUDE.md)
 for the hard constraints.

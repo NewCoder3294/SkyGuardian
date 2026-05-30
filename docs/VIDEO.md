@@ -18,22 +18,22 @@ Both return `multipart/x-mixed-replace; boundary=frame` — renderable by any
 browser, or the app's `MJPEGView`.
 
 ## Sources (`backend/app/video.py`)
-Selected by env, **real by default — no mock in the path**:
+Selected by env:
 
 | Spec | Source |
 |---|---|
-| `tello` (default for `TELLO_SOURCE`) | `TelloVideoSource` — djitellopy: connect + streamon at startup (off the event loop), latest frame non-blocking |
 | `url:<RTSP/HTTP/MJPEG>` | `StreamVideoSource` — any OpenCV-openable stream (Mavic) |
-| `mock` | `MockCameraSource` — synthetic FPV, **explicit opt-in** for UI dev |
-| unset / unknown | `DisabledSource` — honest empty feed (never a fake frame) |
+| `file:<path>` | `StreamVideoSource` — local clip for replay |
+| `device:<index>` | `StreamVideoSource` — local capture device |
+| unset | `NullSource` — empty feed |
 
 Connection happens in a background thread at startup, so the server stays
 responsive and the feed is simply empty until the link is up.
 
 ## Run
 ```bash
-USE_MOCK=0 TELLO_SOURCE=tello uvicorn app.server:app --host 0.0.0.0 --port 8011
-# verify in any browser:  http://127.0.0.1:8011/video/tello
+MAVIC_SOURCE=url:rtmp://localhost:1935/leader uvicorn app.server:app --host 0.0.0.0 --port 8001
+# verify in any browser:  http://127.0.0.1:8001/video/leader.jpg
 ```
 
 ## Notes / next

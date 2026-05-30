@@ -50,11 +50,11 @@ Put **both** the Mac and the iPhone on the **Tello's WiFi AP** (`192.168.10.x`).
 ```bash
 ipconfig getifaddr en0          # the Mac's IP on the Tello network
 cd backend && source .venv/bin/activate
-USE_MOCK=0 TELLO_SOURCE=tello uvicorn app.server:app --host 0.0.0.0 --port 8011
-# wait for: [video] tello source connected
+uvicorn app.server:app --host 0.0.0.0 --port 8001
+# wait for health to report the Tello link state
 ```
 **iPhone (TestFlight → SkyGuardian):**
-1. MISSION LINK → set `ws://<mac-ip>:8011/ws` (the IP from `ipconfig`, **not** 127.0.0.1).
+1. MISSION LINK → set `ws://<mac-ip>:8001/ws` (the IP from `ipconfig`, **not** 127.0.0.1).
 2. CONNECT → map/status go live. Tap **FEED** → live Tello camera.
 
 Gotchas: the app default URL is `127.0.0.1` (simulator) — change it on the phone;

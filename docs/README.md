@@ -10,7 +10,7 @@ truth**; the files here go deep on one subsystem each.
 | Doc | Covers | State |
 |---|---|---|
 | [`SLAM.md`](./SLAM.md) | GPS-less monocular mapping — Mavic feed → metric local map via VO + AprilTag scale anchor; swappable `MonocularVO` / `ORBSLAM3Runner` backends; honest limitations | ✅ built, tested |
-| [`VIDEO.md`](./VIDEO.md) | Laptop video relay — `/video/{tello,mavic}` MJPEG re-stream; env-selected sources (`tello` / `url:` / `mock` / disabled), real by default | ✅ built, tested |
+| [`VIDEO.md`](./VIDEO.md) | Laptop video relay — leader/follower JPEG and MJPEG endpoints; env-selected Mavic sources (`url:` / `file:` / `device:` / empty) | ✅ built, tested |
 | [`VOICE.md`](./VOICE.md) | On-device voice + vision (Gemma 3n via Cactus) — mic → transcript → closed intent vocab, live-frame Q&A; `cactus.xcframework` embedded (build 4), needs the model download | 🟡 framework embedded |
 | [`MOBILE.md`](./MOBILE.md) | iOS app build / TestFlight / device test — XcodeGen + ASC API ship lane, and the single-network Tello-feed walkthrough | ✅ built, tested |
 

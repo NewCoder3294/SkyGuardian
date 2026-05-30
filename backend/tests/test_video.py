@@ -1,66 +1,30 @@
-from app.clock import FakeClock
-from app.video import (
-    BOUNDARY,
-    DisabledSource,
-    MockCameraSource,
-    StreamVideoSource,
-    TelloVideoSource,
-    make_source,
-)
+import pytest
+
+from app.video import NullSource, StreamVideoSource, make_source
 
 
 def test_make_source_selects_type():
-    assert isinstance(make_source("tello", "TELLO"), TelloVideoSource)
-    assert isinstance(make_source("url:rtsp://x/y", "MAVIC"), StreamVideoSource)
-    assert isinstance(make_source("mock", "TELLO", clock=FakeClock()), MockCameraSource)
-    # unset/unknown -> honest empty feed, never a mock
-    assert isinstance(make_source("", "MAVIC"), DisabledSource)
-    assert isinstance(make_source("bogus", "TELLO"), DisabledSource)
+    assert isinstance(make_source("url:rtsp://x/y"), StreamVideoSource)
+    assert isinstance(make_source("file:/tmp/clip.mp4"), StreamVideoSource)
+    assert isinstance(make_source("device:0"), StreamVideoSource)
+    assert isinstance(make_source("/tmp/clip.mp4"), StreamVideoSource)
+    assert isinstance(make_source(""), NullSource)
+    assert isinstance(make_source(None), NullSource)
 
 
-def test_tello_source_returns_none_until_connected():
-    # Before start()/connect, read_jpeg is non-blocking and returns None.
-    assert TelloVideoSource().read_jpeg() is None
-    assert DisabledSource().read_jpeg() is None
+def test_null_source_never_produces_frames():
+    source = NullSource()
+    source.start()
+    assert source.read_jpeg() is None
+    assert source.is_streaming is False
+    source.stop()
 
 
-def test_mock_source_produces_jpeg():
-    src = MockCameraSource("TELLO", clock=FakeClock(1.0))
-    data = src.read_jpeg()
-    assert data is not None
-    # JPEG SOI / EOI magic bytes.
-    assert data[:2] == b"\xff\xd8"
-    assert data[-2:] == b"\xff\xd9"
+def test_invalid_device_spec_is_rejected():
+    with pytest.raises(ValueError, match="device spec must be an integer"):
+        make_source("device:not-an-int")
 
 
-def test_frames_differ_over_time():
-    clock = FakeClock(0.0)
-    src = MockCameraSource("TELLO", clock=clock)
-    a = src.read_jpeg()
-    clock.advance(0.5)
-    b = src.read_jpeg()
-    # Moving target box => the encoded frame changes.
-    assert a != b
-
-
-def test_mjpeg_stream_yields_multipart_frames():
-    import asyncio
-
-    from app.video import MJPEG_MEDIA_TYPE, mjpeg_stream
-
-    async def first_two() -> list[bytes]:
-        gen = mjpeg_stream(MockCameraSource("TELLO", clock=FakeClock(0.0)), fps=1000.0)
-        out = []
-        async for chunk in gen:
-            out.append(chunk)
-            if len(out) >= 2:
-                break
-        return out
-
-    chunks = asyncio.run(first_two())
-    assert len(chunks) == 2
-    for chunk in chunks:
-        assert chunk.startswith(b"--" + BOUNDARY.encode())
-        assert b"Content-Type: image/jpeg" in chunk
-        assert b"\xff\xd8" in chunk and b"\xff\xd9" in chunk  # full JPEG in each part
-    assert "multipart/x-mixed-replace" in MJPEG_MEDIA_TYPE
+def test_unknown_source_kind_is_rejected():
+    with pytest.raises(ValueError, match="unknown video source kind"):
+        make_source("unknown:value")

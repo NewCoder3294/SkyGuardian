@@ -29,10 +29,8 @@ Config: [`../pytest.ini`](../pytest.ini) sets `testpaths=tests` and
 - `test_world_model.py` ✅ — entity lifecycle on `FakeClock`: admit-as-active,
   active→stale→lost→GC'd across the TTL/lost windows, producers can't force
   `lost` (overridden to active on admit), upsert-by-id refreshes/re-activates.
-- `test_video.py` ✅ — `make_source` selects tello/url/mock and falls back to an
-  honest `DisabledSource` (never a silent mock) on unset/unknown; sources are
-  non-blocking before connect; `MockCameraSource` emits valid JPEG (SOI/EOI) that
-  changes over `FakeClock` time; `mjpeg_stream` yields well-formed multipart parts.
+- `test_video.py` ✅ — `make_source` selects URL/file/device streams, returns an
+  empty `NullSource` when no source is configured, and rejects invalid specs.
 
 ## SLAM tests — `slam/`
 GPS-less monocular VO + AprilTag metric anchor (see
