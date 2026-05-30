@@ -668,7 +668,11 @@ async def post_map_area(
     cache, and broadcast a buildings_updated signal. REQUIRES internet at call
     time (pre-mission staging); on failure the cached layer is left untouched."""
     try:
-        payload = map_area.fetch_and_project(req.lat, req.lng, req.radius_m)
+        # Offload the blocking Overpass fetch (urllib, up to 3 mirror timeouts)
+        # to a thread so a slow/failed fetch can't stall the WS hub event loop.
+        payload = await asyncio.to_thread(
+            map_area.fetch_and_project, req.lat, req.lng, req.radius_m
+        )
     except Exception as exc:  # noqa: BLE001 - any fetch failure → 503, cache intact
         raise HTTPException(
             status_code=503,
