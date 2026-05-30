@@ -95,7 +95,13 @@ final class FollowCoordinator: ObservableObject {
             self.rcQueue.asyncAfter(deadline: .now() + self.takeoffSettle) {
                 self.tookOff = true
                 self.tookOffAt = CACurrentMediaTime()
+                self.latest = nil   // re-acquire fresh at hover; don't confirm on a climb-stale lock
                 self.latestTime = CACurrentMediaTime()
+                if self.mode == .track {
+                    // Re-lock the visual tracker on the hover-height view — the
+                    // ground-level lock taken at arm time may not survive the climb.
+                    self.detectQueue.async { self.tracker.reset() }
+                }
             }
         }
         setPhase(.searching)
@@ -126,7 +132,13 @@ final class FollowCoordinator: ObservableObject {
             self.rcQueue.asyncAfter(deadline: .now() + self.takeoffSettle) {
                 self.tookOff = true
                 self.tookOffAt = CACurrentMediaTime()
+                self.latest = nil   // re-acquire fresh at hover; don't confirm on a climb-stale lock
                 self.latestTime = CACurrentMediaTime()
+                if self.mode == .track {
+                    // Re-lock the visual tracker on the hover-height view — the
+                    // ground-level lock taken at arm time may not survive the climb.
+                    self.detectQueue.async { self.tracker.reset() }
+                }
             }
         }
         setPhase(.searching)
