@@ -8,8 +8,9 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    DEVELOPMENT_TEAM: ""
-    CODE_SIGNING_ALLOWED: "NO"   # simulator builds need no signing; flip for device
+    DEVELOPMENT_TEAM: "9KHR566436"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
 
 targets:
   ReconCompanion:
@@ -21,6 +22,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nicolasdossantos.skyguardian
         TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     info:
       path: Sources/Info.plist
       properties:
@@ -35,6 +37,8 @@ targets:
         NSLocationWhenInUseUsageDescription: "Shares your relative position with the laptop for follow-me context."
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+        # Only standard/exempt encryption (plain local ws) — avoids the TestFlight compliance prompt.
+        ITSAppUsesNonExemptEncryption: false
 
   ReconCompanionTests:
     type: bundle.unit-test

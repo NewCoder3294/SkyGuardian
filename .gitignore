@@ -32,3 +32,5 @@ mobile/*.xcodeproj
 mobile/DerivedData/
 xcuserdata/
 *.xcuserstate
+mobile/build/
+mobile/ExportOptions.plist.local
