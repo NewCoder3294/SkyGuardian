@@ -96,6 +96,7 @@ enum Command: String, Codable, CaseIterable, Sendable {
     case hold
     case recall
     case stop
+    case approach
 }
 
 struct IntentMessage: Encodable, Sendable {

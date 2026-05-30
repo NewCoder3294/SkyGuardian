@@ -21,6 +21,7 @@ class Stage(str, Enum):
     IDLE = "idle"
     FOLLOWING = "following"
     HOLDING = "holding"
+    APPROACH = "approach"
     RECALL = "recall"
     STOPPED = "stopped"
 
@@ -41,9 +42,14 @@ _NORMAL_TRANSITIONS: dict[Command, dict[Stage, Stage]] = {
         Stage.HOLDING: Stage.FOLLOWING,
         Stage.RECALL: Stage.FOLLOWING,
         Stage.STOPPED: Stage.FOLLOWING,
+        Stage.APPROACH: Stage.FOLLOWING,
     },
     Command.HOLD: {
         Stage.FOLLOWING: Stage.HOLDING,
+    },
+    Command.APPROACH: {
+        Stage.FOLLOWING: Stage.APPROACH,
+        Stage.HOLDING: Stage.APPROACH,
     },
 }
 
