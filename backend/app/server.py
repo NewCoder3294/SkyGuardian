@@ -14,9 +14,11 @@ import contextlib
 import os
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 
 from .clock import RealClock
+from .video import MJPEG_MEDIA_TYPE, MockCameraSource, mjpeg_stream
 from .contracts import (
     Command,
     DeviceLocation,
@@ -39,6 +41,11 @@ world = WorldModel(clock=clock)
 mission = MissionStateMachine(clock=clock)
 hub = Hub()
 mock = MockSource(world, clock=clock) if USE_MOCK else None
+
+# Video relay sources. Mock until real Tello/Mavic sources are wired in.
+# phone reads /video/tello (companion view); dashboard reads /video/mavic (recon view).
+tello_camera = MockCameraSource("TELLO", clock=clock)
+mavic_camera = MockCameraSource("MAVIC", clock=clock)
 
 app = FastAPI(title="Recon & Companion — local brain")
 
@@ -77,6 +84,18 @@ async def _shutdown() -> None:
 @app.get("/health")
 async def health() -> dict:
     return {"ok": True, "clients": hub.client_count, "stage": mission.stage.value}
+
+
+@app.get("/video/tello")
+async def video_tello() -> StreamingResponse:
+    """Tello companion feed, relayed to the phone (MJPEG)."""
+    return StreamingResponse(mjpeg_stream(tello_camera), media_type=MJPEG_MEDIA_TYPE)
+
+
+@app.get("/video/mavic")
+async def video_mavic() -> StreamingResponse:
+    """Mavic recon feed, relayed to the dashboard (MJPEG)."""
+    return StreamingResponse(mjpeg_stream(mavic_camera), media_type=MJPEG_MEDIA_TYPE)
 
 
 @app.websocket("/ws")

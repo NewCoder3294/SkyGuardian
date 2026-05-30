@@ -1,8 +1,11 @@
 import SwiftUI
 
+enum CenterView { case map, feed }
+
 struct ContentView: View {
     @StateObject private var client = WorldClient()
     @State private var showConnect = true
+    @State private var center: CenterView = .map
 
     var body: some View {
         VStack(spacing: 0) {
@@ -14,9 +17,14 @@ struct ContentView: View {
             )
 
             ZStack(alignment: .topLeading) {
-                LocalMapView(entities: client.entities, trails: client.trails,
-                             projection: MapProjection(spanMeters: 24))
-                legend.padding(10)
+                if center == .map {
+                    LocalMapView(entities: client.entities, trails: client.trails,
+                                 projection: MapProjection(spanMeters: 24))
+                } else {
+                    MJPEGView(serverURL: client.serverURL, path: "/video/tello")
+                }
+                if center == .map { legend.padding(10) }
+                viewToggle.frame(maxWidth: .infinity, alignment: .top).padding(.top, 8)
                 if showConnect { connectPanel.padding(12).frame(maxWidth: .infinity, alignment: .topTrailing) }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -32,6 +40,11 @@ struct ContentView: View {
         #if DEBUG
         if CommandLine.arguments.contains("-demo") {
             client.loadSampleData()
+            showConnect = false
+        }
+        if CommandLine.arguments.contains("-feed") {
+            client.serverURL = "ws://127.0.0.1:8011/ws"   // local backend with the MJPEG relay
+            center = .feed
             showConnect = false
         }
         #endif
@@ -65,6 +78,24 @@ struct ContentView: View {
         .background(Theme.panel.opacity(0.96))
         .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
         .frame(maxWidth: 260)
+    }
+
+    private var viewToggle: some View {
+        HStack(spacing: 0) {
+            toggleButton("MAP", on: center == .map) { center = .map }
+            toggleButton("FEED", on: center == .feed) { center = .feed }
+        }
+        .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
+        .background(Theme.panel.opacity(0.95))
+    }
+
+    private func toggleButton(_ title: String, on: Bool, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title).font(Theme.mono(11, weight: .semibold))
+                .foregroundColor(on ? Theme.panel : Theme.ink)
+                .padding(.horizontal, 18).padding(.vertical, 7)
+                .background(on ? Theme.olive : Color.clear)
+        }
     }
 
     private var legend: some View {
