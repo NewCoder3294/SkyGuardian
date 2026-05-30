@@ -114,7 +114,6 @@ def test_fetch_and_project_uses_injected_fetcher():
 
 def test_fetch_buildings_script_reuses_map_area():
     # The CLI must not re-implement projection; it imports from app.map_area.
-    import importlib.util
     from pathlib import Path
 
     script = Path(__file__).resolve().parents[2] / "scripts" / "fetch_buildings.py"
