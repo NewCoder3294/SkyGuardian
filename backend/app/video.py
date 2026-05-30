@@ -12,6 +12,9 @@ from __future__ import annotations
 
 import asyncio
 import math
+import socket
+import threading
+import time
 from typing import AsyncIterator, Protocol
 
 import cv2
@@ -105,30 +108,61 @@ class StreamVideoSource:
 
 
 class TelloVideoSource:
-    """Live Tello camera via djitellopy. The laptop is the sole Tello controller;
-    this ingests its video and the relay re-streams it to the phone.
+    """Live Tello camera. The laptop is the sole Tello controller; this ingests its
+    video and the relay re-streams it to the phone.
 
-    `start()` does the blocking connect + streamon once (call it off the event loop
-    at startup). read_jpeg returns the latest decoded frame, non-blocking, or None
-    until connected — no mock, just an honest empty feed before the link is up.
+    Uses the raw Tello SDK over UDP for control (command/streamon + keepalive) and
+    OpenCV/ffmpeg to decode the H.264 video stream — deliberately NOT djitellopy,
+    which pulls in PyAV and conflicts with OpenCV's bundled ffmpeg dylibs. `start()`
+    sends streamon and opens the stream; a background thread keeps the latest frame
+    fresh. read_jpeg is non-blocking and returns None until the first frame decodes.
     """
 
+    TELLO_IP = "192.168.10.1"
+    CMD_PORT = 8889
+    VIDEO_URL = "udp://@0.0.0.0:11111?overrun_nonfatal=1&fifo_size=50000000"
+
     def __init__(self) -> None:
-        self._reader = None
-        self._connected = False
+        self._cap = None
+        self._sock = None
+        self._frame = None
+        self._lock = threading.Lock()
+        self._running = False
+
+    def _send(self, cmd: str) -> None:
+        if self._sock is not None:
+            self._sock.sendto(cmd.encode(), (self.TELLO_IP, self.CMD_PORT))
 
     def start(self) -> None:
-        from djitellopy import Tello  # optional dep; required for real flights
-        tello = Tello()
-        tello.connect()           # blocks ~seconds; raises if the Tello isn't reachable
-        tello.streamon()
-        self._reader = tello.get_frame_read()  # background thread keeps .frame fresh
-        self._connected = True
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._sock.bind(("", self.CMD_PORT))
+        self._send("command")
+        time.sleep(0.5)
+        self._send("streamon")
+        time.sleep(2.0)
+        self._cap = cv2.VideoCapture(self.VIDEO_URL, cv2.CAP_FFMPEG)
+        self._running = True
+        threading.Thread(target=self._reader, daemon=True).start()
+        threading.Thread(target=self._keepalive, daemon=True).start()
+
+    def _reader(self) -> None:
+        while self._running and self._cap is not None:
+            ok, frame = self._cap.read()
+            if ok and frame is not None:
+                with self._lock:
+                    self._frame = frame
+            else:
+                time.sleep(0.01)  # no keyframe yet; don't busy-spin
+
+    def _keepalive(self) -> None:
+        # The Tello leaves SDK mode (and stops streaming) without periodic commands.
+        while self._running:
+            time.sleep(5.0)
+            self._send("command")
 
     def read_jpeg(self) -> bytes | None:
-        if not self._connected or self._reader is None:
-            return None
-        frame = getattr(self._reader, "frame", None)
+        with self._lock:
+            frame = self._frame
         if frame is None:
             return None
         ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
