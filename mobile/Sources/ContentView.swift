@@ -17,6 +17,7 @@ struct ContentView: View {
     @State private var mapMode: MapMode = .twoD
     @State private var setupStarted = false
     @State private var pendingArm: PendingArm?
+    @State private var pendingApproach = false
 
     enum PendingArm { case follow, track }
 
@@ -68,6 +69,12 @@ struct ContentView: View {
             Button("Cancel", role: .cancel) { pendingArm = nil }
         } message: {
             Text("The drone will launch and \(pendingArm == .track ? "track the centered object" : "follow the tag"). Keep clear; STOP lands it.")
+        }
+        .confirmationDialog("Begin autonomous approach?", isPresented: $pendingApproach, titleVisibility: .visible) {
+            Button("Approach target", role: .destructive) { client.send(.approach) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The companion drone will autonomously fly to the selected target and hold standoff.")
         }
         .onReceive(follow.$phase) { _ in publishFollow() }
     }
@@ -270,6 +277,12 @@ struct ContentView: View {
         if fn == .stop {                                    // halt: stop the loop / neutralize sticks
             if follow.isArmed { follow.disarmAndLand() } else { TelloCommander.shared.rc(.hover) }
             if isConnected { client.send(.stop) }
+            return
+        }
+
+        if fn == .approach {
+            guard isConnected else { return }   // approach is laptop-side autonomy
+            pendingApproach = true               // drives a confirmationDialog
             return
         }
 
