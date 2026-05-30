@@ -1,9 +1,12 @@
+import math
+
 import pytest
 from pydantic import ValidationError
 
 from app.contracts import (
     Command,
     DeviceLocation,
+    EntityReport,
     IntentMessage,
     parse_client_message,
 )
@@ -41,3 +44,45 @@ def test_confidence_bounds_enforced():
             id="x", type=EntityType.POI, position=Vec3(x=0, y=0, z=0),
             confidence=1.5, timestamp=0.0, source=EntitySource.YOLO,
         )
+
+
+def test_entity_report_parses_with_entities():
+    raw = {
+        "type": "entity_report",
+        "entities": [
+            {"id": "drone", "type": "drone", "position": {"x": 1.0, "y": 2.0, "z": 0.0},
+             "timestamp": 100.0, "source": "follow"},
+        ],
+        "source": "phone",
+        "t": 100.0,
+    }
+    msg = parse_client_message(raw)
+    assert isinstance(msg, EntityReport)
+    assert msg.entities[0].id == "drone"
+
+
+def test_entity_report_rejects_nan_position():
+    raw = {
+        "type": "entity_report",
+        "entities": [
+            {"id": "drone", "type": "drone",
+             "position": {"x": math.nan, "y": 0.0, "z": 0.0},
+             "timestamp": 1.0, "source": "follow"},
+        ],
+        "source": "phone", "t": 1.0,
+    }
+    with pytest.raises((ValidationError, ValueError)):
+        parse_client_message(raw)
+
+
+def test_entity_report_rejects_too_many_entities():
+    raw = {
+        "type": "entity_report",
+        "entities": [
+            {"id": f"e{i}", "type": "object", "position": {"x": 0, "y": 0, "z": 0},
+             "timestamp": 1.0, "source": "follow"} for i in range(20)
+        ],
+        "source": "phone", "t": 1.0,
+    }
+    with pytest.raises((ValidationError, ValueError)):
+        parse_client_message(raw)

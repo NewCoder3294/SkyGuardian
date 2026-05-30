@@ -40,6 +40,8 @@ class EntitySource(str, Enum):
 
 
 class Vec3(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     x: float
     y: float
     z: float = 0.0
@@ -178,7 +180,23 @@ class DeviceLocation(BaseModel):
     t: float
 
 
-ClientMessage = Union[IntentMessage, DeviceLocation, FollowState]
+class EntityReport(BaseModel):
+    """Phone-localized entities (operator + drone) expressed in the shared WORLD
+    frame (north-up metres, launch anchor tag = origin). The phone co-registers
+    against the same launch tag the Mavic uses, so these upsert directly into the
+    world model and render on both maps. Bounded + finite so a malformed payload
+    can't poison the snapshot.
+    """
+
+    model_config = ConfigDict(allow_inf_nan=False)
+
+    type: Literal["entity_report"] = "entity_report"
+    entities: list[Entity] = Field(max_length=8)
+    source: str = "phone"
+    t: float
+
+
+ClientMessage = Union[IntentMessage, DeviceLocation, FollowState, EntityReport]
 
 
 def parse_client_message(raw: dict) -> ClientMessage:
@@ -192,4 +210,6 @@ def parse_client_message(raw: dict) -> ClientMessage:
         return DeviceLocation.model_validate(raw)
     if kind == "follow_state":
         return FollowState.model_validate(raw)
+    if kind == "entity_report":
+        return EntityReport.model_validate(raw)
     raise ValueError(f"unknown client message type: {kind!r}")
