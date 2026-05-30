@@ -10,7 +10,7 @@ settings:
     SWIFT_VERSION: "5.0"
     DEVELOPMENT_TEAM: "9KHR566436"
     MARKETING_VERSION: "1.0"
-    CURRENT_PROJECT_VERSION: "5"
+    CURRENT_PROJECT_VERSION: "6"
 
 packages:
   ZIPFoundation:
@@ -37,6 +37,11 @@ targets:
       path: Sources/Info.plist
       properties:
         CFBundleDisplayName: SkyGuardian
+        # Wire the bundle version to the build settings so bumping CURRENT_PROJECT_VERSION
+        # in this file actually changes the uploaded build number (xcodegen otherwise
+        # regenerates this plist with a default CFBundleVersion of 1).
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
