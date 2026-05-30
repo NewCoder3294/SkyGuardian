@@ -75,6 +75,8 @@ def process_video_file(
     yolo_classes: Optional[list[str]] = None,
     yolo_imgsz: int = 960,
     yolo_conf: float = 0.20,
+    yolo_coco_weights: Optional[str] = None,
+    yolo_coco_keep: Optional[list[str]] = None,
     depth_model: Optional[str] = None,
     depth_scale: float = 5.0,
     sample_fps: float = 5.0,
@@ -109,6 +111,21 @@ def process_video_file(
             )
         except Exception as exc:  # YOLO is optional — log and continue
             print(f"[file_processor] YOLO disabled: {exc}")
+
+    # Optional second detector: supervised COCO YOLOv8. Same ensemble logic
+    # as the live PerceptionPipeline — partitions class space.
+    coco_detector: YoloDetector | None = None
+    coco_keep_set: set[str] = {c.lower() for c in (yolo_coco_keep or [])}
+    if yolo_coco_weights:
+        try:
+            coco_detector = YoloDetector(
+                yolo_coco_weights,
+                conf_threshold=yolo_conf,
+                classes=None,
+                imgsz=yolo_imgsz,
+            )
+        except Exception as exc:
+            print(f"[file_processor] COCO ensemble disabled: {exc}")
 
     depth_est = None
     if depth_model:
@@ -156,13 +173,21 @@ def process_video_file(
             except Exception as exc:
                 print(f"[file_processor] SLAM tick error: {exc}")
 
-        # --- YOLO ---------------------------------------------------------
+        # --- YOLO (ensemble: open-vocab + supervised COCO) ----------------
         yolo_dets: list[YoloDetection] = []
         if detector is not None:
             try:
-                yolo_dets = detector.detect(bgr)
+                yolo_dets.extend(detector.detect(bgr))
             except Exception as exc:
-                print(f"[file_processor] YOLO error: {exc}")
+                print(f"[file_processor] world YOLO error: {exc}")
+        if coco_detector is not None:
+            try:
+                coco_dets = coco_detector.detect(bgr)
+                if coco_keep_set:
+                    coco_dets = [d for d in coco_dets if d.label.lower() in coco_keep_set]
+                yolo_dets.extend(coco_dets)
+            except Exception as exc:
+                print(f"[file_processor] COCO YOLO error: {exc}")
 
         # --- depth (only when YOLO produced something) --------------------
         depth_map = None

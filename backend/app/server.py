@@ -124,6 +124,26 @@ _YOLO_CLASSES: list[str] | None = (
 _YOLO_IMGSZ = int(os.environ.get("YOLO_IMGSZ", "960"))
 _YOLO_CONF = float(os.environ.get("YOLO_CONF", "0.20"))
 
+# Ensemble: optional second detector — standard YOLOv8 (COCO supervised) for
+# high-precision person / vehicle / backpack. When set, we ALSO prune those
+# labels from the YOLO-World vocab so the same physical object isn't
+# double-detected. Two detectors, partitioned class space, results merged.
+_YOLO_COCO_WEIGHTS = os.environ.get("YOLO_COCO_WEIGHTS") or None
+# COCO classes we trust over open-vocab. Lowercased.
+_COCO_KEEP_DEFAULT = [
+    "person", "car", "truck", "motorcycle", "bicycle", "bus", "backpack",
+]
+_yolo_coco_keep_env = os.environ.get("YOLO_COCO_KEEP")
+_YOLO_COCO_KEEP: list[str] = (
+    [c.strip().lower() for c in _yolo_coco_keep_env.split(",") if c.strip()]
+    if _yolo_coco_keep_env
+    else (_COCO_KEEP_DEFAULT if _YOLO_COCO_WEIGHTS else [])
+)
+# Remove the COCO-handled classes from YOLO-World's vocab to avoid duplicates.
+if _YOLO_COCO_WEIGHTS and _YOLO_CLASSES:
+    _strip = set(_YOLO_COCO_KEEP)
+    _YOLO_CLASSES = [c for c in _YOLO_CLASSES if c.lower() not in _strip]
+
 # Monocular depth model — unlocks true 3D positions for YOLO entities.
 # Disable with DEPTH_MODEL="off". Calibration: DEPTH_SCALE tunes the
 # (relative inverse depth) → metres mapping.
@@ -139,6 +159,8 @@ perception = PerceptionPipeline(
     yolo_classes=_YOLO_CLASSES,
     yolo_imgsz=_YOLO_IMGSZ,
     yolo_conf=_YOLO_CONF,
+    yolo_coco_weights=_YOLO_COCO_WEIGHTS,
+    yolo_coco_keep=_YOLO_COCO_KEEP,
     depth_model=_DEPTH_MODEL,
     depth_scale=_DEPTH_SCALE,
     tag_size_m=float(os.environ.get("ANCHOR_TAG_SIZE_M", "0.20")),
@@ -434,6 +456,8 @@ async def _process_uploaded_file(safe_name: str, dest: Path) -> None:
             yolo_classes=_YOLO_CLASSES,
             yolo_imgsz=_YOLO_IMGSZ,
             yolo_conf=_YOLO_CONF,
+            yolo_coco_weights=_YOLO_COCO_WEIGHTS,
+            yolo_coco_keep=_YOLO_COCO_KEEP,
             depth_model=_DEPTH_MODEL,
             depth_scale=_DEPTH_SCALE,
             sample_fps=float(os.environ.get("PERCEPTION_FPS", "5")),
