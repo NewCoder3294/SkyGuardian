@@ -239,14 +239,22 @@ export default function Page() {
             <div className="flex min-h-0 flex-1 flex-col">
               <div className="flex min-h-0 flex-1">
                 <div className="flex min-w-0 flex-1">
+                  {/* `key` includes the source kind + (when in file mode) the
+                      uploaded filename so React fully unmounts the prior
+                      <video> / <img> when we swap modes or swap clips. Without
+                      it the old element could linger across a kind change in
+                      some browsers (cached frame, paused player) — which the
+                      operator reads as "stuck video after clicking RTMP". */}
                   {isPlayback ? (
                     <VideoPlayer
+                      key={`pb:${playbackName}`}
                       apiBase={apiBase}
                       name={playbackName}
                       onTimeUpdate={onPlayheadMove}
                     />
                   ) : (
                     <VideoFeed
+                      key={`live:${source?.kind ?? "boot"}`}
                       src={leaderSrc}
                       detections={wsLive.detections["leader"]}
                       label="Leader · Recon"

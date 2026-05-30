@@ -22,9 +22,11 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import socket
 import uuid
 from pathlib import Path
 from typing import AsyncIterator
+from urllib.parse import urlparse, urlunparse
 
 from fastapi import (
     Depends,
@@ -85,6 +87,51 @@ _MAVIC_SOURCE_ENV = os.environ.get("MAVIC_SOURCE") or ""
 _DEFAULT_RTMP_URL = os.environ.get(
     "MAVIC_RTMP_DEFAULT", "url:rtmp://127.0.0.1:1935/live"
 )
+
+
+def _detect_lan_ip() -> str | None:
+    """Best-effort LAN IP for the publish-URL hint shown to the operator.
+
+    The backend reads RTMP from loopback (MediaMTX runs on the same box), but
+    the *publisher* is usually a phone or drone on the LAN — `127.0.0.1` in the
+    displayed URL would never reach the relay. We open a UDP socket to a public
+    address (no packets actually sent) so the OS picks the outbound interface,
+    which is the IP a LAN publisher should target. Fully offline-safe.
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.settimeout(0.05)
+            s.connect(("10.255.255.255", 1))
+            ip = s.getsockname()[0]
+        if ip and not ip.startswith("127."):
+            return ip
+    except OSError:
+        pass
+    return None
+
+
+def _publish_url_for(spec: str) -> str:
+    """Turn the internal RTMP read spec into a publish URL the operator can
+    paste into a remote publisher. Strips the `url:` prefix and swaps a
+    loopback host for the detected LAN IP when one is available."""
+    raw = (spec or "").split(":", 1)[1] if (spec or "").lower().startswith("url:") else (spec or "")
+    if not raw:
+        return ""
+    try:
+        parsed = urlparse(raw)
+    except ValueError:
+        return raw
+    host = parsed.hostname or ""
+    if host in ("127.0.0.1", "localhost", "0.0.0.0"):
+        lan = _detect_lan_ip()
+        if lan:
+            port = f":{parsed.port}" if parsed.port else ""
+            netloc = f"{lan}{port}"
+            parsed = parsed._replace(netloc=netloc)
+            return urlunparse(parsed)
+    return raw
+
+
 _initial_mavic = make_source(_MAVIC_SOURCE_ENV or None)
 _initial_kind = (
     "rtmp" if _MAVIC_SOURCE_ENV.lower().startswith("url:") else
@@ -609,11 +656,16 @@ async def post_intel_chat(body: ChatRequest) -> dict:
 async def get_source() -> dict:
     """Current video source state — mode + label + (when in file mode) the
     processing/playback status the dashboard needs to switch UI modes."""
+    spec = _MAVIC_SOURCE_ENV or _DEFAULT_RTMP_URL
     return {
         "kind": mavic_camera.kind,
         "label": mavic_camera.label,
         "streaming": mavic_camera.is_streaming,
-        "rtmp_default": _MAVIC_SOURCE_ENV or _DEFAULT_RTMP_URL,
+        "rtmp_default": spec,
+        # LAN-reachable hint for the operator's publisher. When MediaMTX runs
+        # on the laptop the read spec stays on loopback, but a phone/drone has
+        # to target the laptop's LAN IP — the dashboard shows this.
+        "publish_url": _publish_url_for(spec),
         "upload": dict(_upload_status),
     }
 
@@ -631,6 +683,14 @@ async def use_rtmp_source(_: None = Depends(_require_operator)) -> dict:
     MAVIC_SOURCE if set, otherwise falls back to the loopback default
     (MediaMTX on 127.0.0.1:1935/live). Clears any upload-in-progress status
     so the dashboard exits playback mode."""
+    # Cancel any in-flight upload processing task so it can't race with the
+    # reset below and resurrect upload_status="ready" after the swap. Without
+    # this, clicking RTMP mid-processing leaves a brief window where the
+    # background task completes and writes state="ready", which the dashboard
+    # can misread as "playback ready" if the kind hasn't propagated yet.
+    for t in list(_bg_tasks):
+        if not t.done():
+            t.cancel()
     target = _MAVIC_SOURCE_ENV or _DEFAULT_RTMP_URL
     new = make_source(target)
     await asyncio.to_thread(mavic_camera.replace, new, "rtmp", target)
@@ -771,6 +831,11 @@ async def _process_uploaded_file(safe_name: str, dest: Path) -> None:
             "frame_count": result.summary["frame_count"],
             "detection_count": result.summary["detection_count"],
         })
+    except asyncio.CancelledError:
+        # The /video/source/rtmp handler cancels in-flight uploads to win the
+        # race against `state=ready` being written after the swap. Leave
+        # _upload_status alone — the handler already reset it to idle.
+        raise
     except Exception as exc:
         _upload_status.update({
             "state": "error",

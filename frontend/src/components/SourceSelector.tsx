@@ -45,6 +45,9 @@ export interface SourceState {
   label: string;
   streaming: boolean;
   rtmp_default: string;
+  /** LAN-reachable publish URL the operator should paste into a remote
+   *  publisher. Differs from rtmp_default when MediaMTX is on loopback. */
+  publish_url?: string;
   upload?: UploadStatus;
 }
 
@@ -109,6 +112,30 @@ export function SourceSelector({ apiBase, onState }: Props) {
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         setError(body?.detail ?? `HTTP ${res.status}`);
+      } else {
+        // Optimistically clear local state the instant the server acks the
+        // swap. The 2 s polling cadence is long enough that a previously-
+        // uploaded clip would otherwise stay on screen until the next tick —
+        // which reads as "stuck video" to the operator. Notify the parent so
+        // it can flip out of playback immediately; the next refresh confirms.
+        const optimistic: SourceState = {
+          kind: "rtmp",
+          label: state?.rtmp_default ?? "",
+          streaming: false,
+          rtmp_default: state?.rtmp_default ?? "",
+          publish_url: state?.publish_url,
+          upload: {
+            name: null,
+            state: "idle",
+            progress: 0,
+            error: null,
+            duration_s: 0,
+            frame_count: 0,
+            detection_count: 0,
+          },
+        };
+        setState(optimistic);
+        onState?.(optimistic);
       }
     } catch (e) {
       setError(requestErrorMessage(e, apiBase));
@@ -165,7 +192,12 @@ export function SourceSelector({ apiBase, onState }: Props) {
   // drone. Goes away the moment a frame lands.
   const rtmpWaiting =
     state?.kind === "rtmp" && !state.streaming && (state?.rtmp_default?.length ?? 0) > 0;
-  const publishUrl = (state?.rtmp_default ?? "").replace(/^url:/i, "");
+  // Prefer the backend's LAN-reachable hint (handles 127.0.0.1 → laptop IP).
+  // Fall back to stripping `url:` off the raw spec.
+  const publishUrl =
+    state?.publish_url && state.publish_url.length > 0
+      ? state.publish_url
+      : (state?.rtmp_default ?? "").replace(/^url:/i, "");
   const [copied, setCopied] = useState(false);
   const copyUrl = async () => {
     try {
