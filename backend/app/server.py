@@ -73,10 +73,17 @@ world = WorldModel(clock=clock)
 mission = MissionStateMachine(clock=clock)
 hub = Hub()
 
-# Mavic source — env-driven. Unset → NullSource (perception idles).
+# Mavic source — env-driven. Unset → NullSource (perception idles at boot).
 # Wrapped in SwitchableSource so the operator can hot-swap to an uploaded
 # video file from the dashboard without restarting the backend.
 _MAVIC_SOURCE_ENV = os.environ.get("MAVIC_SOURCE") or ""
+# Sensible default for the dashboard's "RTMP" button when MAVIC_SOURCE wasn't
+# set at boot. Matches the loopback relay (MediaMTX) we expect to run alongside
+# the backend during a demo. Boot stays quiet (NullSource) — this URL is only
+# attempted when the operator explicitly clicks RTMP.
+_DEFAULT_RTMP_URL = os.environ.get(
+    "MAVIC_RTMP_DEFAULT", "url:rtmp://127.0.0.1:1935/live"
+)
 _initial_mavic = make_source(_MAVIC_SOURCE_ENV or None)
 _initial_kind = (
     "rtmp" if _MAVIC_SOURCE_ENV.lower().startswith("url:") else
@@ -571,7 +578,7 @@ async def get_source() -> dict:
         "kind": mavic_camera.kind,
         "label": mavic_camera.label,
         "streaming": mavic_camera.is_streaming,
-        "rtmp_default": _MAVIC_SOURCE_ENV,
+        "rtmp_default": _MAVIC_SOURCE_ENV or _DEFAULT_RTMP_URL,
         "upload": dict(_upload_status),
     }
 
@@ -585,15 +592,13 @@ async def get_upload_status() -> dict:
 
 @app.post("/video/source/rtmp")
 async def use_rtmp_source(_: None = Depends(_require_operator)) -> dict:
-    """Switch the leader source back to the env-configured RTMP feed.
-    Clears any upload-in-progress status so the dashboard exits playback mode."""
-    if not _MAVIC_SOURCE_ENV:
-        raise HTTPException(
-            status_code=400,
-            detail="No MAVIC_SOURCE env var configured at startup.",
-        )
-    new = make_source(_MAVIC_SOURCE_ENV)
-    await asyncio.to_thread(mavic_camera.replace, new, "rtmp", _MAVIC_SOURCE_ENV)
+    """Switch the leader source to the configured RTMP feed. Uses
+    MAVIC_SOURCE if set, otherwise falls back to the loopback default
+    (MediaMTX on 127.0.0.1:1935/live). Clears any upload-in-progress status
+    so the dashboard exits playback mode."""
+    target = _MAVIC_SOURCE_ENV or _DEFAULT_RTMP_URL
+    new = make_source(target)
+    await asyncio.to_thread(mavic_camera.replace, new, "rtmp", target)
     # Clear perception/SLAM state so the new feed isn't anchored against
     # landmarks/tags from the previous one (different coordinate system).
     perception.reset()
@@ -601,7 +606,7 @@ async def use_rtmp_source(_: None = Depends(_require_operator)) -> dict:
         "name": None, "state": "idle", "progress": 0.0,
         "error": None, "duration_s": 0.0, "frame_count": 0, "detection_count": 0,
     })
-    return {"ok": True, "kind": "rtmp", "label": _MAVIC_SOURCE_ENV}
+    return {"ok": True, "kind": "rtmp", "label": target}
 
 
 def _save_upload_capped(upload_file, dest: Path, max_bytes: int) -> int:
