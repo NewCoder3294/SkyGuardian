@@ -55,11 +55,13 @@ from .contracts import (
     WorldSnapshot,
     parse_client_message,
 )
+from .follow.approach import ApproachController
+from .follow.arming import ArmingLock
 from .follow.controller import FollowController
 from .perception.file_processor import process_video_file
 from .perception.pipeline import PerceptionPipeline
 from .reasoning.intel import IntelChat, IntelReasoner, IntelSummary, ollama_alive
-from .state_machine import MissionStateMachine
+from .state_machine import MissionStateMachine, Stage
 from .tello.client import TelloClient, TelloState
 from .tello.video import TelloVideoSource
 from .video import NullSource, StreamVideoSource, SwitchableSource, make_source
@@ -252,17 +254,42 @@ perception = PerceptionPipeline(
 tello_client = TelloClient(retry_seconds=float(os.environ.get("TELLO_RETRY_S", "3")))
 tello_camera = TelloVideoSource(tello_client)
 
+# Software arming interlock for the Tello. Exactly one laptop-side controller
+# (follow OR approach) may command the drone at a time. Starts UNHELD: the
+# laptop is DISARMED BY DEFAULT. Combined with the fail-closed gate in the
+# controllers, nothing drives the Tello until an explicit FOLLOW_ME/APPROACH
+# command routes the lock to that mode. Do NOT auto-arm here.
+arming = ArmingLock()
+
 follow = FollowController(
     tello=tello_client,
     video=tello_camera,
     world=world,
     mission=mission,
+    arming=arming,
+    owner="follow",
     clock=clock,
     tag_size_m=float(os.environ.get("FOLLOW_TAG_SIZE_M", "0.18")),
     soldier_tag_id=(
         int(os.environ["FOLLOW_TAG_ID"]) if os.environ.get("FOLLOW_TAG_ID") else None
     ),
 )
+
+approach = ApproachController(
+    tello=tello_client, world=world, arming=arming, clock=clock,
+    standoff_m=float(os.environ.get("APPROACH_STANDOFF_M", "1.5")),
+    owner="approach",
+)
+
+
+def _route_arming_for_command(command: Command, lock: ArmingLock) -> None:
+    """Transfer the Tello arming lock to match the commanded mode."""
+    if command is Command.APPROACH:
+        lock.release("follow"); lock.acquire("approach")
+    elif command is Command.FOLLOW_ME:
+        lock.release("approach"); lock.acquire("follow")
+    elif command in (Command.STOP, Command.RECALL):
+        lock.release("follow"); lock.release("approach")
 
 app = FastAPI(title="SkyGuardian — local brain")
 # Dashboard runs on a different port (3001) and pulls MJPEG/JPEG via <img src>.
@@ -431,6 +458,25 @@ async def _intel_loop() -> None:
         await asyncio.sleep(_INTEL_INTERVAL_S)
 
 
+# Placeholder: real Tello-frame target detection is a follow-up. Returns None
+# so an armed approach safely hovers until the detector lands.
+class _NoTargetDetector:
+    def detect(self, jpeg, now):
+        return None
+
+
+approach_detector = _NoTargetDetector()
+
+
+async def _approach_loop() -> None:
+    interval = 1.0 / 15.0
+    while True:
+        if mission.stage is Stage.APPROACH:
+            jpeg = tello_camera.read_jpeg()
+            approach.step(approach_detector.detect(jpeg, clock.now()), clock.now())
+        await asyncio.sleep(interval)
+
+
 @app.on_event("startup")
 async def _startup() -> None:
     app.state.broadcast_task = asyncio.create_task(_broadcast_loop())
@@ -443,6 +489,7 @@ async def _startup() -> None:
         tello_client.start()
         tello_camera.start()
         follow.start()
+        app.state.approach_task = asyncio.create_task(_approach_loop())
     perception.start()
     if _INTEL_ENABLED:
         app.state.intel_task = asyncio.create_task(_intel_loop())
@@ -451,7 +498,7 @@ async def _startup() -> None:
 @app.on_event("shutdown")
 async def _shutdown() -> None:
     # Cancel both the broadcast + intel reasoning tasks.
-    for attr in ("broadcast_task", "intel_task"):
+    for attr in ("broadcast_task", "intel_task", "approach_task"):
         task = getattr(app.state, attr, None)
         if task:
             task.cancel()
@@ -841,6 +888,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 continue
             if isinstance(msg, IntentMessage):
                 mission.apply(msg.command)
+                _route_arming_for_command(msg.command, arming)
             elif isinstance(msg, DeviceLocation):
                 _apply_device_location(msg)
             elif isinstance(msg, FollowState):

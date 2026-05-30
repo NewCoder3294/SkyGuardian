@@ -64,8 +64,8 @@ class FollowController:
         video: TelloVideoSource,
         world: WorldModel,
         mission: MissionStateMachine,
+        arming: ArmingLock,
         clock: Clock | None = None,
-        arming: ArmingLock | None = None,
         owner: str = "follow",
         img_width: int = 960,
         img_height: int = 720,
@@ -140,7 +140,8 @@ class FollowController:
 
     async def _drive_tello(self, reading: Optional[TagReading], now: float) -> None:
         # Arming interlock: never command the drone unless we hold the lock.
-        if self._arming is not None and not self._arming.can_command(self._owner):
+        # FAIL-CLOSED — no None-guard. A missing/unheld lock means no driving.
+        if not self._arming.can_command(self._owner):
             return
 
         stage = self._mission.stage
