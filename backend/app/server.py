@@ -33,8 +33,10 @@ from .state_machine import MissionStateMachine
 from .world_model import WorldModel
 from .ws_hub import Hub
 
+# Mock entity injection is OFF by default — the world model only ever holds real
+# detections. Opt in with USE_MOCK=1 strictly for hardware-free UI dev.
 BROADCAST_HZ = float(os.environ.get("BROADCAST_HZ", "10"))
-USE_MOCK = os.environ.get("USE_MOCK", "1") == "1"
+USE_MOCK = os.environ.get("USE_MOCK", "0") == "1"
 
 clock = RealClock()
 world = WorldModel(clock=clock)
@@ -60,10 +62,11 @@ async def _broadcast_loop() -> None:
         now = clock.now()
         await hub.broadcast(WorldSnapshot(entities=world.snapshot(), t=now))
         await hub.broadcast(MissionState(stage=mission.stage.value, last_error=mission.last_error, t=now))
+        # Honest health: report the configured real sources, not a mock label.
         await hub.broadcast(Health(
-            tello="mock" if USE_MOCK else "unknown",
-            mavic="mock" if USE_MOCK else "unknown",
-            perception="mock" if USE_MOCK else "unknown",
+            tello=(os.environ.get("TELLO_SOURCE", "tello") or "disabled"),
+            mavic=(os.environ.get("MAVIC_SOURCE", "") or "disabled"),
+            perception="mock" if USE_MOCK else "off",
             t=now,
         ))
         await asyncio.sleep(interval)

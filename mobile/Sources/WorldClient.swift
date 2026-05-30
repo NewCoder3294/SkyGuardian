@@ -129,36 +129,4 @@ final class WorldClient: ObservableObject {
         }
     }
 
-#if DEBUG
-    /// Populate a representative scene for screenshots / previews (launch arg -demo).
-    func loadSampleData() {
-        connection = .connected
-        stage = "following"
-        health = Health(tello: "connected", mavic: "streaming", perception: "ok", t: 0)
-        var soldierTrail: [Vec3] = []
-        var droneTrail: [Vec3] = []
-        for i in stride(from: 0, through: 28, by: 1) {
-            let a = Double(i) * 0.18
-            soldierTrail.append(Vec3(x: 3.2 * cos(a) - 1, y: 3.2 * sin(a), z: 0))
-            droneTrail.append(Vec3(x: 2.6 * cos(a + 0.5) - 1, y: 2.6 * sin(a + 0.5) + 1.5, z: 1.2))
-        }
-        let soldier = soldierTrail.last ?? Vec3(x: 0, y: 0, z: 0)
-        let drone = droneTrail.last ?? Vec3(x: 0, y: 0, z: 0)
-        entities = [
-            Entity(id: "soldier_1", type: .soldier, position: soldier, confidence: 1, timestamp: 0,
-                   source: .manual, label: "operator", ttlS: 5, status: .active),
-            Entity(id: "mavic_cam", type: .drone, position: drone, confidence: 1, timestamp: 0,
-                   source: .slam, label: "mavic", ttlS: 3, status: .active),
-            Entity(id: "poi_door", type: .poi, position: Vec3(x: -5, y: 2.5, z: 0), confidence: 0.82,
-                   timestamp: 0, source: .yolo, label: "doorway", ttlS: 5, status: .active),
-            Entity(id: "poi_window", type: .poi, position: Vec3(x: 4.5, y: -4, z: 0), confidence: 0.7,
-                   timestamp: 0, source: .yolo, label: "window", ttlS: 5, status: .stale),
-            Entity(id: "hazard_1", type: .hazard, position: Vec3(x: 1.5, y: -6, z: 0), confidence: 0.66,
-                   timestamp: 0, source: .yolo, label: "debris", ttlS: 5, status: .active),
-            Entity(id: "obj_1", type: .object, position: Vec3(x: -3, y: -3, z: 0), confidence: 0.5,
-                   timestamp: 0, source: .slam, label: nil, ttlS: 10, status: .active),
-        ]
-        trails = ["soldier_1": soldierTrail, "mavic_cam": droneTrail]
-    }
-#endif
 }

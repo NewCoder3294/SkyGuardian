@@ -1,13 +1,16 @@
 import SwiftUI
 
 enum CenterView { case map, feed }
+enum MapMode: String, CaseIterable { case twoD = "2D", threeD = "3D", tac = "TAC" }
 
 struct ContentView: View {
     @StateObject private var client = WorldClient()
     @StateObject private var voice = VoiceController()
     @StateObject private var model = ModelDownloader()
+    @StateObject private var location = LocationProvider()
     @State private var showConnect = true
     @State private var center: CenterView = .map
+    @State private var mapMode: MapMode = .twoD
     @State private var setupStarted = false
 
     var body: some View {
@@ -21,12 +24,14 @@ struct ContentView: View {
 
             ZStack(alignment: .topLeading) {
                 if center == .map {
-                    LocalMapView(entities: client.entities, trails: client.trails,
-                                 projection: MapProjection(spanMeters: 24))
+                    mapBody
                 } else {
                     TelloDirectView()   // direct phone↔Tello video, no laptop
                 }
-                if center == .map { legend.padding(10) }
+                if center == .map {
+                    legend.padding(10)
+                    VStack { Spacer(); HStack { Spacer(); mapModePicker; Spacer() } }.padding(.bottom, 8)
+                }
                 viewToggle.frame(maxWidth: .infinity, alignment: .top).padding(.top, 8)
                 if showConnect { connectPanel.padding(12).frame(maxWidth: .infinity, alignment: .topTrailing) }
             }
@@ -37,7 +42,7 @@ struct ContentView: View {
         }
         .background(Theme.paper)
         .preferredColorScheme(.light)   // forced light mode
-        .onAppear(perform: maybeLoadDemo)
+        .onAppear { maybeLoadDemo(); location.start() }
         .overlay { if needsSetup { setupOverlay } }
         .task { await startModelIfNeeded() }
     }
@@ -106,10 +111,6 @@ struct ContentView: View {
 
     private func maybeLoadDemo() {
         #if DEBUG
-        if CommandLine.arguments.contains("-demo") {
-            client.loadSampleData()
-            showConnect = false
-        }
         if CommandLine.arguments.contains("-feed") {
             client.serverURL = "ws://127.0.0.1:8011/ws"   // local backend with the MJPEG relay
             center = .feed
@@ -208,6 +209,55 @@ struct ContentView: View {
     private func hardStop() {
         TelloCommander.shared.send("land")
         if isConnected { client.send(.stop) }
+    }
+
+    // MARK: map
+
+    /// 2D/3D ride on the OpenStreetMap basemap (free/open); TAC is the offline
+    /// GPS-less tactical map. All render only real world-model entities — no mock.
+    @ViewBuilder private var mapBody: some View {
+        switch mapMode {
+        case .twoD, .threeD:
+            ZStack(alignment: .bottomTrailing) {
+                if location.coordinate != nil {
+                    OSMMapView(entities: client.entities, trails: client.trails,
+                               origin: location.coordinate,
+                               dimension: mapMode == .threeD ? .tilted : .flat)
+                } else {
+                    locationWait
+                }
+                Text("© OpenStreetMap").font(Theme.mono(8)).foregroundColor(Theme.ink)
+                    .padding(.horizontal, 4).padding(.vertical, 2)
+                    .background(Theme.panel.opacity(0.85)).padding(6)
+            }
+        case .tac:
+            LocalMapView(entities: client.entities, trails: client.trails,
+                         projection: MapProjection(spanMeters: 24))
+        }
+    }
+
+    private var locationWait: some View {
+        VStack(spacing: 6) {
+            Text("ACQUIRING LOCATION…").font(Theme.mono(11, weight: .semibold)).foregroundColor(Theme.ink)
+            Text("enable location to anchor the map").font(Theme.mono(9)).foregroundColor(Theme.inkSecondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.paper)
+    }
+
+    private var mapModePicker: some View {
+        HStack(spacing: 0) {
+            ForEach(MapMode.allCases, id: \.self) { mode in
+                Button { mapMode = mode } label: {
+                    Text(mode.rawValue).font(Theme.mono(11, weight: .semibold))
+                        .foregroundColor(mapMode == mode ? Theme.panel : Theme.ink)
+                        .padding(.horizontal, 16).padding(.vertical, 7)
+                        .background(mapMode == mode ? Theme.olive : Color.clear)
+                }
+            }
+        }
+        .background(Theme.panel.opacity(0.95))
+        .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
     }
 
     private var voiceStatus: String {
