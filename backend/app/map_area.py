@@ -21,6 +21,7 @@ _OVERPASS_ENDPOINTS = (
 
 
 def overpass_query(lat: float, lng: float, radius_m: int) -> str:
+    """Build an Overpass query for building polygons + heights within radius_m of the centre."""
     return (
         f"[out:json][timeout:60];"
         f'(way["building"](around:{radius_m},{lat},{lng});'
@@ -102,6 +103,7 @@ def _polygons_from_relation(rel: dict) -> Iterable[list[list[float]]]:
 
 
 def collect_buildings(overpass_json: dict, origin_lat: float, origin_lng: float) -> list[dict]:
+    """Walk the Overpass response; emit one dict per building polygon in the local frame."""
     out: list[dict] = []
     for el in overpass_json.get("elements", []):
         tags = el.get("tags") or {}

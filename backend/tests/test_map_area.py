@@ -63,13 +63,50 @@ def test_write_buildings_no_backup_when_absent(tmp_path: Path):
     assert not target.with_suffix(".json.bak").exists()
 
 
+def test_collect_buildings_projects_relation_outer_ring():
+    overpass = {
+        "elements": [
+            {
+                "type": "relation",
+                "id": 7,
+                "tags": {"building": "yes", "name": "Mall"},
+                "members": [
+                    {"type": "way", "role": "outer", "geometry": [
+                        {"lat": 0.0, "lon": 0.0},
+                        {"lat": 0.0, "lon": 0.001},
+                        {"lat": 0.001, "lon": 0.001},
+                        {"lat": 0.0, "lon": 0.0},
+                    ]},
+                    {"type": "way", "role": "inner", "geometry": [
+                        {"lat": 0.0002, "lon": 0.0002},
+                        {"lat": 0.0002, "lon": 0.0004},
+                        {"lat": 0.0004, "lon": 0.0004},
+                    ]},
+                ],
+            }
+        ]
+    }
+    out = collect_buildings(overpass, origin_lat=0.0, origin_lng=0.0)
+    assert len(out) == 1  # only the outer ring is emitted
+    assert out[0]["id"] == 7
+    assert out[0]["name"] == "Mall"
+
+
 def test_fetch_and_project_uses_injected_fetcher():
     overpass = {"elements": [{"type": "way", "id": 1, "tags": {"building": "yes"},
                               "geometry": [{"lat": 0.0, "lon": 0.0},
                                            {"lat": 0.0, "lon": 0.001},
                                            {"lat": 0.001, "lon": 0.0}]}]}
-    payload = fetch_and_project(1.0, 2.0, 300, _fetcher=lambda q: overpass)
+    captured = {}
+
+    def fetcher(query):
+        captured["q"] = query
+        return overpass
+
+    payload = fetch_and_project(1.0, 2.0, 300, _fetcher=fetcher)
     assert payload["origin"] == {"lat": 1.0, "lng": 2.0}
     assert payload["radius_m"] == 300
     assert payload["count"] == 1
     assert len(payload["buildings"]) == 1
+    assert "300" in captured["q"]
+    assert "1.0" in captured["q"] and "2.0" in captured["q"]
