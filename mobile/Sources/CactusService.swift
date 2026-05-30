@@ -36,11 +36,8 @@ final class UnavailableCactusService: CactusService {
 /// Where the on-device model lives. The Gemma 3n file is downloaded once (online,
 /// during setup) via Cactus's hub, then runs fully offline.
 enum CactusConfig {
-    static let modelName = "gemma-3n-E4B-it"   // multimodal: text + vision + audio
-    static var modelPath: String {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        return docs.appendingPathComponent("models/\(modelName).gguf").path
-    }
+    /// The on-device model directory (downloaded by ModelDownloader on first run).
+    static var modelPath: String { ModelDownloader.modelDir.path }
 }
 
 /// Builds the right backend: the real on-device service when the framework + model

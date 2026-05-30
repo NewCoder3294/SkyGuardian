@@ -10,7 +10,12 @@ settings:
     SWIFT_VERSION: "5.0"
     DEVELOPMENT_TEAM: "9KHR566436"
     MARKETING_VERSION: "1.0"
-    CURRENT_PROJECT_VERSION: "4"
+    CURRENT_PROJECT_VERSION: "5"
+
+packages:
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation
+    from: 0.9.0
 
 targets:
   ReconCompanion:
@@ -22,6 +27,7 @@ targets:
       - framework: Frameworks/cactus.xcframework
         embed: true
         codeSign: true
+      - package: ZIPFoundation
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nicolasdossantos.skyguardian

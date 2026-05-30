@@ -13,7 +13,10 @@ final class VoiceController: ObservableObject {
     @Published private(set) var lastTranscript: String = ""
     @Published private(set) var lastCommand: Command?
 
-    private let service: CactusService = CactusFactory.make()
+    private var service: CactusService = CactusFactory.make()
+
+    /// Rebuild the backend (e.g. after the model finishes downloading).
+    func reloadService() { service = CactusFactory.make() }
     private let engine = AVAudioEngine()
     private var converter: AVAudioConverter?
     private var pcm = Data()

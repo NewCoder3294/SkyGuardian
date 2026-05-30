@@ -5,6 +5,7 @@ enum CenterView { case map, feed }
 struct ContentView: View {
     @StateObject private var client = WorldClient()
     @StateObject private var voice = VoiceController()
+    @StateObject private var model = ModelDownloader()
     @State private var showConnect = true
     @State private var center: CenterView = .map
 
@@ -84,14 +85,14 @@ struct ContentView: View {
 
     private var voiceBar: some View {
         HStack(spacing: 10) {
-            Button { voice.toggle(onCommand: { client.send($0) }) } label: {
+            Button { onMicTap() } label: {
                 Text(micGlyph).font(Theme.mono(16, weight: .bold))
                     .frame(width: 46, height: 46)
                     .foregroundColor(isListening ? Theme.panel : Theme.ink)
                     .background(isListening ? Theme.danger : Color.clear)
                     .overlay(Rectangle().stroke(Theme.ink, lineWidth: 1.4))
             }
-            .disabled(!isConnected)
+            .disabled(isDownloadingModel)
             VStack(alignment: .leading, spacing: 2) {
                 Text("VOICE · \(voice.sourceLabel)").font(Theme.mono(9))
                     .foregroundColor(voice.available ? Theme.olive : Theme.inkSecondary)
@@ -105,10 +106,32 @@ struct ContentView: View {
     }
 
     private var isListening: Bool { voice.state == .listening }
+    private var isDownloadingModel: Bool {
+        if case .downloading = model.state { return true }
+        if case .unzipping = model.state { return true }
+        return false
+    }
     private var micGlyph: String { isListening ? "■" : "🎙" }
+
+    private func onMicTap() {
+        if ModelDownloader.isPresent {
+            voice.toggle(onCommand: { client.send($0) })
+        } else {
+            Task { await model.ensureModel(); if model.state == .ready { voice.reloadService() } }
+        }
+    }
+
     private var voiceStatus: String {
+        switch model.state {
+        case .downloading(let p): return "GET MODEL \(Int(p * 100))%"
+        case .unzipping: return "UNPACKING MODEL…"
+        case .failed(let e): return "MODEL: \(e)"
+        default: break
+        }
         switch voice.state {
-        case .idle: return voice.lastCommand.map { "→ \($0.rawValue.uppercased())" } ?? "TAP TO SPEAK"
+        case .idle:
+            if !ModelDownloader.isPresent { return "TAP TO GET MODEL" }
+            return voice.lastCommand.map { "→ \($0.rawValue.uppercased())" } ?? "TAP TO SPEAK"
         case .listening: return "● LISTENING…"
         case .thinking: return "PROCESSING…"
         case .error(let e): return e

@@ -15,12 +15,13 @@ See [`CLAUDE.md`](./CLAUDE.md) for the spec/hard constraints and
 |---|---|
 | **Spine** — world model + WebSocket server + mission state machine | ✅ built, tested |
 | **GPS-less SLAM mapping** (monocular VO + AprilTag metric anchor) | ✅ built, tested — [`docs/SLAM.md`](./docs/SLAM.md) |
-| **Video relay** — laptop re-streams Tello/Mavic feeds as MJPEG | ✅ built, tested — [`docs/VIDEO.md`](./docs/VIDEO.md) |
-| **iOS app** (SwiftUI) — tactical map, drone feed, intent, voice scaffold | ✅ built, tested, on TestFlight — [`mobile/README.md`](./mobile/README.md) |
-| **On-device voice + vision** (Gemma 3n via Cactus) | 🟡 scaffolded (builds; needs iOS framework + model) — [`docs/VOICE.md`](./docs/VOICE.md) |
+| **Direct phone↔Tello video** — app joins the Tello WiFi, decodes H.264 on-device (no laptop) | ✅ built — [`mobile/README.md`](./mobile/README.md) |
+| **Video relay** — laptop re-streams Tello/Mavic feeds as MJPEG (dashboard path) | ✅ built, tested — [`docs/VIDEO.md`](./docs/VIDEO.md) |
+| **iOS app** (SwiftUI) — tactical map, live Tello feed, intent, voice | ✅ built, tested, on TestFlight — [`mobile/README.md`](./mobile/README.md) |
+| **On-device voice + vision** (Gemma 3n via Cactus) | 🟡 framework embedded (build 4); needs the model download — [`docs/VOICE.md`](./docs/VOICE.md) |
 | **Follow controller** (AprilTag station-keep, the make-or-break) | ⬜ not started |
 | **Perception** (YOLO detection → entities) | ⬜ not started |
-| **Web dashboard** | ⬜ not started |
+| **Web dashboard** | ⬜ not started — [`frontend/README.md`](./frontend/README.md) |
 
 ## Repo layout
 
@@ -34,9 +35,10 @@ SkyGuardian/  (local: ~/recon-companion)
 │   │   ├── world_model.py    # single source of truth; entity lifecycle/TTL
 │   │   ├── state_machine.py  # mission state machine + event log (arbiter)
 │   │   ├── ws_hub.py         # WebSocket fan-out
-│   │   ├── video.py          # MJPEG relay: Tello/Mavic/stream sources
+│   │   ├── video.py          # MJPEG relay: Tello/Mavic/stream sources (dashboard path)
 │   │   ├── server.py         # FastAPI: /ws, /health, /video/{tello,mavic}
 │   │   ├── clock.py          # injectable clock (deterministic tests)
+│   │   ├── mock_source.py    # dev-only drifting demo entities (USE_MOCK, off by default)
 │   │   ├── perception/slam/  # GPS-less monocular mapping (built)
 │   │   ├── follow/           # Tello soldier-follow controller (not started)
 │   │   └── tello/            # Tello transport (not started)
@@ -44,8 +46,14 @@ SkyGuardian/  (local: ~/recon-companion)
 │   └── requirements.txt
 ├── mobile/               # iOS app (Swift/SwiftUI, XcodeGen, no Expo)
 │   ├── Sources/              # app code (map, feed, voice, contracts)
+│   │   ├── TelloDirectStream.swift / TelloVideoView.swift  # direct phone↔Tello H.264 video
+│   │   ├── MJPEGView.swift        # decodes the laptop's MJPEG relay (dashboard-style path)
+│   │   ├── Cactus.swift / CactusService.swift              # on-device Gemma 3n bridge
+│   │   └── …                      # map, contracts, intent, voice, UI shell
+│   ├── Frameworks/           # cactus.xcframework (vendored, embedded in build 4)
 │   ├── Tests/                # XCTest — 15 tests
 │   └── project.yml           # XcodeGen project spec
+├── frontend/             # web dashboard (Next.js) — not started, README-only stub
 ├── scripts/              # asc.py (App Store Connect API), bring-up helpers
 ├── models/  captures/    # local weights / recorded media (git-ignored)
 └── docs/                 # SLAM.md, VIDEO.md, VOICE.md, design specs
@@ -85,9 +93,12 @@ cd mobile
 xcodegen generate
 xcodebuild test -scheme ReconCompanion -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
-TestFlight ships via the App Store Connect API key (`scripts/asc.py` + the archive
-lane). Bundle id `com.nicolasdossantos.skyguardian`. See
-[`docs/MOBILE.md`](./docs/MOBILE.md) for the device + Tello-feed test walkthrough.
+The FEED tab streams the Tello directly — the phone joins the Tello WiFi and
+decodes its H.264 on-device, so the live camera needs **no laptop**. (The laptop's
+MJPEG relay still serves the dashboard and `/video/mavic`.) TestFlight ships via the
+App Store Connect API key (`scripts/asc.py` + the archive lane). Bundle id
+`com.nicolasdossantos.skyguardian`. See [`docs/MOBILE.md`](./docs/MOBILE.md) for the
+device + Tello-feed test walkthrough.
 
 ## Hard constraints (do not violate)
 Offline-first · no GPS · recon/situational-awareness only (no engagement) ·

@@ -15,8 +15,12 @@ write detected entities (with local-frame position) into the `WorldModel`.
 - Keep detection a few FPS (recon-rate); it never sits in a real-time control loop.
 
 ## Modules
-- `slam/` — **GPS-less monocular mapping (built).** Pure-Python VO default +
+- ✅ `slam/` — **GPS-less monocular mapping.** Pure-Python VO default +
   optional ORB-SLAM3 backend, AprilTag metric scale anchor, local-frame map that
-  feeds the world model. See [`../../../docs/SLAM.md`](../../../docs/SLAM.md).
-- `yolo.py` — *(planned)* ultralytics inference → boxes/classes.
-- `fusion.py` — *(planned)* YOLO box + SLAM pose → entity position in local frame → upsert.
+  feeds the world model. See [`slam/README.md`](./slam/README.md) and
+  [`../../../docs/SLAM.md`](../../../docs/SLAM.md).
+- ⬜ `yolo.py` — *(planned)* ultralytics inference → boxes/classes.
+- ⬜ `fusion.py` — *(planned)* YOLO box + SLAM pose → entity position in local frame → upsert.
+
+The package root currently holds only `__init__.py` (empty) — detection/fusion is
+⬜ not started; only the `slam/` subpackage is built.
