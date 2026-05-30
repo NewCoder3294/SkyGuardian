@@ -57,6 +57,7 @@ from .contracts import (
 from .follow.controller import FollowController
 from .perception.file_processor import process_video_file
 from .perception.pipeline import PerceptionPipeline
+from .reasoning.intel import IntelReasoner, IntelSummary, ollama_alive
 from .state_machine import MissionStateMachine
 from .tello.client import TelloClient, TelloState
 from .tello.video import TelloVideoSource
@@ -115,6 +116,25 @@ _MAX_UPLOAD_BYTES = int(float(os.environ.get("MAX_UPLOAD_MB", "500")) * 1_000_00
 _ALLOWED_VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"}
 # Strong refs to in-flight background tasks so they aren't GC'd mid-run.
 _bg_tasks: set = set()
+
+# On-device reasoning (offline equivalent of Gemini Live). Periodically runs a
+# vision LLM on the latest frame + detections. Disabled if Ollama isn't
+# reachable. Set INTEL_MODEL=off to skip even if ollama is up.
+_INTEL_MODEL_ENV = os.environ.get("INTEL_MODEL", "gemma3:4b")
+_INTEL_ENABLED = _INTEL_MODEL_ENV.lower() != "off"
+_INTEL_INTERVAL_S = float(os.environ.get("INTEL_INTERVAL_S", "5"))
+# Vision pass is ~30× slower than text-only on M-series for Gemma 3. Default
+# off; set INTEL_VISION=1 to enable image-aware reasoning.
+_INTEL_VISION = os.environ.get("INTEL_VISION", "0") == "1"
+_intel_reasoner: IntelReasoner | None = (
+    IntelReasoner(model=_INTEL_MODEL_ENV, with_vision=_INTEL_VISION) if _INTEL_ENABLED else None
+)
+_intel_summary: IntelSummary | None = None
+_intel_state = {
+    "available": False,        # ollama reachable
+    "running": False,          # an inference is currently in flight
+    "last_error": None,        # str | None
+}
 
 
 def _detections_path_for(video_name: str) -> Path:
@@ -322,6 +342,58 @@ def _mjpeg_response(source) -> Response:
     )
 
 
+async def _intel_loop() -> None:
+    """Periodically run the local LLM over the latest perception state.
+
+    In text-only mode (default) the reasoner sees the YOLO label list only —
+    fast (~2s) and runs whenever the brain has produced at least one
+    perception frame. In vision mode it ALSO sees the current JPEG — slower
+    (~120s on Apple Silicon) and requires a live frame too.
+    """
+    global _intel_summary
+    while True:
+        try:
+            if _intel_reasoner is None:
+                await asyncio.sleep(_INTEL_INTERVAL_S)
+                continue
+            alive = await ollama_alive(base_url="http://localhost:11434")
+            _intel_state["available"] = alive
+            if not alive or _intel_state["running"]:
+                await asyncio.sleep(_INTEL_INTERVAL_S)
+                continue
+
+            boxes, _iw, _ih, bt = perception.latest_boxes()
+            # Run whenever perception has produced a recent frame — even when
+            # the box list is empty (operator wants to see "area clear" too).
+            if bt <= 0:
+                await asyncio.sleep(_INTEL_INTERVAL_S)
+                continue
+
+            jpeg = None
+            if _INTEL_VISION:
+                jpeg = await asyncio.to_thread(mavic_camera.read_jpeg)
+                if jpeg is None:
+                    # Vision mode without a frame is pointless; skip this tick.
+                    await asyncio.sleep(_INTEL_INTERVAL_S)
+                    continue
+
+            labels = [b.label for b in boxes]
+            _intel_state["running"] = True
+            try:
+                summary = await _intel_reasoner.summarise(jpeg, labels)
+                _intel_summary = summary
+                _intel_state["last_error"] = None
+            except Exception as exc:
+                _intel_state["last_error"] = f"{type(exc).__name__}: {exc}"
+            finally:
+                _intel_state["running"] = False
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            _intel_state["last_error"] = f"loop: {exc}"
+        await asyncio.sleep(_INTEL_INTERVAL_S)
+
+
 @app.on_event("startup")
 async def _startup() -> None:
     app.state.broadcast_task = asyncio.create_task(_broadcast_loop())
@@ -332,15 +404,19 @@ async def _startup() -> None:
     tello_camera.start()
     perception.start()
     follow.start()
+    if _INTEL_ENABLED:
+        app.state.intel_task = asyncio.create_task(_intel_loop())
 
 
 @app.on_event("shutdown")
 async def _shutdown() -> None:
-    task = getattr(app.state, "broadcast_task", None)
-    if task:
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+    # Cancel both the broadcast + intel reasoning tasks.
+    for attr in ("broadcast_task", "intel_task"):
+        task = getattr(app.state, attr, None)
+        if task:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
     # Release camera sockets/captures/threads. Best-effort so one failing stop
     # doesn't prevent the others (drone-safety: always release the Tello link).
     for stop_call in (mavic_camera.stop, tello_camera.stop, tello_client.stop):
@@ -402,6 +478,31 @@ async def follower_jpg() -> Response:
         media_type="image/jpeg",
         headers={"Cache-Control": "no-store"},
     )
+
+
+@app.get("/intel/summary")
+async def get_intel_summary() -> dict:
+    """Latest on-device reasoning result. `available` says whether the local
+    Ollama server is reachable; `running` says an inference is in flight."""
+    s = _intel_summary
+    return {
+        "available": _intel_state["available"],
+        "running": _intel_state["running"],
+        "last_error": _intel_state["last_error"],
+        "model": _intel_reasoner._model if _intel_reasoner is not None else None,
+        "summary": (
+            {
+                "text": s.text,
+                "threat_level": s.threat_level,
+                "labels_seen": s.labels_seen,
+                "t": s.t,
+                "model": s.model,
+                "latency_ms": s.latency_ms,
+            }
+            if s is not None
+            else None
+        ),
+    }
 
 
 @app.get("/video/source")
