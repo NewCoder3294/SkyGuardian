@@ -170,7 +170,7 @@ export function VideoFeed({ src, detections, label, pollMs = 100 }: Props) {
         ctx.moveTo(x + c, y + bh); ctx.lineTo(x, y + bh); ctx.lineTo(x, y + bh - c);
         ctx.stroke();
         // label tab
-        const tag = `${b.label.toUpperCase()} ${(b.confidence * 100).toFixed(0)}`;
+        const tag = b.label.toUpperCase();
         const pad = 4;
         const tw = ctx.measureText(tag).width + pad * 2;
         const th = 14;

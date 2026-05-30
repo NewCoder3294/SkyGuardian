@@ -19,8 +19,8 @@ interface Props {
  */
 export function ThreatAlert({ detections }: Props) {
   const active = useMemo(() => {
-    type Row = { label: string; confidence: number };
-    const rows = new Map<string, Row>();
+    // Dedupe threats by label; we keep the first sighting in this frame.
+    const labels = new Map<string, string>();
     const now = Date.now() / 1000;
     for (const layer of Object.values(detections)) {
       // Treat anything older than 2 s as cleared.
@@ -28,13 +28,10 @@ export function ThreatAlert({ detections }: Props) {
       for (const b of layer.boxes) {
         if (!isThreat(b.label)) continue;
         const key = b.label.toLowerCase();
-        const prev = rows.get(key);
-        if (!prev || b.confidence > prev.confidence) {
-          rows.set(key, { label: b.label, confidence: b.confidence });
-        }
+        if (!labels.has(key)) labels.set(key, b.label);
       }
     }
-    return [...rows.values()].sort((a, b) => b.confidence - a.confidence);
+    return [...labels.values()].sort();
   }, [detections]);
 
   if (active.length === 0) return null;
@@ -54,16 +51,13 @@ export function ThreatAlert({ detections }: Props) {
         </span>
       </div>
       <ul className="divide-y divide-border">
-        {active.map((row) => (
+        {active.map((label) => (
           <li
-            key={row.label}
-            className="flex items-baseline justify-between gap-3 px-4 py-2.5"
+            key={label}
+            className="px-4 py-2.5"
           >
             <span className="font-sans text-sm font-semibold uppercase tracking-wider text-text">
-              {row.label}
-            </span>
-            <span className="font-mono text-xs font-bold tabular-nums text-fail">
-              {(row.confidence * 100).toFixed(0)}%
+              {label}
             </span>
           </li>
         ))}

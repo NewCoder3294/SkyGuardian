@@ -2,12 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
-/* NATO desaturated C2 palette — built for a dismounted operator reading a
- * tactical command surface, not a SaaS dashboard. Near-black olive-tinted
- * base, foliage-green for system-OK, phosphor-amber for live data, and a
- * single signal-red reserved strictly for threats / link loss. Hard corners,
- * hairline borders, no glow. All neutrals are tinted toward the olive hue so
- * nothing reads as pure #000/#fff.
+/* Light-mode C2 palette — same NATO discipline, daylight readable.
+ * Warm parchment/concrete base, deep olive ink, foliage-green for system-OK,
+ * a hotter amber for live data, signal red strictly for threats. Hard corners,
+ * hairline borders. Neutrals tinted warm so nothing reads as pure #fff/#000.
  *
  * Colour discipline (do not break):
  *   green  (--ok)     = a system is doing its job
@@ -15,27 +13,27 @@
  *   red    (--fail)   = threat or loss of a channel; nothing else is ever red
  */
 :root {
-  --bg: oklch(0.16 0.008 140);              /* near-black, faint olive */
-  --surface: oklch(0.205 0.010 140);        /* panel surfaces */
-  --surface-elevated: oklch(0.25 0.012 140);/* inputs / nested readouts */
-  --border: oklch(0.34 0.018 140);          /* hairline */
-  --border-strong: oklch(0.46 0.030 138);   /* framing ticks, dividers */
-  --text: oklch(0.93 0.012 120);            /* warm off-white */
-  --text-muted: oklch(0.72 0.020 132);
-  --text-dim: oklch(0.52 0.020 136);
-  --invert: oklch(0.16 0.008 140);
+  --bg: oklch(0.965 0.010 95);              /* warm parchment */
+  --surface: oklch(0.985 0.008 95);         /* panel surfaces — near-white */
+  --surface-elevated: oklch(1.000 0.006 95);/* inputs / nested readouts */
+  --border: oklch(0.82 0.018 100);          /* hairline */
+  --border-strong: oklch(0.68 0.030 100);   /* framing ticks, dividers */
+  --text: oklch(0.22 0.020 130);            /* deep olive ink */
+  --text-muted: oklch(0.40 0.022 130);
+  --text-dim: oklch(0.55 0.018 130);
+  --invert: oklch(0.965 0.010 95);
 
-  /* Status tiers */
-  --ok: oklch(0.74 0.105 142);              /* foliage / NATO green = online */
-  --warn: oklch(0.78 0.130 80);             /* amber */
-  --fail: oklch(0.60 0.205 27);             /* signal red — threat / offline */
+  /* Status tiers — darkened for contrast on a light field. */
+  --ok: oklch(0.52 0.135 142);              /* deep foliage green */
+  --warn: oklch(0.66 0.150 75);             /* amber */
+  --fail: oklch(0.50 0.215 27);             /* signal red */
 
   /* Brand + data accents */
-  --accent: oklch(0.77 0.125 82);           /* phosphor amber — data, grid, reticle */
-  --accent-dim: oklch(0.55 0.080 85);
-  --cta: oklch(0.55 0.090 142);             /* tactical green action */
-  --cta-hover: oklch(0.63 0.105 142);
-  --cta-active: oklch(0.47 0.080 142);
+  --accent: oklch(0.58 0.150 75);           /* burnt amber — data, grid, reticle */
+  --accent-dim: oklch(0.72 0.080 80);
+  --cta: oklch(0.48 0.115 142);             /* tactical green action */
+  --cta-hover: oklch(0.55 0.130 142);
+  --cta-active: oklch(0.42 0.105 142);
 }
 
 html,
@@ -55,12 +53,11 @@ body {
     "Segoe UI",
     Roboto,
     sans-serif;
-  /* Faint top vignette + a barely-there scan tint. No coloured glow blooms —
-     a command surface is lit, not neon. */
+  /* Faint top vignette in warm parchment shadow. */
   background:
     radial-gradient(
       1400px 700px at 50% -30%,
-      oklch(0.30 0.020 140 / 0.35),
+      oklch(0.88 0.020 95 / 0.45),
       transparent 60%
     ),
     var(--bg);
@@ -79,26 +76,26 @@ button:focus-visible {
   outline-offset: 2px;
 }
 
-/* The logo file is black on white. Invert it for the dark surface so the
-   wordmark becomes the warm off-white text colour. */
+/* Logo files now ship in two variants (regular dark-ink + white). The Lockup
+   is dark-on-transparent, so on the light surface we render it as-is with no
+   filter. Class kept for call-site compatibility — it now no-ops. */
 .logo-invert {
-  filter: invert(1) brightness(1.05) sepia(0.12) saturate(0.7);
+  filter: none;
 }
 
-/* Hairline status ring for live indicators. Tight, no bloom — reads as an
-   etched outline, not a glow. Name kept for call-site compatibility. */
+/* Hairline status ring for live indicators. */
 .glow-cyan {
-  box-shadow: 0 0 0 1px oklch(0.74 0.105 142 / 0.55);
+  box-shadow: 0 0 0 1px oklch(0.52 0.135 142 / 0.45);
 }
 .glow-blue {
-  box-shadow: 0 0 0 1px oklch(0.77 0.125 82 / 0.5);
+  box-shadow: 0 0 0 1px oklch(0.58 0.150 75 / 0.45);
 }
 
 /* Faint grid backdrop — survey graticule, amber at very low alpha. */
 .hud-grid {
   background-image:
-    linear-gradient(oklch(0.77 0.125 82 / 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, oklch(0.77 0.125 82 / 0.05) 1px, transparent 1px);
+    linear-gradient(oklch(0.58 0.150 75 / 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(0.58 0.150 75 / 0.08) 1px, transparent 1px);
   background-size: 36px 36px;
 }
 

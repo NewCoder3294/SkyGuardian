@@ -144,6 +144,67 @@ class IntelReasoner:
         )
 
 
+_CHAT_SYSTEM = (
+    "You are SkyGuardian's offline tactical reconnaissance assistant. "
+    "You answer questions from a drone operator using ONLY the situational "
+    "context provided in the user message (latest YOLO detections, recent "
+    "intel summary, threat level). If the answer isn't in the provided "
+    "context, say you cannot confirm from the current feed. Keep responses "
+    "to 1–3 sentences, plain English, no markdown."
+)
+
+
+class IntelChat:
+    """Lightweight chat wrapper around Ollama's /api/chat. Reuses the same
+    local model the periodic summariser uses, so there is no extra model
+    download and inference latency matches the summary card (~1–3 s)."""
+
+    def __init__(
+        self,
+        model: str = "gemma3:4b",
+        base_url: str = "http://localhost:11434",
+        request_timeout_s: float = 60.0,
+    ) -> None:
+        self._model = model
+        self._url = base_url.rstrip("/") + "/api/chat"
+        self._timeout = request_timeout_s
+
+    async def reply(
+        self,
+        history: list[dict],
+        context: str,
+    ) -> str:
+        """Send `history` (list of {role, content}) plus a synthesised
+        `context` block to the model and return the assistant's reply text."""
+        # Prepend the system prompt + the current intel context as the first
+        # user message so the model always sees the situational ground truth.
+        messages: list[dict] = [{"role": "system", "content": _CHAT_SYSTEM}]
+        if context.strip():
+            messages.append(
+                {"role": "system", "content": f"CURRENT INTEL CONTEXT:\n{context.strip()}"}
+            )
+        for m in history:
+            role = m.get("role")
+            content = (m.get("content") or "").strip()
+            if role in ("user", "assistant") and content:
+                messages.append({"role": role, "content": content})
+        if not any(m.get("role") == "user" for m in messages):
+            return "Ask me anything about what the drone is seeing."
+
+        payload = {
+            "model": self._model,
+            "messages": messages,
+            "stream": False,
+            "options": {"temperature": 0.3, "num_predict": 180},
+        }
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            res = await client.post(self._url, json=payload)
+            res.raise_for_status()
+            body = res.json()
+        msg = body.get("message") or {}
+        return (msg.get("content") or "").strip() or "(no response)"
+
+
 async def ollama_alive(base_url: str = "http://localhost:11434") -> bool:
     """Best-effort liveness probe for the local Ollama server."""
     try:

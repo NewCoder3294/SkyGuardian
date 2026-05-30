@@ -38,7 +38,7 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from .clock import RealClock
 from .contracts import (
@@ -57,7 +57,7 @@ from .contracts import (
 from .follow.controller import FollowController
 from .perception.file_processor import process_video_file
 from .perception.pipeline import PerceptionPipeline
-from .reasoning.intel import IntelReasoner, IntelSummary, ollama_alive
+from .reasoning.intel import IntelChat, IntelReasoner, IntelSummary, ollama_alive
 from .state_machine import MissionStateMachine
 from .tello.client import TelloClient, TelloState
 from .tello.video import TelloVideoSource
@@ -122,6 +122,10 @@ _INTEL_INTERVAL_S = float(os.environ.get("INTEL_INTERVAL_S", "5"))
 _INTEL_VISION = os.environ.get("INTEL_VISION", "0") == "1"
 _intel_reasoner: IntelReasoner | None = (
     IntelReasoner(model=_INTEL_MODEL_ENV, with_vision=_INTEL_VISION) if _INTEL_ENABLED else None
+)
+# Same local model powers the operator chat — no extra weights download.
+_intel_chat: IntelChat | None = (
+    IntelChat(model=_INTEL_MODEL_ENV) if _INTEL_ENABLED else None
 )
 _intel_summary: IntelSummary | None = None
 _intel_state = {
@@ -513,6 +517,50 @@ async def get_intel_summary() -> dict:
             else None
         ),
     }
+
+
+class ChatMessage(BaseModel):
+    role: str  # "user" | "assistant"
+    content: str = Field(min_length=1, max_length=4000)
+
+
+class ChatRequest(BaseModel):
+    messages: list[ChatMessage] = Field(default_factory=list, max_length=20)
+
+
+@app.post("/intel/chat")
+async def post_intel_chat(body: ChatRequest) -> dict:
+    """Operator chatbot over the local Ollama model. Grounded in the latest
+    intel summary + the labels visible in the most recent detection layer so
+    the assistant answers about THIS feed, not generic knowledge."""
+    if _intel_chat is None:
+        return {"reply": "Intel reasoning is disabled on this server.", "ok": False}
+    if not _intel_state["available"]:
+        return {
+            "reply": "Local LLM is offline — start Ollama and try again.",
+            "ok": False,
+        }
+
+    # Build context: latest summary + current frame labels.
+    s = _intel_summary
+    parts: list[str] = []
+    if s is not None:
+        parts.append(f"Latest assessment: {s.text}")
+        parts.append(f"Threat level: {s.threat_level}")
+        if s.labels_seen:
+            parts.append("Recently observed: " + ", ".join(s.labels_seen))
+    context = "\n".join(parts)
+
+    try:
+        reply = await _intel_chat.reply(
+            history=[m.model_dump() for m in body.messages], context=context
+        )
+        return {"reply": reply, "ok": True, "model": _INTEL_MODEL_ENV}
+    except Exception as exc:
+        return {
+            "reply": f"Local LLM call failed: {type(exc).__name__}",
+            "ok": False,
+        }
 
 
 @app.get("/video/source")

@@ -48,12 +48,9 @@ export function ConsolePanel({ log }: { log: DetectionEvent[] }) {
                 {ev.boxes.map((b, j) => (
                   <li
                     key={j}
-                    className="grid grid-cols-[1fr_auto] items-baseline font-mono text-[11px] text-text"
+                    className="font-mono text-[11px] text-text"
                   >
                     <span className="truncate uppercase tracking-wide">{b.label}</span>
-                    <span className="tabular-nums text-accent">
-                      {(b.confidence * 100).toFixed(0)}%
-                    </span>
                   </li>
                 ))}
               </ul>

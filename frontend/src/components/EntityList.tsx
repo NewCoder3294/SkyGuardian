@@ -53,7 +53,7 @@ export function EntityList({ entities }: { entities: Entity[] }) {
                 <span>z{format(e.position.z)}</span>
               </div>
               <div className="font-mono text-[9px] uppercase tracking-widest text-text-dim">
-                {e.source} · {(e.confidence * 100).toFixed(0)}%
+                {e.source}
               </div>
             </li>
           ))}

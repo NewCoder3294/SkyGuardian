@@ -6,13 +6,16 @@ export const metadata: Metadata = {
   description: "Local-frame map + intent controls. Offline-only.",
   applicationName: "SkyGuardian",
   icons: {
-    icon: [{ url: "/icon.png", type: "image/png" }],
-    apple: [{ url: "/icon.png" }],
+    icon: [
+      { url: "/icon.png", type: "image/png" },
+      { url: "/icon-512.png", type: "image/png", sizes: "512x512" },
+    ],
+    apple: [{ url: "/icon-512.png" }],
   },
 };
 
 export const viewport = {
-  themeColor: "#11140f",
+  themeColor: "#f4f1e8",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -49,7 +49,6 @@ export function IntelPanel({ detections, detectionLog }: Props) {
                 <Th>Visible</Th>
                 <Th left>Class</Th>
                 <Th right>Seen</Th>
-                <Th right>Conf</Th>
                 <Th right>Last</Th>
               </tr>
             </thead>
@@ -81,9 +80,6 @@ export function IntelPanel({ detections, detectionLog }: Props) {
                   <td className="px-4 py-2.5 text-right tabular-nums text-text-muted">
                     {row.seenCount}
                   </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-accent">
-                    {(row.avgConf * 100).toFixed(0)}%
-                  </td>
                   <td className="px-4 py-2.5 text-right tabular-nums text-text-muted">
                     {fmtAge(row.lastSeenT)}
                   </td>
@@ -102,7 +98,6 @@ export function IntelPanel({ detections, detectionLog }: Props) {
 interface BoardRow {
   label: string;
   seenCount: number;
-  avgConf: number;
   visibleNow: boolean;
   lastSeenT: number;
   isThreat: boolean;
@@ -112,14 +107,13 @@ function buildBoard(
   detections: Record<string, { boxes: DetectionBox[]; t: number; source: string }>,
   log: DetectionEvent[],
 ): BoardRow[] {
-  const counts = new Map<string, { n: number; confSum: number; lastT: number }>();
+  const counts = new Map<string, { n: number; lastT: number }>();
   for (const ev of log) {
     for (const b of ev.boxes) {
       const key = b.label.toLowerCase();
-      const prev = counts.get(key) ?? { n: 0, confSum: 0, lastT: 0 };
+      const prev = counts.get(key) ?? { n: 0, lastT: 0 };
       counts.set(key, {
         n: prev.n + 1,
-        confSum: prev.confSum + b.confidence,
         lastT: Math.max(prev.lastT, ev.t),
       });
     }
@@ -135,7 +129,6 @@ function buildBoard(
     .map(([label, c]) => ({
       label: label.toUpperCase(),
       seenCount: c.n,
-      avgConf: c.n > 0 ? c.confSum / c.n : 0,
       visibleNow: visibleNow.has(label),
       lastSeenT: c.lastT,
       isThreat: isThreat(label),

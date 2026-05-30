@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Clock } from "@/components/Clock";
 import { ConsolePanel } from "@/components/ConsolePanel";
+import { IntelChat } from "@/components/IntelChat";
 import { IntelPanel } from "@/components/IntelPanel";
 import { IntelSummaryCard } from "@/components/IntelSummaryCard";
 import { LocalMap2D } from "@/components/LocalMap2D";
@@ -163,9 +164,9 @@ export default function Page() {
         <div className="flex items-center gap-4">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/skyguardian-logo.png"
+            src="/skyguardian-lockup.png"
             alt="SkyGuardian"
-            className="logo-invert h-9 w-auto select-none"
+            className="h-9 w-auto select-none"
             draggable={false}
           />
           <span className="hidden border-l border-border-strong pl-4 font-mono text-[10px] uppercase tracking-[0.45em] text-text-muted sm:inline">
@@ -241,13 +242,12 @@ export default function Page() {
               <LocalMap2D
                 entities={effectiveOpEntities}
                 apiBase={apiBase}
+                statusLine={
+                  isPlayback && playbackData
+                    ? `${effectiveOpEntities.length} entities · t=${playbackTime.toFixed(1)}s`
+                    : `${effectiveOpEntities.length} entities`
+                }
               />
-              <div className="pointer-events-none absolute right-3 top-3 font-mono text-[10px] uppercase tracking-widest text-text-dim">
-                {effectiveOpEntities.length} entities
-                {isPlayback && playbackData && (
-                  <> · t={playbackTime.toFixed(1)}s</>
-                )}
-              </div>
               <div className="pointer-events-auto absolute left-3 bottom-3 right-3 md:right-auto md:max-w-md">
                 <IntelSummaryCard apiBase={apiBase} variant="compact" />
               </div>
@@ -255,8 +255,9 @@ export default function Page() {
           )}
           {tab === "intel" && (
             <div className="min-h-0 flex-1 overflow-auto">
-              <div className="bg-bg p-5">
+              <div className="space-y-4 bg-bg p-5">
                 <IntelSummaryCard apiBase={apiBase} />
+                <IntelChat apiBase={apiBase} />
               </div>
               <IntelPanel detections={effectiveDetections} detectionLog={effectiveDetectionLog} />
             </div>

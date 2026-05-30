@@ -48,7 +48,7 @@ export function LocalMap3D({
     <div className="relative h-full w-full bg-bg">
       <Canvas
         camera={{ position: [cameraSpan, cameraSpan, cameraSpan], fov: 45 }}
-        style={{ background: "#11140f" }}
+        style={{ background: "#f3efe2" }}
         dpr={[1, 2]}
       >
         <ambientLight intensity={0.5} />
