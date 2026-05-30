@@ -5,6 +5,11 @@ import UIKit
 /// 2D (flat) vs 3D (tilted/perspective) presentation of the same OpenStreetMap base.
 enum MapDimension { case flat, tilted }
 
+/// Look up an entity's type by id (trails are keyed by entity id).
+func entityType(forId id: String, in entities: [Entity]) -> EntityType? {
+    entities.first(where: { $0.id == id })?.type
+}
+
 /// Convert a local-frame entity position (x = east, y = north, meters) into a
 /// geographic coordinate around the operator's location. Equirectangular approx —
 /// fine at the scales a follow loop operates in.
@@ -27,6 +32,20 @@ final class OSMTileOverlay: MKTileOverlay {
         req.setValue("SkyGuardian/1.0 (recon companion; +https://github.com/NewCoder3294/SkyGuardian)",
                      forHTTPHeaderField: "User-Agent")
         URLSession.shared.dataTask(with: req) { data, _, err in result(data, err) }.resume()
+    }
+}
+
+/// A polyline tagged with how it should be drawn, so drone and operator traces keep
+/// distinct colours/weights and a faded-history vs solid-head ("comet tail") look.
+final class TracePolyline: MKPolyline {
+    var stroke: UIColor = .black
+    var width: CGFloat = 3
+    var isHead = false
+
+    static func make(_ coords: [CLLocationCoordinate2D], stroke: UIColor, width: CGFloat, isHead: Bool) -> TracePolyline {
+        let line = TracePolyline(coordinates: coords, count: coords.count)
+        line.stroke = stroke; line.width = width; line.isHead = isHead
+        return line
     }
 }
 
@@ -60,6 +79,16 @@ struct OSMMapView: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
+    /// Trace tint per unit, matching the entity marker colours (olive soldier,
+    /// dark-olive drone). Unknown ids fall back to neutral ink.
+    static func traceColor(forId id: String, in entities: [Entity]) -> UIColor {
+        switch entityType(forId: id, in: entities) {
+        case .soldier: return UIColor(red: 0.42, green: 0.46, blue: 0.20, alpha: 1)
+        case .drone:   return UIColor(red: 0.28, green: 0.31, blue: 0.13, alpha: 1)
+        default:       return UIColor(red: 0.30, green: 0.30, blue: 0.28, alpha: 1)
+        }
+    }
+
     func makeUIView(context: Context) -> MKMapView {
         let map = MKMapView()
         map.delegate = context.coordinator
@@ -86,11 +115,26 @@ struct OSMMapView: UIViewRepresentable {
             map.removeAnnotations(map.annotations.compactMap { $0 as? EntityAnnotation })
             map.addAnnotations(entities.map { EntityAnnotation($0, origin: origin) })
 
-            // Trails — polylines for soldier/drone paths.
-            map.removeOverlays(map.overlays.compactMap { $0 as? MKPolyline })
-            for pts in trails.values where pts.count > 1 {
+            // Trails — comet-tail polylines for soldier/drone paths. Drone is drawn
+            // distinct + heavier; the most recent ~12 points render as a bold "head"
+            // over a faded full-history line.
+            map.removeOverlays(map.overlays.compactMap { $0 as? TracePolyline })
+            for (id, pts) in trails where pts.count > 1 {
+                let isDrone = entityType(forId: id, in: entities) == .drone
+                let stroke = OSMMapView.traceColor(forId: id, in: entities)
+                let width: CGFloat = isDrone ? 4 : 2.5
                 let coords = pts.map { localToCoordinate(origin, $0) }
-                map.addOverlay(MKPolyline(coordinates: coords, count: coords.count))
+
+                // Faded full-history line.
+                map.addOverlay(TracePolyline.make(coords, stroke: stroke.withAlphaComponent(0.30),
+                                                  width: width, isHead: false), level: .aboveLabels)
+                // Bold recent head.
+                let headCount = min(12, coords.count)
+                if headCount > 1 {
+                    let head = Array(coords.suffix(headCount))
+                    map.addOverlay(TracePolyline.make(head, stroke: stroke.withAlphaComponent(0.95),
+                                                      width: width, isHead: true), level: .aboveLabels)
+                }
             }
 
             // Camera: flat (pitch 0) vs tilted 3D, centered on the operator.
@@ -107,10 +151,12 @@ struct OSMMapView: UIViewRepresentable {
 
         func mapView(_ map: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             if let tile = overlay as? MKTileOverlay { return MKTileOverlayRenderer(tileOverlay: tile) }
-            if let line = overlay as? MKPolyline {
-                let r = MKPolylineRenderer(polyline: line)
-                r.strokeColor = UIColor(red: 0.42, green: 0.46, blue: 0.20, alpha: 0.9)
-                r.lineWidth = 3
+            if let trace = overlay as? TracePolyline {
+                let r = MKPolylineRenderer(polyline: trace)
+                r.strokeColor = trace.stroke
+                r.lineWidth = trace.width
+                r.lineCap = .round
+                r.lineJoin = .round
                 return r
             }
             return MKOverlayRenderer(overlay: overlay)

@@ -54,16 +54,47 @@ struct LocalMapView: View {
         ctx.stroke(path, with: .color(Theme.hairline.opacity(0.35)), lineWidth: 0.5)
     }
 
-    // Movement trails — the "path" line for each soldier/drone.
+    // Movement trails — the "path" line for each soldier/drone. Drawn as a comet
+    // tail: older segments fade out, the freshest segment is solid. The drone trace
+    // is emphasised (thicker + a heading chevron at the head) since it's the unit the
+    // operator is reading most.
     private func drawTrails(_ ctx: inout GraphicsContext, size: CGSize) {
-        for (id, pts) in trails where pts.count >= 2 {
-            var path = Path()
-            path.move(to: projection.point(for: pts[0], in: size))
-            for p in pts.dropFirst() { path.addLine(to: projection.point(for: p, in: size)) }
-            let tint = color(forId: id).opacity(0.7)
-            ctx.stroke(path, with: .color(tint),
-                       style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+        // Draw soldier trails first so the drone trace sits on top.
+        func drawOrder(_ id: String) -> Int { entityType(forId: id) == .drone ? 1 : 0 }
+        let ordered = trails.sorted { drawOrder($0.key) < drawOrder($1.key) }
+        for (id, pts) in ordered where pts.count >= 2 {
+            let isDrone = entityType(forId: id) == .drone
+            let base = color(forId: id)
+            let lineW: CGFloat = isDrone ? 2.6 : 1.8
+            let screen = pts.map { projection.point(for: $0, in: size) }
+            let n = screen.count
+            for i in 1..<n {
+                let t = Double(i) / Double(n - 1)           // 0 = oldest, 1 = head
+                var seg = Path()
+                seg.move(to: screen[i - 1]); seg.addLine(to: screen[i])
+                ctx.stroke(seg, with: .color(base.opacity(0.12 + 0.78 * t)),
+                           style: StrokeStyle(lineWidth: lineW, lineCap: .round, lineJoin: .round))
+            }
+            if isDrone {
+                drawHeadingChevron(&ctx, from: screen[n - 2], to: screen[n - 1], color: base)
+            }
         }
+    }
+
+    // Small chevron at the head of a trail pointing along the direction of travel.
+    private func drawHeadingChevron(_ ctx: inout GraphicsContext, from a: CGPoint, to b: CGPoint, color: Color) {
+        let dx = b.x - a.x, dy = b.y - a.y
+        let len = hypot(dx, dy)
+        guard len > 0.5 else { return }
+        let ux = dx / len, uy = dy / len            // unit heading
+        let px = -uy, py = ux                        // perpendicular
+        let back: CGFloat = 7, half: CGFloat = 4
+        let tail = CGPoint(x: b.x - ux * back, y: b.y - uy * back)
+        var v = Path()
+        v.move(to: CGPoint(x: tail.x + px * half, y: tail.y + py * half))
+        v.addLine(to: b)
+        v.addLine(to: CGPoint(x: tail.x - px * half, y: tail.y - py * half))
+        ctx.stroke(v, with: .color(color), style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
     }
 
     private func drawOrigin(_ ctx: inout GraphicsContext, size: CGSize) {
@@ -130,6 +161,11 @@ struct LocalMapView: View {
             ctx.draw(Text(text).font(Theme.mono(fs)).foregroundColor(Theme.ink),
                      at: CGPoint(x: chip.midX + 1, y: chip.midY))
         }
+
+        // Live SLAM position readout for the moving units.
+        if entity.type == .drone || entity.type == .soldier {
+            drawUnitReadout(entity, at: p, in: &ctx)
+        }
     }
 
     private func triangle(at p: CGPoint, r: CGFloat) -> Path {
@@ -159,6 +195,21 @@ struct LocalMapView: View {
     private func color(forId id: String) -> Color {
         if let e = entities.first(where: { $0.id == id }) { return color(for: e.type) }
         return Theme.inkSecondary
+    }
+
+    private func entityType(forId id: String) -> EntityType? {
+        entities.first(where: { $0.id == id })?.type
+    }
+
+    // Range (m from launch) + bearing (° from north) read straight off the SLAM
+    // local frame, drawn under the drone/operator markers.
+    private func drawUnitReadout(_ entity: Entity, at p: CGPoint, in ctx: inout GraphicsContext) {
+        let range = hypot(entity.position.x, entity.position.y)
+        var brg = atan2(entity.position.x, entity.position.y) * 180 / .pi   // +y=N, +x=E
+        if brg < 0 { brg += 360 }
+        let text = String(format: "%.0fM · %03.0f°", range, brg)
+        ctx.draw(Text(text).font(Theme.mono(7)).foregroundColor(Theme.inkSecondary),
+                 at: CGPoint(x: p.x, y: p.y + 16))
     }
 
     private func color(for type: EntityType) -> Color {
