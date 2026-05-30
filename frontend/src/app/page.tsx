@@ -244,6 +244,8 @@ export default function Page() {
                 landmarks={effectiveLandmarks}
                 spanMeters={20}
                 showLandmarks={false}
+                apiBase={apiBase}
+                buildingsRadiusM={200}
               />
               <div className="pointer-events-none absolute right-3 top-3 font-mono text-[10px] uppercase tracking-widest text-text-dim">
                 {effectiveOpEntities.length} entities
