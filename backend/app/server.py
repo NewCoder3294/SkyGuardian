@@ -289,7 +289,7 @@ def _route_arming_for_command(command: Command, lock: ArmingLock) -> None:
     elif command is Command.FOLLOW_ME:
         lock.release("approach"); lock.acquire("follow")
     elif command in (Command.STOP, Command.RECALL):
-        lock.release("follow"); lock.release("approach")
+        lock.release("approach"); lock.acquire("follow")
 
 app = FastAPI(title="SkyGuardian — local brain")
 # Dashboard runs on a different port (3001) and pulls MJPEG/JPEG via <img src>.

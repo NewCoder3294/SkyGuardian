@@ -61,9 +61,12 @@ class ApproachController:
         self._lost_since: Optional[float] = None
 
     def step(self, reading: Optional[TargetReading], now: float) -> None:
-        if self._arming is None or not self._arming.can_command(self._owner):
+        if not self._arming.can_command(self._owner):
             return
 
+        # ABORT is terminal by design: once the target is lost past the timeout
+        # we do not auto-resume autonomous flight — the operator must re-command
+        # (FOLLOW_ME/APPROACH/STOP). Fail-safe: hold a hover until then.
         if self.phase is ApproachPhase.ABORT:
             self.tello.hover()
             return
