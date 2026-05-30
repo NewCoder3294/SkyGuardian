@@ -45,16 +45,17 @@ export default function Page() {
   const { connection, lastError, health } = wsLive;
 
   // Persist the active tab so a Fast Refresh / hard reload doesn't snap the
-  // operator back to Feed every time.
-  const [tab, setTab] = useState<Tab>(() => {
-    if (typeof window === "undefined") return "feed";
-    const saved = window.localStorage.getItem("sg.tab");
-    return saved === "feed" || saved === "map" || saved === "intel"
-      ? (saved as Tab)
-      : "feed";
-  });
+  // operator back to Feed every time. Server and first client render both use
+  // "feed" so the markup matches; the persisted tab is restored after mount to
+  // avoid a hydration mismatch.
+  const [tab, setTab] = useState<Tab>("feed");
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    const saved = window.localStorage.getItem("sg.tab");
+    if (saved === "feed" || saved === "map" || saved === "intel") {
+      setTab(saved as Tab);
+    }
+  }, []);
+  useEffect(() => {
     window.localStorage.setItem("sg.tab", tab);
   }, [tab]);
 

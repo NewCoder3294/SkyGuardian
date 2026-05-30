@@ -115,7 +115,7 @@ export function IntelSummaryCard({
   const tierStyles: Record<string, string> = {
     fail: "border-fail/60 bg-fail/10 text-fail",
     warn: "border-warn/60 bg-warn/10 text-warn",
-    ok: "border-accent/40 bg-accent/10 text-accent",
+    ok: "border-ok/40 bg-ok/10 text-ok",
   };
 
   return (
@@ -123,7 +123,7 @@ export function IntelSummaryCard({
       <div className="flex items-baseline justify-between gap-3">
         <Header label="Intelligence" model={s.model} />
         <span
-          className={`rounded-full border px-2.5 py-0.5 font-sans text-[10px] font-bold uppercase tracking-[0.25em] ${tierStyles[tier]}`}
+          className={`border px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.25em] ${tierStyles[tier]}`}
         >
           {s.threat_level}
         </span>
@@ -140,7 +140,7 @@ export function IntelSummaryCard({
           s.labels_seen.map((l) => (
             <span
               key={l}
-              className="rounded-full border border-border-strong bg-surface-elevated px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-text-muted"
+              className="border border-border-strong bg-surface-elevated px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-text-muted"
             >
               {l}
             </span>
