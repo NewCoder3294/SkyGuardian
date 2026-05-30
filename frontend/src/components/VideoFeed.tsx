@@ -137,24 +137,29 @@ export function VideoFeed({ src, detections, label, pollMs = 100 }: Props) {
       }
 
       const boxes = detections?.boxes ?? [];
-      ctx.strokeStyle = "#0a0a0a";
-      ctx.lineWidth = 1.5;
-      ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace";
-
+      // Tactical HUD: cyan stroke, faint outer halo for a HUD glow, dark tag pill
+      ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, monospace";
       for (const b of boxes) {
         const x = offX + (b.cx - b.w / 2) * dispW;
         const y = offY + (b.cy - b.h / 2) * dispH;
         const bw = b.w * dispW;
         const bh = b.h * dispH;
+        // outer glow
+        ctx.strokeStyle = "rgba(34,211,238,0.22)";
+        ctx.lineWidth = 3;
+        ctx.strokeRect(x, y, bw, bh);
+        // crisp inner
+        ctx.strokeStyle = "#22d3ee";
+        ctx.lineWidth = 1.5;
         ctx.strokeRect(x, y, bw, bh);
         const tag = `${b.label.toUpperCase()} ${(b.confidence * 100).toFixed(0)}`;
-        const pad = 3;
+        const pad = 4;
         const tw = ctx.measureText(tag).width + pad * 2;
-        const th = 12;
-        ctx.fillStyle = "#ffffff";
+        const th = 14;
+        ctx.fillStyle = "rgba(6,18,31,0.92)";
         ctx.fillRect(x, Math.max(offY, y - th), tw, th);
-        ctx.fillStyle = "#0a0a0a";
-        ctx.fillText(tag, x + pad, Math.max(offY + th - 3, y - 3));
+        ctx.fillStyle = "#22d3ee";
+        ctx.fillText(tag, x + pad, Math.max(offY + th - 4, y - 4));
       }
     };
 
@@ -172,7 +177,7 @@ export function VideoFeed({ src, detections, label, pollMs = 100 }: Props) {
     "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 
   return (
-    <div className="relative h-full min-h-0 w-full bg-surface-elevated">
+    <div className="relative h-full min-h-0 w-full overflow-hidden rounded-md border border-border bg-bg hud-grid shadow-card">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         ref={imgRef}
@@ -192,23 +197,23 @@ export function VideoFeed({ src, detections, label, pollMs = 100 }: Props) {
           ("feed offline") is preserved because it's actionable. */}
       {errored && (
         <div className="absolute inset-0 grid place-items-center">
-          <div className="rounded-sm border border-fail bg-surface px-3 py-2 font-mono text-[10px] uppercase tracking-[0.3em] text-fail">
-            feed offline
+          <div className="rounded-md border border-fail/60 bg-surface/90 px-4 py-2 font-mono text-[11px] uppercase tracking-[0.3em] text-fail">
+            ▲ Feed offline
           </div>
         </div>
       )}
-      <div className="pointer-events-none absolute left-2 top-2 flex items-center gap-1.5 rounded-sm border border-border bg-surface/90 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.3em] text-text">
+      <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2 rounded-full border border-border-strong bg-surface/85 px-3 py-1 font-sans text-[10px] uppercase tracking-[0.3em] text-text-muted backdrop-blur-sm">
         <span aria-hidden className="relative inline-flex h-2 w-2">
           {isLive && (
-            <span className="absolute inset-0 animate-ping rounded-full bg-ok opacity-60" />
+            <span className="absolute inset-0 animate-ping rounded-full bg-accent opacity-60" />
           )}
           <span
             className={`relative inline-block h-2 w-2 rounded-full ${
-              isLive ? "bg-ok" : "bg-fail"
+              isLive ? "bg-accent shadow-glow-cyan" : "bg-fail"
             }`}
           />
         </span>
-        {label}
+        <span className="text-text">{label}</span>
       </div>
     </div>
   );

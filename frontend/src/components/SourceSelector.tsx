@@ -119,24 +119,26 @@ export function SourceSelector({ apiBase, onState }: Props) {
   const showProcessing =
     upload?.state === "uploading" || upload?.state === "processing";
 
+  const live = state?.streaming || upload?.state === "ready";
+
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-border bg-surface px-3 py-2">
-      <span className="font-mono text-[9px] uppercase tracking-[0.3em] text-text-dim">
-        Source
-      </span>
-      <span className="font-mono text-[11px] font-semibold text-text">
-        {labelText}
-      </span>
-      <span
-        className={`inline-block h-2 w-2 rounded-full ${
-          state?.streaming || upload?.state === "ready" ? "bg-ok" : "bg-fail"
-        }`}
-        aria-hidden
-      />
+    <div className="flex flex-wrap items-center gap-3 border-b border-border bg-surface/60 px-4 py-3">
+      <div className="flex items-center gap-2 rounded-full border border-border-strong bg-surface-elevated px-3 py-1">
+        <span
+          className={`inline-block h-1.5 w-1.5 rounded-full ${
+            live ? "bg-accent shadow-glow-cyan" : "bg-fail"
+          }`}
+          aria-hidden
+        />
+        <span className="font-sans text-[10px] uppercase tracking-[0.3em] text-text-dim">
+          Source
+        </span>
+        <span className="font-mono text-[12px] font-semibold text-text">{labelText}</span>
+      </div>
 
       {upload?.state === "ready" && state?.kind === "file" && (
-        <span className="font-mono text-[10px] uppercase tracking-widest text-text-dim">
-          · {upload.frame_count} frames · {upload.detection_count} detections
+        <span className="rounded-full border border-border bg-surface-elevated px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-text-muted">
+          {upload.frame_count} frames · {upload.detection_count} detections
         </span>
       )}
 
@@ -145,23 +147,23 @@ export function SourceSelector({ apiBase, onState }: Props) {
           type="button"
           onClick={switchToRtmp}
           disabled={busy !== "" || kind === "rtmp"}
-          className={`border px-3 py-1 font-mono text-[10px] uppercase tracking-[0.3em] transition ${
+          className={`rounded-full px-4 py-1.5 font-sans text-[11px] font-semibold uppercase tracking-[0.25em] transition ${
             kind === "rtmp"
-              ? "border-text bg-text text-bg"
-              : "border-border-strong text-text hover:border-text"
+              ? "bg-accent/15 text-accent shadow-glow-cyan"
+              : "border border-border-strong text-text hover:border-accent hover:text-accent"
           } ${busy !== "" ? "cursor-not-allowed opacity-50" : ""}`}
         >
-          {busy === "rtmp" ? "switching…" : "RTMP"}
+          {busy === "rtmp" ? "Switching…" : "RTMP"}
         </button>
 
         <label
-          className={`cursor-pointer border px-3 py-1 font-mono text-[10px] uppercase tracking-[0.3em] transition ${
-            kind === "file"
-              ? "border-text bg-text text-bg"
-              : "border-border-strong text-text hover:border-text"
-          } ${busy !== "" || showProcessing ? "cursor-not-allowed opacity-50" : ""}`}
+          className={`group flex cursor-pointer items-center gap-2 rounded-full px-4 py-1.5 font-sans text-[11px] font-semibold uppercase tracking-[0.25em] transition ${
+            busy !== "" || showProcessing
+              ? "cursor-not-allowed bg-cta/40 text-white/80"
+              : "bg-cta text-white shadow-glow-blue hover:bg-cta-hover"
+          }`}
         >
-          {busy === "upload" ? "uploading…" : "Upload video"}
+          {busy === "upload" || showProcessing ? "Uploading…" : "Upload video"}
           <input
             ref={fileRef}
             type="file"
@@ -175,16 +177,15 @@ export function SourceSelector({ apiBase, onState }: Props) {
 
       {showProcessing && upload && (
         <div className="basis-full">
-          <div className="flex items-baseline justify-between font-mono text-[10px] uppercase tracking-widest text-text-dim">
+          <div className="flex items-baseline justify-between font-mono text-[10px] uppercase tracking-widest text-text-muted">
             <span>
-              {upload.state === "uploading" ? "uploading" : "processing"} ·{" "}
-              {upload.name}
+              {upload.state === "uploading" ? "Uploading" : "Processing"} · {upload.name}
             </span>
-            <span>{Math.round((upload.progress || 0) * 100)}%</span>
+            <span className="text-accent">{Math.round((upload.progress || 0) * 100)}%</span>
           </div>
-          <div className="mt-1 h-1 w-full overflow-hidden bg-border">
+          <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-border">
             <div
-              className="h-full bg-text transition-[width]"
+              className="h-full rounded-full bg-accent shadow-glow-cyan transition-[width]"
               style={{ width: `${Math.round((upload.progress || 0) * 100)}%` }}
             />
           </div>
@@ -192,7 +193,7 @@ export function SourceSelector({ apiBase, onState }: Props) {
       )}
 
       {(error || upload?.error) && (
-        <div className="basis-full font-mono text-[10px] uppercase tracking-widest text-fail">
+        <div className="basis-full rounded-md border border-fail/60 bg-fail/10 px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest text-fail">
           ▲ {error || upload?.error}
         </div>
       )}

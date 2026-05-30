@@ -18,12 +18,12 @@ export function ConsolePanel({ log }: { log: DetectionEvent[] }) {
   }, [log.length]);
 
   return (
-    <aside className="flex h-full min-h-0 flex-col border-l border-border bg-surface">
-      <header className="flex items-center justify-between border-b border-border px-3 py-2">
-        <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-text-dim">
+    <aside className="flex h-full min-h-0 flex-col border-l border-border bg-surface/60">
+      <header className="flex items-center justify-between border-b border-border bg-surface px-4 py-3">
+        <span className="font-sans text-[10px] font-semibold uppercase tracking-[0.3em] text-accent">
           Detection log
         </span>
-        <span className="font-mono text-[10px] tabular-nums text-text-muted">
+        <span className="rounded-full border border-border-strong bg-surface-elevated px-2 py-0.5 font-mono text-[10px] tabular-nums text-text-muted">
           {log.length.toString().padStart(2, "0")}
         </span>
       </header>
@@ -36,11 +36,13 @@ export function ConsolePanel({ log }: { log: DetectionEvent[] }) {
           {log.map((ev, i) => (
             <article
               key={`${ev.t}-${i}`}
-              className="border-b border-border px-3 py-2"
+              className="border-b border-border px-4 py-2.5 transition-colors hover:bg-surface-elevated/60"
             >
               <div className="mb-1 flex items-baseline justify-between font-mono text-[10px] uppercase tracking-[0.25em] text-text-dim">
-                <span className="tabular-nums">{fmtTime(ev.t)}</span>
-                <span>{ev.boxes.length} det</span>
+                <span className="tabular-nums text-text-muted">{fmtTime(ev.t)}</span>
+                <span className="rounded-full bg-accent/10 px-1.5 py-0.5 text-accent">
+                  {ev.boxes.length} det
+                </span>
               </div>
               <ul className="space-y-0.5">
                 {ev.boxes.map((b, j) => (
@@ -48,10 +50,8 @@ export function ConsolePanel({ log }: { log: DetectionEvent[] }) {
                     key={j}
                     className="grid grid-cols-[1fr_auto] items-baseline font-mono text-[11px] text-text"
                   >
-                    <span className="truncate uppercase tracking-wide">
-                      {b.label}
-                    </span>
-                    <span className="tabular-nums text-text-muted">
+                    <span className="truncate uppercase tracking-wide">{b.label}</span>
+                    <span className="tabular-nums text-accent">
                       {(b.confidence * 100).toFixed(0)}%
                     </span>
                   </li>

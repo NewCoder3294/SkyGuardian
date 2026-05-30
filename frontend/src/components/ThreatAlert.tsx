@@ -42,14 +42,14 @@ export function ThreatAlert({ detections }: Props) {
   return (
     <div
       role="alert"
-      className="pointer-events-none fixed bottom-4 right-4 z-50 w-72 border-2 border-fail bg-white shadow-[0_0_0_2px_rgba(255,255,255,0.95),0_8px_24px_rgba(0,0,0,0.25)]"
+      className="pointer-events-none fixed bottom-5 right-5 z-50 w-80 overflow-hidden rounded-md border border-fail/70 bg-surface/95 shadow-[0_0_0_1px_rgba(239,68,68,0.4),0_10px_30px_rgba(0,0,0,0.6),0_0_40px_rgba(239,68,68,0.15)] backdrop-blur-md"
     >
-      <div className="flex items-center gap-2 bg-fail px-3 py-1.5 text-white">
+      <div className="flex items-center gap-2 bg-fail/15 px-4 py-2 text-fail">
         <span className="relative inline-flex h-2.5 w-2.5">
-          <span className="absolute inset-0 animate-ping rounded-full bg-white opacity-60" />
-          <span className="relative inline-block h-2.5 w-2.5 rounded-full bg-white" />
+          <span className="absolute inset-0 animate-ping rounded-full bg-fail opacity-60" />
+          <span className="relative inline-block h-2.5 w-2.5 rounded-full bg-fail" />
         </span>
-        <span className="font-mono text-[11px] font-bold uppercase tracking-[0.35em]">
+        <span className="font-sans text-[11px] font-bold uppercase tracking-[0.35em]">
           Threat detected
         </span>
       </div>
@@ -57,18 +57,18 @@ export function ThreatAlert({ detections }: Props) {
         {active.map((row) => (
           <li
             key={row.label}
-            className="flex items-baseline justify-between gap-3 px-3 py-2"
+            className="flex items-baseline justify-between gap-3 px-4 py-2.5"
           >
-            <span className="font-mono text-sm font-semibold uppercase tracking-wider text-text">
+            <span className="font-sans text-sm font-semibold uppercase tracking-wider text-text">
               {row.label}
             </span>
-            <span className="font-mono text-xs tabular-nums text-fail">
+            <span className="font-mono text-xs font-bold tabular-nums text-fail">
               {(row.confidence * 100).toFixed(0)}%
             </span>
           </li>
         ))}
       </ul>
-      <div className="border-t border-border bg-surface px-3 py-1 font-mono text-[9px] uppercase tracking-[0.3em] text-text-dim">
+      <div className="border-t border-border bg-surface-elevated px-4 py-1.5 font-mono text-[9px] uppercase tracking-[0.3em] text-text-dim">
         Auto-clears on clean frame
       </div>
     </div>
