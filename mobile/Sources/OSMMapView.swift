@@ -51,7 +51,7 @@ final class EntityAnnotation: NSObject, MKAnnotation {
 
 /// MapKit-backed map on an OpenStreetMap basemap. Plots the real world-model
 /// entities + movement trails relative to the operator, and flips between a flat 2D
-/// and a tilted 3D camera. No mock data — it renders only what the world model holds.
+/// and a tilted 3D camera. It renders only what the world model holds.
 struct OSMMapView: UIViewRepresentable {
     let entities: [Entity]
     let trails: [String: [Vec3]]

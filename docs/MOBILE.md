@@ -14,8 +14,8 @@ xcodegen generate
 xcodebuild test -project ReconCompanion.xcodeproj -scheme ReconCompanion \
   -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
-Debug launch args (simulator): `-demo` (sample scene), `-feed` (point FEED at a
-local backend on `:8011`).
+Debug launch args (simulator): `-feed` opens straight to the FEED tab and points
+the mission link at a local backend on `:8001`.
 
 ## Ship to TestFlight (CLI)
 ASC API auth lives in env (key in `~/.appstoreconnect/private_keys/`):

@@ -53,7 +53,6 @@ shape-coded markers (● soldier, ▲ drone, ◇ POI, ✕ hazard). Forced light 
 xcodegen generate     # project.yml → ReconCompanion.xcodeproj (embeds cactus.xcframework)
 xcodebuild test -scheme ReconCompanion \
   -destination 'platform=iOS Simulator,name=iPhone 17'    # 15 XCTest
-# demo scene (no backend):  xcrun simctl launch booted com.nicolasdossantos.skyguardian -demo
 # open straight to FEED:    xcrun simctl launch booted com.nicolasdossantos.skyguardian -feed
 ```
 The direct Tello FEED needs **real hardware on the Tello WiFi AP** — the simulator

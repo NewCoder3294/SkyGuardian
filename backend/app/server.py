@@ -7,7 +7,7 @@ Binds 0.0.0.0. Serves one WebSocket endpoint that:
 Run: uvicorn app.server:app --host 0.0.0.0 --port 8000
 (or ./run.sh)
 
-Real producers (no mocks):
+Real producers:
   - PerceptionPipeline reads Mavic frames (MAVIC_SOURCE env), runs SLAM + YOLO,
     upserts entities. Idle if MAVIC_SOURCE is unset.
   - FollowController reads Tello frames, detects the soldier AprilTag, upserts

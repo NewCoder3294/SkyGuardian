@@ -44,7 +44,7 @@ struct ContentView: View {
         }
         .background(Theme.paper)
         .preferredColorScheme(.light)   // forced light mode
-        .onAppear { maybeLoadDemo(); location.start() }
+        .onAppear { applyDebugLaunchArgs(); location.start() }
         .overlay { if needsSetup { setupOverlay } }
         .task { await startModelIfNeeded() }
     }
@@ -111,10 +111,10 @@ struct ContentView: View {
         }
     }
 
-    private func maybeLoadDemo() {
+    private func applyDebugLaunchArgs() {
         #if DEBUG
         if CommandLine.arguments.contains("-feed") {
-            client.serverURL = "ws://127.0.0.1:8011/ws"   // local backend with the MJPEG relay
+            client.serverURL = "ws://127.0.0.1:8001/ws"
             center = .feed
             showConnect = false
         }
