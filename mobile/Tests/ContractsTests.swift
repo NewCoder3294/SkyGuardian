@@ -60,4 +60,20 @@ final class ContractsTests: XCTestCase {
         XCTAssertEqual(Command.approach.rawValue, "approach")
         XCTAssertEqual(Command.allCases.count, 5)
     }
+
+    // EntityReport must serialize to exactly the shape the backend validates.
+    func testEntityReportMessageEncodesWithEntities() throws {
+        let drone = Entity(id: "drone", type: .drone, position: Vec3(x: 1, y: 2, z: 0),
+                           confidence: 1, timestamp: 100, source: .follow, label: "tello",
+                           ttlS: 4, status: .active)
+        let msg = EntityReportMessage(entities: [drone], source: "phone", t: 100)
+        let data = try JSONEncoder().encode(msg)
+        let obj = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(obj["type"] as? String, "entity_report")
+        XCTAssertEqual(obj["source"] as? String, "phone")
+        let ents = try XCTUnwrap(obj["entities"] as? [[String: Any]])
+        XCTAssertEqual(ents.first?["id"] as? String, "drone")
+        // Entity encodes ttl_s via CodingKeys (not ttlS).
+        XCTAssertEqual(ents.first?["ttl_s"] as? Double, 4)
+    }
 }

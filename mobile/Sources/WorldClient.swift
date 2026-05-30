@@ -80,6 +80,19 @@ final class WorldClient: ObservableObject {
         task.send(.string(json)) { _ in }
     }
 
+    /// Publish phone-localized entities (operator + drone) in the shared world
+    /// frame so the laptop upserts them into the world model and both maps render
+    /// them. Best-effort, fire-and-forget — drops silently if the socket isn't up.
+    func sendEntityReport(_ entities: [Entity]) {
+        guard let task, !entities.isEmpty else { return }
+        let msg = EntityReportMessage(entities: entities, source: "phone",
+                                      t: Date().timeIntervalSince1970)
+        guard let data = try? encoder.encode(msg), let json = String(data: data, encoding: .utf8) else {
+            return
+        }
+        task.send(.string(json)) { _ in }
+    }
+
     private func receiveLoop() async {
         guard let task else { return }
         while connection == .connected {

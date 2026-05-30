@@ -125,3 +125,14 @@ struct FollowStateMessage: Encodable, Sendable {
     let source: String
     let t: Double
 }
+
+/// Phone-localized entities (operator + drone) expressed in the shared WORLD
+/// frame (north-up metres, launch anchor tag = origin). Mirrors backend
+/// EntityReport. The laptop upserts these into the world model so they render on
+/// both maps. Not to be confused with FollowStateMessage (relative range/bearing).
+struct EntityReportMessage: Encodable, Sendable {
+    let type = "entity_report"
+    let entities: [Entity]
+    let source: String
+    let t: Double
+}
