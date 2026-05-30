@@ -24,7 +24,7 @@ import {
 import type { ConnectionState, DetectionEvent, DetectionLayer } from "@/lib/useWorldClient";
 import { useWorldClient } from "@/lib/useWorldClient";
 
-const DEFAULT_WS = "ws://localhost:8001/ws";
+const DEFAULT_WS = "ws://localhost:8000/ws";
 
 type Tab = "feed" | "map" | "intel";
 
