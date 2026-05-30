@@ -159,7 +159,24 @@ class FollowState(BaseModel):
     t: float
 
 
-ServerMessage = Union[WorldSnapshot, MissionState, Health, Detections, FollowState]
+class GeoPoint(BaseModel):
+    """A WGS84 lat/lng. Used to geo-reference the local map frame's origin."""
+    lat: float = Field(ge=-90.0, le=90.0)
+    lng: float = Field(ge=-180.0, le=180.0)
+
+
+class BuildingsUpdated(BaseModel):
+    """Signal that the served OSM buildings layer changed (operator set a new
+    operational area). Clients re-GET /map/buildings on receipt — the polygon
+    blob is intentionally NOT carried over the socket."""
+    type: Literal["buildings_updated"] = "buildings_updated"
+    origin: GeoPoint
+    radius_m: int
+    count: int
+    t: float
+
+
+ServerMessage = Union[WorldSnapshot, MissionState, Health, Detections, FollowState, BuildingsUpdated]
 
 
 # --- clients -> server ---

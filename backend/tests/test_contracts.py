@@ -41,3 +41,15 @@ def test_confidence_bounds_enforced():
             id="x", type=EntityType.POI, position=Vec3(x=0, y=0, z=0),
             confidence=1.5, timestamp=0.0, source=EntitySource.YOLO,
         )
+
+
+def test_buildings_updated_serializes():
+    from app.contracts import BuildingsUpdated, GeoPoint
+
+    msg = BuildingsUpdated(origin=GeoPoint(lat=32.0, lng=-117.0), radius_m=400, count=12, t=3.5)
+    dumped = msg.model_dump(mode="json")
+    assert dumped["type"] == "buildings_updated"
+    assert dumped["origin"] == {"lat": 32.0, "lng": -117.0}
+    assert dumped["radius_m"] == 400
+    assert dumped["count"] == 12
+    assert dumped["t"] == 3.5
