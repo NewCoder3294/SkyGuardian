@@ -13,12 +13,14 @@ struct ContentView: View {
     @StateObject private var localizer = Localizer()
     @StateObject private var aligner = FrameAligner()
     @StateObject private var anchorCam = AnchorCamera()
+    @StateObject private var scout = ScoutController()
     @StateObject private var buildingsStore = BuildingsStore()
     @State private var showConnect = true
     @State private var center: CenterView = .map
     @State private var setupStarted = false
     @State private var pendingArm: PendingArm?
     @State private var pendingApproach = false
+    @State private var pendingScout = false
 
     enum PendingArm { case follow, track }
 
@@ -81,6 +83,12 @@ struct ContentView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("The companion drone will autonomously fly to the selected target and hold standoff.")
+        }
+        .confirmationDialog("Scout ahead?", isPresented: $pendingScout, titleVisibility: .visible) {
+            Button("SCOUT & RETURN", role: .destructive) { scout.start(follow: follow) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The companion will scout ~\(scout.forwardCm / 100) m ahead, hold to scan, then return and resume following. LAND stops it any time.")
         }
         .onReceive(follow.$phase) { _ in publishFollow() }
         .onReceive(client.$connection) { _ in
@@ -274,6 +282,15 @@ struct ContentView: View {
                     .background(anchorCam.isRunning ? Theme.olive : Color.clear)
                     .overlay(Rectangle().stroke(Theme.ink, lineWidth: 1.4))
             }
+            // Soldier-commanded scout: only while airborne under follow control.
+            Button { pendingScout = true } label: {
+                Text(scout.isRunning ? "SCOUTING" : "SCOUT").font(Theme.mono(11, weight: .semibold))
+                    .foregroundColor(scout.isRunning ? Theme.panel : Theme.ink)
+                    .padding(.horizontal, 12).padding(.vertical, 12)
+                    .background(scout.isRunning ? Theme.olive : Color.clear)
+                    .overlay(Rectangle().stroke(Theme.ink, lineWidth: 1.4))
+            }
+            .disabled(!follow.isArmed || scout.isRunning)
             // Hard safety control — always available, not voice-only.
             Button { hardStop() } label: {
                 Text("LAND").font(Theme.mono(12, weight: .bold))
@@ -366,6 +383,9 @@ struct ContentView: View {
     /// Hard safety control — not voice-only (per spec): land the drone now and signal
     /// a mission stop to the laptop if connected.
     private func hardStop() {
+        // Cancel any in-flight scout maneuver first so no further scout commands
+        // race the landing.
+        scout.abort()
         // Route through the arbiter so the follow rc loop is actually stopped — not
         // left fighting the landing.
         if follow.isArmed { follow.disarmAndLand() } else { TelloCommander.shared.send("land") }
