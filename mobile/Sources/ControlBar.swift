@@ -5,9 +5,19 @@ import SwiftUI
 struct ControlBar: View {
     let onCommand: (Command) -> Void
     let enabled: Bool
+    var onLockMe: (() -> Void)? = nil
+    var onLockTag: (() -> Void)? = nil
+    var onRelock: (() -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 10) {
+            if onLockMe != nil || onLockTag != nil || onRelock != nil {
+                HStack(spacing: 10) {
+                    targetButton("TRACK ME", action: onLockMe)
+                    targetButton("TRACK TAG", action: onLockTag)
+                    targetButton("RE-LOCK", action: onRelock)
+                }
+            }
             HStack(spacing: 10) {
                 button("FOLLOW", command: .followMe)
                 button("HOLD", command: .hold)
@@ -18,6 +28,16 @@ struct ControlBar: View {
         .padding(14)
         .background(Theme.panel)
         .overlay(Rectangle().frame(height: 1).foregroundColor(Theme.hairline), alignment: .top)
+    }
+
+    private func targetButton(_ title: String, action: (() -> Void)?) -> some View {
+        Button { action?() } label: {
+            Text(title).font(Theme.mono(12, weight: .semibold))
+                .frame(maxWidth: .infinity, minHeight: 42)
+                .foregroundColor(action != nil ? Theme.ink : Theme.faint)
+                .overlay(Rectangle().stroke(action != nil ? Theme.ink : Theme.faint, lineWidth: 1.2))
+        }
+        .disabled(action == nil)
     }
 
     private func button(_ title: String, command: Command) -> some View {

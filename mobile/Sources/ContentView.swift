@@ -52,7 +52,13 @@ struct ContentView: View {
             // Laptop intent bar — only on the Map tab. In Feed the Tello is flown
             // directly from the phone, so these laptop-routed buttons are inert.
             if center == .map {
-                ControlBar(onCommand: { client.send($0) }, enabled: isConnected)
+                ControlBar(
+                    onCommand: { client.send($0) },
+                    enabled: isConnected,
+                    onLockMe: { if follow.isArmed { follow.requestLock(.visualMe) } else { pendingArm = .visualMe } },
+                    onLockTag: { if follow.isArmed { follow.requestLock(.tag) } else { pendingArm = .tag } },
+                    onRelock: { if follow.isArmed { follow.requestLock(follow.mode) } }
+                )
             }
         }
         .background(Theme.paper)
