@@ -341,6 +341,7 @@ struct ContentView: View {
         }
         if fn == .confirm {                     // approve the shown lock
             if follow.isArmed { follow.confirmTarget() }
+            // else: no-op when disarmed — confirm is only valid airborne (no target to approve yet)
             return
         }
 
