@@ -97,9 +97,9 @@ final class FollowCoordinator: ObservableObject {
     var isArmed: Bool { phase != .disarmed }
 
     /// Wire target_type — only meaningful while actually locked onto a target.
-    /// Reads `mode` (rcQueue-owned) cross-thread, but it's a trivial enum and this
-    /// is advisory dashboard telemetry sampled at a few Hz; a one-tick-stale value on
-    /// a mode switch is harmless (benign read, same class as `currentPhase`).
+    /// Reads `mode` cross-thread (rcQueue-owned). `TargetMode` is a pointer-sized enum;
+    /// a torn or one-tick-stale read during a mode switch is harmless for advisory
+    /// dashboard telemetry polled at a few Hz. Not a substitute for any safety gate.
     var targetType: String? {
         guard phase == .following || phase == .confirming else { return nil }
         return mode == .visualMe ? "visual_me" : "tag"

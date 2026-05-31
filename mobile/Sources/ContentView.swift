@@ -57,7 +57,7 @@ struct ContentView: View {
                     enabled: isConnected,
                     onLockMe: { if follow.isArmed { follow.requestLock(.visualMe) } else { pendingArm = .visualMe } },
                     onLockTag: { if follow.isArmed { follow.requestLock(.tag) } else { pendingArm = .tag } },
-                    onRelock: { if follow.isArmed { follow.requestLock(follow.mode) } }
+                    onRelock: follow.isArmed ? { follow.requestLock(follow.mode) } : nil
                 )
             }
         }
