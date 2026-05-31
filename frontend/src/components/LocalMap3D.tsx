@@ -5,6 +5,7 @@ import { Canvas } from "@react-three/fiber";
 import { Grid, Html, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import type { Entity, EntityStatus, EntityType, Vec3 } from "@/lib/contracts";
+import { isDesignatedTarget } from "@/lib/entities";
 import { Buildings } from "./Buildings";
 
 /**
@@ -149,9 +150,14 @@ function EntityMarker({ entity }: { entity: Entity }) {
   const pos = worldToScene(entity.position);
   const alpha = STATUS_ALPHA[entity.status];
   const label = (entity.label ?? entity.id).toUpperCase();
+  const designated = isDesignatedTarget(entity);
 
   return (
     <group position={pos}>
+      {/* Designated recon target gets a red targeting reticle behind the glyph,
+          matching LocalMap2D's drawDesignationReticle so the cue survives a
+          2D->3D view toggle. */}
+      {designated && <DesignationReticle alpha={alpha} />}
       {renderShape(entity.type, alpha)}
       <Html
         position={[0, shapeHeight(entity.type) + 0.3, 0]}
@@ -160,12 +166,36 @@ function EntityMarker({ entity }: { entity: Entity }) {
         zIndexRange={[0, 0]}
       >
         <div
-          className="pointer-events-none whitespace-nowrap border border-accent/40 bg-surface/85 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-accent backdrop-blur-sm"
+          className={`pointer-events-none whitespace-nowrap border bg-surface/85 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider backdrop-blur-sm ${
+            designated ? "border-fail/70 text-fail" : "border-accent/40 text-accent"
+          }`}
           style={{ opacity: alpha }}
         >
           {label}
         </div>
       </Html>
+    </group>
+  );
+}
+
+/** Red targeting reticle (ring + raised marker ring) for the designated recon
+ *  target. Mirrors LocalMap2D's drawDesignationReticle. */
+function DesignationReticle({ alpha }: { alpha: number }) {
+  return (
+    <group rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+      <mesh>
+        <ringGeometry args={[0.5, 0.58, 40]} />
+        <meshBasicMaterial color="#e0483a" transparent opacity={alpha} side={2} />
+      </mesh>
+      <mesh>
+        <ringGeometry args={[0.72, 0.76, 40]} />
+        <meshBasicMaterial
+          color="#e0483a"
+          transparent
+          opacity={alpha * 0.5}
+          side={2}
+        />
+      </mesh>
     </group>
   );
 }

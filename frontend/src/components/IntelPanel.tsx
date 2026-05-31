@@ -109,8 +109,11 @@ function buildBoard(
 ): BoardRow[] {
   const counts = new Map<string, { n: number; lastT: number }>();
   for (const ev of log) {
-    for (const b of ev.boxes) {
-      const key = b.label.toLowerCase();
+    // "Seen" means times-seen (sightings), not instance count: count each
+    // label once per frame so a crowd of N people in one frame is one sighting,
+    // not N. Dedupe the frame's labels before incrementing.
+    const labelsInFrame = new Set(ev.boxes.map((b) => b.label.toLowerCase()));
+    for (const key of labelsInFrame) {
       const prev = counts.get(key) ?? { n: 0, lastT: 0 };
       counts.set(key, {
         n: prev.n + 1,

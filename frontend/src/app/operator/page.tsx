@@ -125,19 +125,32 @@ export default function Page() {
       boxes: f.boxes,
       imageW: playbackData.image_w,
       imageH: playbackData.image_h,
-      t: f.t,
+      // `f.t` is video-relative seconds (small, ~12.5); downstream consumers
+      // (ThreatAlert, IntelPanel, ConsolePanel) assume unix-epoch seconds like
+      // the live path (pipeline.py stamps time.time()). Map the current
+      // playhead frame onto "now" so "visible"/age/alert math matches live.
+      t: Date.now() / 1000,
     };
   }, [playbackData, playbackTime]);
 
   const playbackDetectionLog = useMemo<DetectionEvent[]>(() => {
     if (!playbackData) return [];
     // Build a rolling log of detection events from the start of the clip up
-    // to currentTime. Newest first to match the live console.
+    // to currentTime. Newest first to match the live console. Stamp each event
+    // with a wall-clock epoch in the same time domain the live path uses: the
+    // current playhead frame is "now", earlier frames are aged by how far they
+    // sit behind the playhead. (Video-relative `f.t` would render as 1970 and
+    // break age readouts.)
+    const nowEpoch = Date.now() / 1000;
     const log: DetectionEvent[] = [];
     for (const f of playbackData.frames) {
       if (f.t > playbackTime) break;
       if (f.boxes.length > 0) {
-        log.push({ t: f.t, source: "leader", boxes: f.boxes });
+        log.push({
+          t: nowEpoch - (playbackTime - f.t),
+          source: "leader",
+          boxes: f.boxes,
+        });
       }
     }
     return log.reverse().slice(0, 80);

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Entity, EntityType } from "@/lib/contracts";
+import { isDesignatedTarget } from "@/lib/entities";
 import { TrailStore } from "@/lib/trails";
 
 /**
@@ -486,7 +487,7 @@ function drawEntities(
     if (x < -40 || y < -40 || x > w + 40 || y > h + 40) continue;
     const alpha =
       e.status === "active" ? 1 : e.status === "stale" ? 0.55 : 0.28;
-    const isDesignated = e.id === "designated_target";
+    const isDesignated = isDesignatedTarget(e);
     // Designated recon target gets a targeting reticle behind the glyph.
     if (isDesignated) drawDesignationReticle(ctx, x, y, alpha);
     drawEntityGlyph(ctx, x, y, e.type, alpha);
