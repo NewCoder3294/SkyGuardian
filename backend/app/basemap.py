@@ -14,8 +14,11 @@ import time
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
+# Protomaps prunes old daily builds, so this date drifts out of existence over
+# time. Override with PROTOMAPS_BUILD_URL, or bump to a current build listed at
+# https://build.protomaps.com/ (probe `<date>.pmtiles` for HTTP 206).
 PROTOMAPS_BUILD_URL = os.environ.get(
-    "PROTOMAPS_BUILD_URL", "https://build.protomaps.com/20240101.pmtiles"
+    "PROTOMAPS_BUILD_URL", "https://build.protomaps.com/20260526.pmtiles"
 )
 DEFAULT_MAXZOOM = int(os.environ.get("BASEMAP_MAXZOOM", "15"))
 _EARTH_M_PER_DEG_LAT = 111_320.0
