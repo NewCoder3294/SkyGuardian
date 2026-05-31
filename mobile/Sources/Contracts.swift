@@ -125,3 +125,22 @@ struct FollowStateMessage: Encodable, Sendable {
     let source: String
     let t: Double
 }
+
+/// Operator label decision forwarded to the backend data flywheel.
+/// kind: "confirm" | "reject" | "correct"
+struct LabelEventMessage: Encodable, Sendable {
+    let type = "label_event"
+    let kind: String
+    let source: String
+    let label: String?
+    let correctedLabel: String?
+    let box: [Double]?
+    let note: String?
+    let t: Double
+
+    enum CodingKeys: String, CodingKey {
+        case type, kind, source, label
+        case correctedLabel = "corrected_label"
+        case box, note, t
+    }
+}

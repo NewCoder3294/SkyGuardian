@@ -66,6 +66,10 @@ final class FollowCoordinator: ObservableObject {
 
     private weak var stream: TelloDirectStream?
 
+    /// Optional sink for operator label decisions (data flywheel). Wired by the app
+    /// to WorldClient.sendLabelEvent; nil in tests.
+    var onLabel: ((_ kind: String, _ label: String?) -> Void)?
+
     var isArmed: Bool { phase != .disarmed }
 
     // MARK: arm / disarm
@@ -338,6 +342,7 @@ final class FollowCoordinator: ObservableObject {
             self.confirmed = true
             self.latestTime = CACurrentMediaTime()   // fresh grace as following begins
         }
+        onLabel?("confirm", nil)
         setPhase(.searching)
     }
 
