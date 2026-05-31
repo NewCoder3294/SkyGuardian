@@ -133,3 +133,12 @@ def test_follow_state_rejects_bad_target_type():
     from pydantic import ValidationError
     with pytest.raises((ValidationError, ValueError)):
         FollowState(t=1.0, target_type="rocket")
+
+
+def test_follow_state_stale_copy_preserves_target_type():
+    fs = FollowState(active=True, phase="following", distance_m=2.0, bearing_deg=5.0,
+                     t=1.0, target_type="tag", target_label="7")
+    stale = fs.model_copy(update={"active": False, "phase": "stale", "t": 9.0})
+    assert stale.phase == "stale"
+    assert stale.target_type == "tag"
+    assert stale.target_label == "7"
