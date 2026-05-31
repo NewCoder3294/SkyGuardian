@@ -113,7 +113,9 @@ grep "WebSocket /ws" <backend-log> | grep -v 127.0.0.1 | tail   # phone IP appea
   (`AnchorCamera` + `FrameAligner`) and publishes world-frame `EntityReport`s, so
   the operator + drone now place on the **shared map**, not only the relative inset.
 - **Target designation:** the laptop `Designator` marks the top-priority recon
-  detection as `designated_target`; the 2D map draws a red reticle on it.
+  detection as `designated_target`; both the 2D and 3D maps draw a red targeting
+  reticle on it (shared `isDesignatedTarget` helper), so the cue survives a 2D/3D
+  toggle.
 - **Scout maneuver (phone):** the bounded explore → scan → retrace-home loop.
 - **On-device Tello detection (phone FEED):** live CoreML `yolov8n` (COCO) boxes
   over the companion feed — COCO-class only, **not** weapon detection.

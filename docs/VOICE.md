@@ -72,31 +72,38 @@ The voice pill in the UI shows `VOICE · <sourceLabel>` and the live state
 
 ## Command vocabulary (`DroneFunction` / `DroneIntent`)
 Flight (`isFlight == true`; `missionCommand == nil`): `takeoff`, `land`, `up`, `down`,
-`left`, `right`, `forward`, `back`, `rotate_cw`, `rotate_ccw`, `emergency`, `track`.
-All except `track` render a literal Tello SDK string via `DroneAction.telloCommand`
-and are sent directly to the Tello over UDP. Moves and rotations take a magnitude
-(defaults: 50 cm moves, 45° rotations, from `DroneFunction.defaultMagnitude`);
-`emergency` cuts motors immediately (failsafe). `track` is the one flight-class
-function with no `telloCommand` (returns nil) — "track that boat" / "lock on"
-engages the on-device visual tracker (`ObjectTracker`/`FollowCoordinator`) rather
-than issuing a move; `ContentView` special-cases it before the generic flight path.
-Like "follow me", a `track` from disarmed takes off and then **hovers at the airborne
-target-confirm gate** — the operator taps CONFIRM in the feed before any tracking
-motion; re-saying "track" while already armed just re-locks the centered object.
+`left`, `right`, `forward`, `back`, `rotate_cw`, `rotate_ccw`, `emergency`, `flip`,
+`track`, `track_tag`, `confirm`. The moves/rotations and `takeoff`/`land`/`emergency`/
+`flip` render a literal Tello SDK string via `DroneAction.telloCommand` and are sent
+directly to the Tello over UDP. Moves and rotations take a magnitude (defaults: 50 cm
+moves, 45° rotations, from `DroneFunction.defaultMagnitude`); `emergency` cuts motors
+immediately (failsafe). `track`, `track_tag`, and `confirm` have no `telloCommand`
+(return nil) and are special-cased by `ContentView` before the generic flight path:
+- `track` ("track that boat" / "lock on") — the default visual "me" lock; engages the
+  on-device visual tracker (`ObjectTracker`/`FollowCoordinator`).
+- `track_tag` ("track the tag" / "that tag" / "follow that tag" / "designate") — locks
+  an **AprilTag designating another target** instead of the visual-me lock.
+- `confirm` — approves the currently-shown airborne target lock.
+
+Like "follow me", a `track` / `track_tag` from disarmed takes off and then **hovers at
+the airborne target-confirm gate** — the operator taps CONFIRM in the feed before any
+tracking motion; re-saying it while already armed just re-locks the current target.
 
 Mission (routed to the laptop brain over the WS, which owns the SLAM/AprilTag autonomy):
-`follow_me`, `hold`, `recall`, `stop`. These map onto the wire `Command` vocabulary via
-`DroneFunction.missionCommand`. Note the live FEED arbiter (`ContentView.handle`)
-special-cases `follow_me`: from disarmed it takes off the phone-flown Tello and enters
-the **airborne target-confirm gate** (hover + lock box) — no follow/track motion until
-the operator taps CONFIRM; said again after a manual takeover it just resumes (the prior
-confirmation carries over, no re-confirm). `hold` / `recall` / `stop` still go to the
-laptop over the WS.
+`follow_me`, `hold`, `recall`, `stop`, `approach`. These map onto the wire `Command`
+vocabulary via `DroneFunction.missionCommand`. Note the live FEED arbiter
+(`ContentView.handle`) special-cases `follow_me`: from disarmed it takes off the
+phone-flown Tello and enters the **airborne target-confirm gate** (hover + lock box) —
+no follow/track motion until the operator taps CONFIRM; said again after a manual
+takeover it just resumes (the prior confirmation carries over, no re-confirm). `hold` /
+`recall` / `stop` still go to the laptop over the WS.
 
 `DroneIntent.match` (the live path) resolves both classes from keywords, priority-ordered
-so failsafe/mission phrases win inside longer utterances and compound phrases
-("rotate left", "take off") are checked before the bare directional words they contain.
-`IntentParser.parse` covers only the four mission intents.
+so failsafe/mission phrases win inside longer utterances, the tag-designation phrases are
+checked before the bare track/follow phrases, and compound phrases ("rotate left", "take
+off") are checked before the bare directional words they contain. The ambiguous
+"confirmed" keyword was dropped. `IntentParser.parse` covers only the four mission
+intents (`stop` / `recall` / `hold` / `follow_me`).
 
 ## Model download (`ModelDownloader.swift`)
 - Model: `Cactus-Compute/gemma-4-E2B-it`, the int4 Apple build of Gemma 3n (E2B: audio +

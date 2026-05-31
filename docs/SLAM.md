@@ -145,5 +145,5 @@ scale from the first two frames in which the tag is detected, otherwise the map
 is left in VO units.
 
 Tests: `cd backend && .venv/bin/python -m pytest tests/slam -q`
-(13 tests — VO geometry, anchor, local map, pipeline smoke; helpers in
+(16 tests — VO geometry, VO caching, anchor, local map, pipeline smoke; helpers in
 `tests/slam/synth.py`).

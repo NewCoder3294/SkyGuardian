@@ -41,7 +41,10 @@ cd backend
 TELLO_DISABLE=1 \              # laptop never commands the Tello (phone owns it)
 MAVIC_SOURCE=url:rtmp://127.0.0.1:1935/live \   # or omit and click "RTMP" in the dashboard
 DASHBOARD_ORIGINS=http://localhost:3000 \
-./run.sh                       # uvicorn app.server:app --host 0.0.0.0 --port 8000
+  .venv/bin/python -m uvicorn app.server:app --host 0.0.0.0 --port 8000
+# (run.sh execs a bare `uvicorn`, which can grab the wrong Python — e.g. Anaconda —
+#  and fail with `No module named 'cv2'`; launch via the venv's uvicorn instead.
+#  See DEMO_DAY.md.)
 ```
 
 Then the dashboard (separate terminal):
@@ -71,11 +74,14 @@ fight the phone.)
    `ws://192.168.10.y:8000/ws` (the laptop's Tello-AP IP — default is
    `ws://127.0.0.1:8000/ws`, which only works in the simulator). Set it via the
    app's server field or a launch arg.
-3. Arm follow: the phone runs the on-device AprilTag follow loop and commands the
-   Tello directly over `192.168.10.1:8889`.
+3. Arm follow: the phone runs the on-device follow loop and commands the Tello
+   directly over `192.168.10.1:8889`. The default target is the visual "me" lock
+   (`TRACK ME`); `TRACK TAG` instead designates an AprilTag target. After takeoff the
+   drone hovers at the airborne target-confirm gate until the operator taps CONFIRM.
 
-The soldier wears the follow AprilTag (size `FOLLOW_TAG_SIZE_M`, default 0.18 m;
-filter to a tag id with `FOLLOW_TAG_ID`).
+To designate an AprilTag target, print a `tag36h11` tag (the laptop's
+`FOLLOW_TAG_SIZE_M`, default 0.18 m, sets the backend follow tag size; the phone's
+own follow loop uses its `tagSizeMeters`, default 0.16 m).
 
 ---
 
@@ -88,13 +94,16 @@ filter to a tag id with `FOLLOW_TAG_ID`).
 
 > ✅ The phone now publishes its follow geometry to the laptop. The phone computes
 > the follow on-device (`Localizer` / follow loop) and sends `follow_state`
-> (relative range + bearing + phase) over the WS; the laptop **rebroadcasts** it
-> and the dashboard renders it as the `FollowInset` radar (soldier at centre,
-> Tello range/bearing). It is a **relative inset, not co-registered with the SLAM
-> map** — the phone's follow frame and the Mavic SLAM frame don't share a
-> reference, so the Tello is shown as range/bearing rather than placed on the map.
-> If the phone stream ages out (2 s), the inset downgrades to a visible `stale`
-> phase rather than silently freezing.
+> (relative range + bearing + phase, plus a ME/TAG target tag) over the WS; the
+> laptop **rebroadcasts** it and the dashboard renders it as the `FollowInset` radar
+> (soldier at centre, Tello range/bearing + target badge). The `follow_state` inset
+> is **relative, not co-registered with the SLAM map** — the phone's follow frame
+> and the Mavic SLAM frame don't share a reference, so the Tello is shown as
+> range/bearing rather than placed on the map. If the phone stream ages out (2 s),
+> the inset downgrades to a visible `stale` phase rather than silently freezing.
+> Separately, the phone co-registers against the **launch anchor AprilTag**
+> (`AnchorCamera` + `FrameAligner`) and publishes world-frame `entity_report`s, so
+> the operator + drone also place on the shared map — not only the relative inset.
 
 ---
 

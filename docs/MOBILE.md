@@ -17,9 +17,13 @@ it's on:
 
 - **MAP**: renders the live world model — entities + movement trails — and sends
   **mission intent** (`follow_me` / `hold` / `recall` / `stop`) to the laptop over a
-  `/ws` WebSocket. The laptop-routed `ControlBar` (FOLLOW / HOLD / RECALL / STOP →
-  `client.send`) lives only on this tab; it is hidden on FEED, where the phone flies the
-  Tello directly. The phone also publishes `follow_state` here
+  `/ws` WebSocket. The `ControlBar` lives only on this tab (hidden on FEED, where the
+  phone flies the Tello directly). Its mission row (FOLLOW / HOLD / RECALL / STOP →
+  `client.send`) is laptop-routed; a target row above it (TRACK ME / TRACK TAG /
+  RE-LOCK) drives the phone-side follow loop directly — `TRACK ME` is the default
+  visual "me" lock, `TRACK TAG` designates an AprilTag target, and `RE-LOCK`
+  re-acquires the current target (disabled until the drone is airborne). The phone
+  also publishes `follow_state` here
   (`WorldClient.sendFollowState`, wired via `ContentView.publishFollow`) carrying the
   Tello's relative range/bearing/phase so the laptop dashboard can render its follow
   inset. It never commands the Tello on this path. Two sources of map data are
@@ -31,11 +35,14 @@ it's on:
 - **FEED** (direct phone↔Tello, no laptop): joins the Tello AP, shows the live H.264
   camera, and runs an **autonomous on-device follow loop** — takeoff, **airborne
   target-confirm** (hover + lock box, operator taps CONFIRM before any motion),
-  station-keep on the target, hover/land when lost. Two follow modes:
-  - **FOLLOW TAG** — AprilTag (tag36h11) station-keeping on the soldier's hat tag.
-  - **TRACK** — tag-free visual tracking: lock onto whatever the operator has centered
-    ("track that boat") via Vision saliency + `VNTrackObjectRequest`, then hold its
-    apparent size as the standoff reference.
+  station-keep on the target, hover/land when lost. Two follow modes (the
+  confirmation-dialog default on the Map tab is the visual "me" lock; on the FEED tab
+  these two buttons let you pick):
+  - **TRACK** — tag-free visual tracking (the default "me" lock): lock onto whatever
+    the operator has centered ("track that boat") via Vision saliency +
+    `VNTrackObjectRequest`, then hold its apparent size as the standoff reference.
+  - **FOLLOW TAG** — AprilTag (tag36h11) station-keeping, used to **designate** a
+    target (a vehicle, a spot, another person) rather than to lock the soldier.
 
   This FEED path is the soldier's standalone mobile kit; the laptop is not in the loop.
   Per `../CLAUDE.md`, exactly one Tello controller is armed at a time — on this path the

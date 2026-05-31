@@ -2,10 +2,12 @@
 
 Offline-first aerial recon and situational awareness for dismounted soldiers.
 A piloted **Mavic** (the dashboard's **Leader**, human-piloted) streams video to
-a local brain that runs SLAM, monocular depth estimation, and an open-vocabulary
+a local brain that runs SLAM, monocular depth estimation, and a YOLO/open-vocabulary
 detector; entities are projected into a metre-scale local frame and pushed to an
 operator dashboard and an iOS app over WebSocket. A **Tello** (the **Follower**)
-station-keeps on the soldier via a worn AprilTag. On top of perception, the brain
+station-keeps on the soldier via an on-device **visual "me" lock** by default; a worn
+**AprilTag** is used to **designate** other targets (a vehicle, a spot, another
+person), not to lock the soldier. On top of perception, the brain
 runs **on-device tactical reasoning** — a local vision/text LLM (the offline
 equivalent of "Gemini Live") that produces a rolling threat assessment and answers
 operator questions, all without leaving the laptop.
@@ -19,11 +21,12 @@ engagement, ever.** See [`CLAUDE.md`](./CLAUDE.md) for the hard constraints, and
 
 ```
             [ Soldier w/ Phone ] ──AP (rc / takeoff / land)──> [ Tello ]
-                  │   ▲                                    (follows soldier via
-   mission intent │   │ map + entities                     AprilTag; on-device
-   (hold/recall)  │   │ (subscribe)                         follow loop on phone;
-   + device loc   │   │                                     hovers after takeoff
-   + follow_state ▼   │                                     until target confirmed)
+                  │   ▲                                    (visual-me lock by
+   mission intent │   │ map + entities                     default; AprilTag
+   (hold/recall)  │   │ (subscribe)                         designates other targets;
+   + device loc   │   │                                     on-device follow loop on
+   + follow_state ▼   │                                     phone; hovers after takeoff
+                  │   │                                     until target confirmed)
 [ Manned Mavic ] ──video (RTMP)──> ┌──────── LAPTOP (the brain) ──────────┐
                                    │ RTMP receiver (e.g. MediaMTX :1935)   │
                                    │   │                                   │
@@ -56,15 +59,21 @@ engagement, ever.** See [`CLAUDE.md`](./CLAUDE.md) for the hard constraints, and
 **Tello control — one armed controller at a time.** In the current build the
 **phone is the primary Tello controller**: it joins the Tello AP and commands the
 drone directly over UDP (`192.168.10.1:8889`) — on-device voice → flight functions
-plus the on-phone AprilTag follow loop. After takeoff the Tello **hovers** and the
-operator must **confirm the locked target** before any follow/track motion begins
-(an unconfirmed lock auto-lands on a timeout). The laptop backend also ships a
-`FollowController` as an *alternate* controller; in the dual-live demo it is taken
-out of contention entirely with **`TELLO_DISABLE=1`** (the laptop never connects to
-or commands the Tello, and `/health` reports `tello: disabled`), so the phone is the
-sole Tello controller. There is no code interlock yet, so single-controller arming
-is still an operating rule (see [`CLAUDE.md`](./CLAUDE.md) → "One Tello controller
-armed at a time") and [`docs/DEMO.md`](./docs/DEMO.md) for the full topology. The
+plus the on-phone follow loop (a visual "me" lock by default; an AprilTag designates
+other targets). After takeoff the Tello **hovers** and the operator must **confirm
+the locked target** before any follow/track motion begins (an unconfirmed lock
+auto-lands on the initial takeoff; on a mid-flight re-lock it falls back to a manual
+hover instead). The laptop backend also ships a `FollowController` (plus an approach
+loop) as an *alternate* controller; in the dual-live demo it is taken out of
+contention entirely with **`TELLO_DISABLE=1`** (the laptop never connects to or
+commands the Tello, and `/health` reports `tello: disabled`), so the phone is the
+sole Tello controller. A software arming interlock now exists
+(`backend/app/follow/arming.py` `ArmingLock`): the laptop's follow/approach
+controllers must hold the exclusive lock before driving the Tello, and arming owner
+`"phone"` disarms them. It backstops, but does not replace, the single-controller
+operating rule — the phone talks to the Tello over its own AP, outside the laptop's
+lock (see [`CLAUDE.md`](./CLAUDE.md) → "One Tello controller armed at a time") and
+[`docs/DEMO.md`](./docs/DEMO.md) for the full topology. The
 phone also subscribes to the world model and sends mission `intent` /
 `device_location` plus a relative `follow_state` (the Tello's range/bearing from the
 soldier) over the WebSocket; the laptop owns the world model, rebroadcasts
@@ -78,12 +87,15 @@ Two contracts every subsystem meets at:
   `Detections.source` is `"leader"` (recon) / `"follower"` (companion).
 - **Contract B — WebSocket protocol:**
   - server → clients: `world_snapshot`, `mission_state`, `health`, `detections`,
-    `follow_state`
-  - clients → server: `intent`, `device_location`, `follow_state`
+    `follow_state`, `buildings_updated`
+  - clients → server: `intent`, `device_location`, `follow_state`,
+    `entity_report`, `label_event`
 
 `follow_state` carries the companion Tello's **relative** range/bearing + follow
-`phase` from the soldier — deliberately **not** map coordinates, because the phone's
-follow frame and the Mavic SLAM frame aren't co-registered. The phone publishes it;
+`phase` from the soldier, plus `target_type` (`visual_me` / `tag`) + `target_label`
+so the dashboard can show a follow target badge (ME / TAG) — deliberately **not** map
+coordinates, because the phone's follow frame and the Mavic SLAM frame aren't
+co-registered. The phone publishes it;
 the laptop rebroadcasts it (injecting a `stale` phase if the phone goes quiet) so
 the dashboard can draw a self-contained radar inset.
 
@@ -110,31 +122,42 @@ honours them from any stage.
 │   │   ├── ws_hub.py              # WebSocket fan-out
 │   │   ├── video.py               # FrameSource, StreamVideoSource, SwitchableSource, NullSource
 │   │   ├── clock.py               # injectable clock (deterministic tests)
+│   │   ├── designation.py         # Designator — picks top recon detection → designated_target
+│   │   ├── map_area.py            # operator-requested OSM buildings re-fetch (/map/area)
 │   │   ├── reasoning/
 │   │   │   └── intel.py           # IntelReasoner + IntelChat over a LOCAL Ollama model
 │   │   ├── perception/
 │   │   │   ├── pipeline.py        # the live perception loop
-│   │   │   ├── yolo.py            # YOLO / YOLO-World detector wrapper (+ optional COCO ensemble)
+│   │   │   ├── yolo.py            # YOLO / YOLO-World detector wrapper (+ optional COCO + specialty ensembles)
 │   │   │   ├── depth.py           # DepthAnything-V2 monocular depth (optional)
 │   │   │   ├── fusion.py          # YOLO box + SLAM pose (+ depth) → Entity
 │   │   │   ├── file_processor.py  # batch perception over an uploaded clip → sidecar JSON
 │   │   │   └── slam/              # vo, anchor, backend, local_map, types, euroc, orbslam3_runner
+│   │   ├── capture/               # data flywheel (opt-in): recorder, cleaning, packaging,
+│   │   │                          #   schema, foundry_export (live runtime never imports it)
 │   │   ├── tello/
 │   │   │   ├── client.py          # TelloClient — djitellopy supervisor (laptop-side controller)
-│   │   │   └── video.py           # TelloVideoSource — Tello video → FrameSource
+│   │   │   └── video.py           # TelloVideoSource — Tello video → FrameSource (freshness-windowed)
 │   │   └── follow/
-│   │       ├── apriltag.py        # soldier tag detection (bearing + distance)
-│   │       └── controller.py      # FollowController — PD follow loop, RC, entity emission
+│   │       ├── apriltag.py        # tag detection (bearing + distance)
+│   │       ├── arming.py          # ArmingLock — one laptop controller armed at a time
+│   │       ├── controller.py      # FollowController — PD follow loop, RC, entity emission
+│   │       ├── approach.py        # ApproachController — backend approach-to-target loop
+│   │       └── target.py          # designated-target selection for the approach loop
 │   ├── tests/                     # pytest, deterministic (FakeClock); + slam/
 │   ├── run.sh                     # uvicorn app.server:app on :8000
+│   ├── run-indoor.sh              # indoor preset (COCO + specialty weapon model, depth off)
+│   ├── run-outdoor.sh             # outdoor preset (YOLO-World defense vocab + COCO + specialty)
 │   └── requirements.txt           # incl. python-multipart for upload
 ├── frontend/                      # operator dashboard (Next.js 14 + Tailwind, :3000)
 │   └── src/
 │       ├── app/                   # layout.tsx, globals.css
 │       │   ├── page.tsx           # marketing LANDING page (route /), links to /operator
-│       │   └── operator/page.tsx  # the OPERATOR DASHBOARD (route /operator)
+│       │   ├── operator/page.tsx  # the OPERATOR DASHBOARD (route /operator)
+│       │   ├── data/page.tsx      # Foundry "Data" view (back-at-base, route /data)
+│       │   └── api/foundry/       # server-side Foundry proxy + Ask routes (token never client-side)
 │       ├── components/
-│       │   ├── FollowInset.tsx    # Tello follow radar (relative range/bearing)
+│       │   ├── FollowInset.tsx    # Tello follow radar (relative range/bearing + ME/TAG badge)
 │       │   ├── VideoFeed.tsx      # polled JPEG + bounding-box overlay
 │       │   ├── VideoPlayer.tsx    # uploaded-clip playback + cached overlay
 │       │   ├── SourceSelector.tsx # RTMP / file source switch + upload UI
@@ -142,20 +165,24 @@ honours them from any stage.
 │       │   ├── LocalMap2D.tsx     # 2D top-down map
 │       │   ├── LocalMap3D.tsx     # Three.js / R3F 3D map
 │       │   ├── Buildings.tsx      # pre-cached OSM building footprints overlay
+│       │   ├── OperationalArea.tsx # set/refetch the OSM buildings area
 │       │   ├── EntityList.tsx     # live entity table
 │       │   ├── IntelPanel.tsx     # threat board
 │       │   ├── IntelSummaryCard.tsx # rolling on-device reasoning assessment
 │       │   ├── IntelChat.tsx      # operator Q&A chat against the local LLM
+│       │   ├── FoundryDataView.tsx # exported ontology browser + Ask box
 │       │   ├── ConsolePanel.tsx   # rolling detection log
 │       │   ├── Clock.tsx          # mission clock
 │       │   ├── StatusBar.tsx      # link / leader / perception / world / det
 │       │   └── ThreatAlert.tsx    # bottom-right warning popup
-│       └── lib/                   # contracts, entities, feedUrl, playback, projection,
-│                                  # status, threats, useWorldClient, wsConfig
-│                                  # (+ vitest: feedUrl.test.ts, wsConfig.test.ts)
+│       └── lib/                   # contracts, entities, feedUrl, followTarget, playback,
+│                                  # projection, status, threats, trails, useWorldClient,
+│                                  # wsConfig, foundryData, foundryServer (+ vitest tests)
 ├── mobile/                        # SwiftUI iOS app (XcodeGen, pairs with Cactus/Gemma)
-├── scripts/                       # asc.py, run_slam_video.py, fetch_buildings.py
-├── docs/                          # DEMO runbook + MOBILE, SLAM, VIDEO, VOICE notes
+├── scripts/                       # asc.py, run_slam_video.py, fetch_buildings.py,
+│                                  #   clean_captures.py, package_dataset.py, export_to_foundry.py
+├── docs/                          # DEMO + DEMO_DAY runbooks; MOBILE, SLAM, VIDEO, VOICE,
+│                                  #   DATA_FLYWHEEL, FOUNDRY_SETUP notes
 ├── models/                        # local weights — git-ignored
 └── captures/                      # recorded media for replay — git-ignored
 ```
@@ -209,21 +236,28 @@ Configure producers with env vars (or edit `run.sh`):
 | `YOLO_CONF` | `0.20` | confidence threshold |
 | `YOLO_COCO_WEIGHTS` | _(unset)_ | optional 2nd detector (standard COCO YOLOv8); its kept classes are pruned from the open-vocab set |
 | `YOLO_COCO_KEEP` | person/car/truck/motorcycle/bicycle/bus/backpack | COCO labels trusted over open-vocab |
+| `YOLO_SPECIALTY_WEIGHTS` | _(unset)_ | optional 3rd detector (e.g. a weapons-finetuned YOLOv8) run alongside world + COCO |
+| `YOLO_SPECIALTY_KEEP` | _(unset = none)_ | which specialty labels reach the dashboard (lowercased) |
+| `YOLO_SPECIALTY_CONF` | _(unset = use `YOLO_CONF`)_ | per-detector confidence floor for the specialty model (noisy threat models want ≥0.40) |
 | `DEPTH_MODEL` | `depth-anything/Depth-Anything-V2-Small-hf` | HF model id, or `off` for ground-plane fallback |
 | `DEPTH_SCALE` | `5.0` | inverse-depth → metres heuristic |
 | `ANCHOR_TAG_SIZE_M` | `0.20` | physical side length of the metric-anchor AprilTag |
-| `FOLLOW_TAG_SIZE_M` | `0.18` | soldier-worn follow tag size |
-| `FOLLOW_TAG_ID` | _(unset = any tag)_ | restrict follow to a specific tag id |
+| `FOLLOW_TAG_SIZE_M` | `0.18` | follow/designation tag size (laptop `FollowController`) |
+| `FOLLOW_TAG_ID` | _(unset = any tag)_ | restrict the laptop follow to a specific tag id |
+| `APPROACH_STANDOFF_M` | `1.5` | standoff the laptop `ApproachController` holds from its target |
 | `PERCEPTION_FPS` | `5` | perception loop rate |
 | `BROADCAST_HZ` | `10` | WS broadcast cadence |
 | `TELLO_RETRY_S` | `3` | Tello supervisor reconnect interval |
 | `TELLO_DISABLE` | `0` | `1` skips the laptop's Tello stack entirely (no connect, no commands; `/health` → `tello: disabled`) so the phone is the sole Tello controller in the dual-live demo |
 | `INTEL_MODEL` | `gemma3:4b` | local Ollama model for reasoning + chat; `off` disables the intel layer |
-| `INTEL_VISION` | `0` | `1` enables image-aware reasoning (~30× slower than text-only) |
+| `INTEL_VISION` | `1` | image-aware reasoning by default; `0` falls back to the text-only path (~30× faster) |
 | `INTEL_INTERVAL_S` | `5` | reasoning-loop interval |
 | `DASHBOARD_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | CORS allowlist for state-mutating POSTs |
 | `OPERATOR_KEY` | _(unset = no auth)_ | when set, gates POSTs behind an `X-Operator-Key` header |
 | `MAX_UPLOAD_MB` | `500` | per-file upload cap |
+| `CAPTURE_ENABLED` | `0` | `1` records the data-flywheel capture (Mavic frames + detections + label events) |
+| `CAPTURE_MISSION_ID` | `mission` | per-mission capture id (use a unique id per run) |
+| `CAPTURE_CADENCE_S` / `CAPTURE_LOW_CONF` / `CAPTURE_MAX_MB` | `2.0` / `0.4` / `2000` | capture sampling cadence, low-confidence keep threshold, byte budget (MB) |
 
 The dashboard can hot-swap the Leader source to an uploaded clip at runtime
 (`SourceSelector` → `POST /video/source/upload`); the backend runs perception over
@@ -238,7 +272,8 @@ HTTP surface (read `server.py` for exact behaviour): `GET /health`,
 `GET /video/leader.mjpg` · `/video/follower.mjpg` (legacy multipart),
 `GET /video/source` · `/video/upload/status`, `POST /video/source/rtmp` ·
 `/video/source/upload`, `GET /video/file/{name}` · `/video/detections/{name}`,
-`GET /map/buildings`, `GET /intel/summary`, `POST /intel/chat`, and `WS /ws`.
+`GET /map/buildings`, `POST /map/area`, `GET /intel/summary`, `POST /intel/deep-look`,
+`POST /intel/chat`, and `WS /ws`.
 
 ### 3. Dashboard
 
@@ -268,11 +303,13 @@ ollama pull gemma3:4b                  # default INTEL_MODEL
 ```
 
 When Ollama is reachable, the backend runs `IntelReasoner` every `INTEL_INTERVAL_S`
-over the latest detections (and, with `INTEL_VISION=1`, the latest JPEG) to produce
-a short tactical assessment + threat level, and `IntelChat` answers operator
-questions grounded in that context. Both use the **same local model** — no extra
-download, no cloud. If Ollama is down or `INTEL_MODEL=off`, the intel endpoints
-report unavailable and the rest of the stack is unaffected.
+over the latest detections (and, with `INTEL_VISION=1` — the default, the latest
+JPEG) to produce a short tactical assessment + threat level, and `IntelChat` answers
+operator questions grounded in that context. The periodic loop, the on-demand
+`POST /intel/deep-look`, and `POST /intel/chat` all share **one** local model
+serialized behind a single `asyncio.Lock` — no extra download, no cloud. If Ollama
+is down or `INTEL_MODEL=off`, the intel endpoints report unavailable and the rest of
+the stack is unaffected.
 
 ### Mobile (iOS)
 
@@ -287,11 +324,12 @@ xcodebuild test -scheme ReconCompanion \
 ```
 
 The app subscribes to `ws://<laptop>:8000/ws`, renders an OSM basemap plus a
-GPS-less range/bearing tactical map, sends `intent` / `device_location` to the
-laptop, and — as the **primary Tello controller** — joins the Tello AP to drive
-the drone directly (on-device voice → flight functions + AprilTag follow loop)
-while decoding the Tello's raw H.264 in the FEED view. Mission intents
-(`follow_me`/`hold`/`recall`/`stop`) still route through the laptop.
+GPS-less range/bearing tactical map, sends `intent` / `device_location` (and
+`follow_state` / `entity_report`) to the laptop, and — as the **primary Tello
+controller** — joins the Tello AP to drive the drone directly (on-device voice →
+flight functions + the follow loop: a visual "me" lock by default, with an AprilTag
+to designate other targets) while decoding the Tello's raw H.264 in the FEED view.
+Mission intents (`hold`/`recall`/`stop`) still route through the laptop.
 
 ## Perception stack — what's loaded
 
@@ -299,10 +337,10 @@ while decoding the Tello's raw H.264 in the FEED view. Mission intents
 |---|---|---|
 | **Visual odometry** | Pure-Python ORB + OpenCV essential-matrix VO with zero-motion gate | Drop-in `ORBSLAM3Runner` (`slam/orbslam3_runner.py`) available if the C++ binary is built |
 | **Metric anchor** | AprilTag (tag36h11), PnP via `pupil-apriltags` | Two observations with parallax fix scale to metres |
-| **Object detection** | Ultralytics YOLO / YOLO-World (open-vocabulary) | 21-prompt defense vocab by default with a `-world` checkpoint; optional standard-COCO ensemble for high-precision person/vehicle/backpack |
+| **Object detection** | Ultralytics YOLO / YOLO-World (open-vocabulary) | defaults to the best bundled COCO model present (prefers `yolov8s` over `yolov8n`); a `-world` checkpoint loads the 21-prompt defense vocab; optional standard-COCO ensemble for high-precision person/vehicle/backpack, plus an optional specialty (e.g. weapons) detector |
 | **Depth** | DepthAnything-V2 via HuggingFace transformers | Optional; loads `transformers`+`torch` lazily, caches locally, then offline |
-| **On-device reasoning** | Ollama-hosted vision/text LLM (default `gemma3:4b`) | Rolling tactical assessment + operator chat; text-only by default, `INTEL_VISION=1` for image-aware. Disabled if Ollama unreachable |
-| **Tello follow (laptop alt.)** | djitellopy + PD station-keep on a soldier-worn AprilTag | Alternate controller; in the dual-live demo it is disabled with `TELLO_DISABLE=1` so the phone flies the Tello |
+| **On-device reasoning** | Ollama-hosted vision/text LLM (default `gemma3:4b`) | Rolling tactical assessment + operator chat; image-aware by default (`INTEL_VISION=1`), `INTEL_VISION=0` for the ~30× faster text-only path. Disabled if Ollama unreachable |
+| **Tello follow (laptop alt.)** | djitellopy + PD station-keep on an AprilTag | Alternate controller, gated behind `ArmingLock`; in the dual-live demo it is disabled with `TELLO_DISABLE=1` so the phone flies the Tello (default visual-me lock; AprilTag designates other targets) |
 
 Model weights are distributed out-of-band (see `models/`); Ollama weights live in
 `~/.ollama/models`. No model downloads at runtime once the caches are warm.
@@ -320,7 +358,7 @@ cd backend && .venv/bin/python -m pytest -q
 ```
 
 ```bash
-cd frontend && npm test                # vitest (feedUrl, wsConfig)
+cd frontend && npm test                # vitest run
 ```
 
 iOS unit tests (Contracts, FollowController, IntentParser, MapProjection,
@@ -329,21 +367,25 @@ WorldClientConfig) run via `xcodebuild test` — see
 
 ## Status notes
 
-- On-device reasoning is text-only by default (YOLO label list → assessment);
-  `INTEL_VISION=1` adds the image but is ~30× slower per tick on Apple Silicon.
-- Voice intent + flight (Cactus + Gemma 3n, on-device) runs on iOS — mic →
-  transcript → closed drone-function / Command vocabulary → direct Tello control or
-  mission intent. See [`docs/VOICE.md`](./docs/VOICE.md).
+- On-device reasoning is image-aware by default (`INTEL_VISION=1`); `INTEL_VISION=0`
+  is the text-only path (YOLO label list → assessment), ~30× faster per tick on
+  Apple Silicon.
+- Live voice STT is Apple's on-device `SFSpeechRecognizer` → deterministic
+  `DroneIntent.match` keyword matcher → direct Tello control or mission intent. The
+  Cactus/Gemma function-calling resolver (`DronePilot`) is compiled in but not wired
+  into the live voice loop. See [`docs/VOICE.md`](./docs/VOICE.md).
 - Monocular depth is heuristic (relative inverse depth → metres); multi-view
   triangulation against SLAM landmarks is the principled successor.
 - ORB-SLAM3 C++ backend integration is drop-in via `ORBSLAM3Runner` but not the
   default.
-- No code interlock yet prevents the phone and the laptop `FollowController` from
-  both commanding the Tello — single-controller arming is an operating rule. The
-  dual-live demo enforces it by convention with `TELLO_DISABLE=1` on the laptop
-  (see [`docs/DEMO.md`](./docs/DEMO.md)).
+- A software `ArmingLock` (`backend/app/follow/arming.py`) now gates the laptop's
+  follow/approach controllers, and `TELLO_DISABLE=1` keeps the laptop off the Tello
+  in the dual-live demo. The single-controller operating rule still stands because
+  the phone commands the Tello over its own AP, outside the laptop's lock (see
+  [`docs/DEMO.md`](./docs/DEMO.md)).
 - The mobile follow loop hovers after takeoff and waits for the operator to confirm
-  the locked target before any follow/track motion; an unconfirmed lock auto-lands.
+  the locked target before any follow/track motion; an unconfirmed lock auto-lands
+  on the initial takeoff but falls back to a manual hover on a mid-flight re-lock.
 
 ## Constraints
 
