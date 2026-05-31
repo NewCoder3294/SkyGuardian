@@ -18,12 +18,16 @@ build/
 datasets/
 captures/*/
 
-# Large binaries — distribute out-of-band
+# Large binaries — distribute out-of-band. The whole models/yolo tree is
+# treated as a local artifact: weights themselves never live in the repo, and
+# operators sometimes symlink the directory across worktrees (see
+# `backend/run-indoor.sh`'s MODELS path) so we keep the symlink out of git too.
 models/**/*.pt
 models/**/*.pth
 models/**/*.onnx
 models/**/*.bin
 models/**/*.mlpackage
+models/yolo
 captures/**/*.mp4
 captures/**/*.mov
 captures/**/*.avi

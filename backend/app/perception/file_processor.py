@@ -29,7 +29,10 @@ import cv2
 import numpy as np
 
 from .fusion import fuse_detections
-from .slam import CameraModel, Frame, LocalMap, MonocularVO
+from .slam import (
+    CameraModel, Frame, LocalMap, MonocularVO,
+    detect_tags, metric_scale_from_tag,
+)
 from .yolo import YoloDetection, YoloDetector
 
 
@@ -77,9 +80,19 @@ def process_video_file(
     yolo_conf: float = 0.20,
     yolo_coco_weights: Optional[str] = None,
     yolo_coco_keep: Optional[list[str]] = None,
+    # Optional third "specialty" detector — mirrors the live pipeline's
+    # ensemble layout so an upload-only model swap (e.g. weapon-finetuned)
+    # works without re-jigging the live config.
+    yolo_specialty_weights: Optional[str] = None,
+    yolo_specialty_keep: Optional[list[str]] = None,
+    yolo_specialty_conf: Optional[float] = None,
     depth_model: Optional[str] = None,
     depth_scale: float = 5.0,
     sample_fps: float = 5.0,
+    # AprilTag of this physical size (metres) is treated as the metric
+    # anchor for the SLAM trajectory: see the live PerceptionPipeline.
+    # Unset → no anchor → SLAM positions stay in arbitrary VO units.
+    tag_size_m: float = 0.20,
     on_progress: Optional[Callable[[float], None]] = None,
 ) -> ProcessedVideo:
     """Run perception over every Nth frame of `video_path` and write the
@@ -127,6 +140,22 @@ def process_video_file(
         except Exception as exc:
             print(f"[file_processor] COCO ensemble disabled: {exc}")
 
+    # Optional third detector: specialty supervised model. Filters via
+    # `specialty_keep_set` so the operator picks which raw labels surface.
+    specialty_detector: YoloDetector | None = None
+    specialty_keep_set: set[str] = {c.lower() for c in (yolo_specialty_keep or [])}
+    if yolo_specialty_weights:
+        _spec_conf = yolo_specialty_conf if yolo_specialty_conf is not None else yolo_conf
+        try:
+            specialty_detector = YoloDetector(
+                yolo_specialty_weights,
+                conf_threshold=_spec_conf,
+                classes=None,
+                imgsz=yolo_imgsz,
+            )
+        except Exception as exc:
+            print(f"[file_processor] specialty ensemble disabled: {exc}")
+
     depth_est = None
     if depth_model:
         try:
@@ -140,6 +169,13 @@ def process_video_file(
     local_map = LocalMap()
     sliding: list[Frame] = []
     _MAX_WINDOW = 8
+
+    # AprilTag metric-anchor state: collect ≥2 tag observations at different
+    # camera positions so we can solve for the VO→metres scale once. Mirrors
+    # the live PerceptionPipeline anchor loop. Without this the per-frame
+    # entities sit in arbitrary VO units, not metres.
+    tag_obs_buffer: list[tuple] = []
+    anchored = False
 
     frames_out: list[FrameSnapshot] = []
     detection_count = 0
@@ -173,7 +209,31 @@ def process_video_file(
             except Exception as exc:
                 print(f"[file_processor] SLAM tick error: {exc}")
 
-        # --- YOLO (ensemble: open-vocab + supervised COCO) ----------------
+        # --- AprilTag metric anchor (once, while the tag is in frame) -----
+        # Mirrors PerceptionPipeline: accumulate two observations at distinct
+        # camera positions, then solve once for the VO→metres scale.
+        if not anchored and current_pose is not None:
+            try:
+                tags = detect_tags(bgr)
+            except RuntimeError:
+                tags = []
+            if tags:
+                tag_obs_buffer.append((tags[0], current_pose.position.copy()))
+            if len(tag_obs_buffer) >= 2:
+                obs_a, vo_a = tag_obs_buffer[0]
+                obs_b, vo_b = tag_obs_buffer[-1]
+                try:
+                    scale = metric_scale_from_tag(
+                        camera.K, tag_size_m, obs_a, vo_a, obs_b, vo_b,
+                    )
+                    local_map.set_anchor(scale)
+                    anchored = True
+                    print(f"[file_processor] metric anchor: scale={scale:.4f}")
+                except ValueError:
+                    # Not enough camera motion between the two observations yet.
+                    pass
+
+        # --- YOLO (ensemble: open-vocab + supervised COCO + specialty) ---
         yolo_dets: list[YoloDetection] = []
         if detector is not None:
             try:
@@ -188,6 +248,14 @@ def process_video_file(
                 yolo_dets.extend(coco_dets)
             except Exception as exc:
                 print(f"[file_processor] COCO YOLO error: {exc}")
+        if specialty_detector is not None:
+            try:
+                spec_dets = specialty_detector.detect(bgr)
+                if specialty_keep_set:
+                    spec_dets = [d for d in spec_dets if d.label.lower() in specialty_keep_set]
+                yolo_dets.extend(spec_dets)
+            except Exception as exc:
+                print(f"[file_processor] specialty YOLO error: {exc}")
 
         # --- depth (only when YOLO produced something) --------------------
         depth_map = None

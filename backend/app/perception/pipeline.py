@@ -358,6 +358,18 @@ class PerceptionPipeline:
                             # Push SLAM entities (mavic_cam, landmarks) into world model.
                             local_map.integrate(self._world, now)
 
+                        # Publish the source-frame dims as soon as any frame
+                        # arrives — independent of whether the detectors fired.
+                        # The dashboard's VideoFeed canvas bails when natural
+                        # image dims are unknown, so withholding them until a
+                        # detection lands leaves the first few seconds of the
+                        # feed without any box overlay even when boxes would
+                        # have rendered fine.
+                        h, w = frame_bgr.shape[:2]
+                        self._latest_dims = (w, h)
+                        if self._latest_boxes_t == 0.0:
+                            self._latest_boxes_t = now
+
                         # --- YOLO + (optional) depth + fusion ---
                         any_detector = (
                             self._detector is not None
@@ -393,7 +405,13 @@ class PerceptionPipeline:
                             inv_h = 1.0 / max(h, 1)
                             self._latest_boxes = [
                                 DetectionBox(
-                                    label=det.label,
+                                    # Normalise label casing — the threat
+                                    # detector emits "Gun" (titlecase) while
+                                    # the open-vocab + COCO ensemble emit
+                                    # "person" / "backpack" (lowercase). The
+                                    # dashboard's threat-class match expects
+                                    # one consistent casing, so flatten here.
+                                    label=det.label.lower(),
                                     confidence=det.confidence,
                                     cx=float(det.cx_px * inv_w),
                                     cy=float(det.cy_px * inv_h),
