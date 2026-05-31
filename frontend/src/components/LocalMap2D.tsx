@@ -486,17 +486,52 @@ function drawEntities(
     if (x < -40 || y < -40 || x > w + 40 || y > h + 40) continue;
     const alpha =
       e.status === "active" ? 1 : e.status === "stale" ? 0.55 : 0.28;
+    const isDesignated = e.id === "designated_target";
+    // Designated recon target gets a targeting reticle behind the glyph.
+    if (isDesignated) drawDesignationReticle(ctx, x, y, alpha);
     drawEntityGlyph(ctx, x, y, e.type, alpha);
 
     if (e.status !== "lost") {
-      const label = (e.label ?? e.id).toUpperCase().slice(0, 14);
+      // Don't truncate the designation callout; ordinary labels stay capped.
+      const raw = (e.label ?? e.id).toUpperCase();
+      const label = isDesignated ? raw : raw.slice(0, 14);
       ctx.font = labelFont;
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
-      ctx.fillStyle = `rgba(86, 60, 20, ${(alpha * 0.9).toFixed(3)})`;
-      ctx.fillText(label, x + 10, y - 10);
+      ctx.fillStyle = isDesignated
+        ? `rgba(160, 50, 30, ${alpha.toFixed(3)})` // red callout for the target
+        : `rgba(86, 60, 20, ${(alpha * 0.9).toFixed(3)})`;
+      ctx.fillText(label, x + 12, y - 12);
     }
   }
+}
+
+/** Targeting reticle for the designated recon target: a red ring + four corner
+ * ticks. Static (no animation) so the canvas repaint stays idempotent. */
+function drawDesignationReticle(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  alpha: number,
+) {
+  const r = 13;
+  ctx.strokeStyle = `rgba(160, 50, 30, ${alpha.toFixed(3)})`;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.stroke();
+  // Four corner ticks just outside the ring.
+  const t = 4;
+  ctx.beginPath();
+  for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {
+    const cx = x + dx * r;
+    const cy = y + dy * r;
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + dx * t, cy);
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx, cy + dy * t);
+  }
+  ctx.stroke();
 }
 
 function drawEntityGlyph(
