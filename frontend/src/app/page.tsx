@@ -390,7 +390,7 @@ export default function LandingPage() {
               {
                 name: "Nicolas Dos Santos",
                 role: "Co-Founder & CEO",
-                image: "/headshot-nick.png",
+                image: "/headshot-nick.jpg",
                 points: [
                   "TS clearance — access to top-tier government contracts",
                   "Incoming at Amazon",
@@ -401,7 +401,7 @@ export default function LandingPage() {
               <article key={person.name} className="tac-corners border border-border-strong bg-bg p-6">
                 <div className="flex items-center gap-5">
                   <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-full border border-border-strong bg-surface">
-                    <Image src={person.image} alt={person.name} fill sizes="80px" className="object-cover object-top scale-50" />
+                    <Image src={person.image} alt={person.name} fill sizes="80px" className="object-cover object-top" />
                   </div>
                   <div>
                     <h3 className="text-xl font-semibold leading-tight">{person.name}</h3>
