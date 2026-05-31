@@ -202,7 +202,7 @@ export default function Page() {
     : connection;
 
   return (
-    <div className="flex h-screen w-screen flex-col bg-bg text-text">
+    <div className="operator-theme flex h-screen w-screen flex-col bg-bg text-text">
       <header className="relative flex items-center justify-between gap-4 border-b border-border bg-surface/80 px-6 py-3 backdrop-blur-sm">
         <div className="flex items-center gap-4">
           {/* eslint-disable-next-line @next/next/no-img-element */}
