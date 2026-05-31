@@ -35,7 +35,7 @@ final class FollowCoordinator: ObservableObject {
     private let detector = AprilTagDetector()
     private let tracker = ObjectTracker()
     enum Mode { case tag, track }
-    private var mode: Mode = .tag
+    private var mode: Mode = .tag   // control state — only touched on rcQueue (see ":51")
 
     private var controller = FollowController()
 
@@ -89,6 +89,7 @@ final class FollowCoordinator: ObservableObject {
 
         TelloCommander.shared.send("takeoff")
         rcQueue.async {
+            self.mode = .tag         // AprilTag follow; reset so we don't inherit a prior .track arm
             self.armed = true
             self.followActive = true
             self.tookOff = false
@@ -122,12 +123,12 @@ final class FollowCoordinator: ObservableObject {
         self.stream = stream
         stream.start()
         controller.config = config
-        mode = .track
         detectQueue.async { self.tracker.reset() }
         stream.onPixelBuffer = { [weak self] pb in self?.ingest(pb) }
 
         TelloCommander.shared.send("takeoff")
         rcQueue.async {
+            self.mode = .track       // visual tracker is the target source (set on rcQueue, the owner)
             self.armed = true
             self.followActive = true
             self.tookOff = false
@@ -196,16 +197,19 @@ final class FollowCoordinator: ObservableObject {
 
     /// Stop following and land. Safe to call any time.
     func disarmAndLand() {
-        stream?.onPixelBuffer = nil
-        rcQueue.async {                    // rcTimer + control state are rcQueue-owned
-            self.rcTimer?.cancel(); self.rcTimer = nil
-            self.armed = false; self.followActive = false; self.confirmed = false
-            self.manualHover = false; self.scripted = false
-        }
+        // Neutralize + land immediately on the caller thread — the failsafe must not
+        // wait on the rcQueue. The state teardown that follows is serialized on rcQueue.
         TelloCommander.shared.rc(.hover)
         TelloCommander.shared.send("land")
-        mode = .tag
-        detectQueue.async { self.tracker.reset() }
+        let s = stream
+        rcQueue.async {                    // rcTimer + control state are rcQueue-owned
+            self.rcTimer?.cancel(); self.rcTimer = nil
+            s?.onPixelBuffer = nil         // stop feeding ingest before clearing mode/tracker
+            self.mode = .tag
+            self.armed = false; self.followActive = false; self.confirmed = false
+            self.manualHover = false; self.scripted = false
+            self.detectQueue.async { self.tracker.reset() }
+        }
         setPhase(.disarmed)
         DispatchQueue.main.async { self.normalizedCorners = [] }
     }
@@ -213,14 +217,17 @@ final class FollowCoordinator: ObservableObject {
     /// Emergency motor cut — stop the loop and cut motors immediately, with NO
     /// graceful land. Use for a real failsafe, not a normal stop.
     func emergencyCut() {
-        stream?.onPixelBuffer = nil
+        // Cut motors immediately on the caller thread — the failsafe must not wait on
+        // the rcQueue. The state teardown that follows is serialized on rcQueue.
+        TelloCommander.shared.send("emergency")
+        let s = stream
         rcQueue.async {
             self.rcTimer?.cancel(); self.rcTimer = nil
+            s?.onPixelBuffer = nil         // stop feeding ingest before clearing mode/tracker
+            self.mode = .tag
             self.armed = false; self.followActive = false; self.confirmed = false
+            self.detectQueue.async { self.tracker.reset() }
         }
-        TelloCommander.shared.send("emergency")
-        mode = .tag
-        detectQueue.async { self.tracker.reset() }
         setPhase(.disarmed)
         DispatchQueue.main.async { self.normalizedCorners = [] }
     }
@@ -235,23 +242,29 @@ final class FollowCoordinator: ObservableObject {
         lastDetect = now
         detLock.unlock()
 
-        detectQueue.async { [weak self] in
+        // Snapshot `mode` on its owning queue (rcQueue) before doing detection work, so
+        // the detect path never reads the cross-thread control state directly.
+        rcQueue.async { [weak self] in
             guard let self else { return }
-            let synth: TagDetection?
-            if self.mode == .track {
-                synth = self.trackStep(pixelBuffer)         // publishes its own box
-            } else {
-                let best = self.pickTarget(self.detector.detect(pixelBuffer))
-                self.publish(best)
-                synth = best
-            }
-            self.rcQueue.async {
-                if let synth {
-                    self.latest = synth
-                    self.latestTime = CACurrentMediaTime()
+            let mode = self.mode
+            self.detectQueue.async { [weak self] in
+                guard let self else { return }
+                let synth: TagDetection?
+                if mode == .track {
+                    synth = self.trackStep(pixelBuffer)         // publishes its own box
+                } else {
+                    let best = self.pickTarget(self.detector.detect(pixelBuffer))
+                    self.publish(best)
+                    synth = best
                 }
+                self.rcQueue.async {
+                    if let synth {
+                        self.latest = synth
+                        self.latestTime = CACurrentMediaTime()
+                    }
+                }
+                self.detLock.lock(); self.busy = false; self.detLock.unlock()
             }
-            self.detLock.lock(); self.busy = false; self.detLock.unlock()
         }
     }
 
