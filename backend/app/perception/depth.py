@@ -15,9 +15,28 @@ Honesty notes:
 """
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 import numpy as np
+
+
+def _autodetect_device() -> Optional[str]:
+    """Pick a sensible device for the depth pipeline. `DEPTH_DEVICE` env wins.
+    Otherwise prefer Apple-Silicon MPS — CPU runs ~3x slower. None means let
+    transformers keep its own default."""
+    env = os.environ.get("DEPTH_DEVICE", "").strip()
+    if env:
+        return env
+    try:
+        import torch  # noqa: PLC0415
+        if torch.backends.mps.is_available():
+            return "mps"
+        if torch.cuda.is_available():
+            return "cuda:0"
+    except Exception:
+        pass
+    return None
 
 
 class DepthEstimator:
@@ -31,12 +50,15 @@ class DepthEstimator:
         device: Optional[str] = None,
     ) -> None:
         from transformers import pipeline  # noqa: PLC0415
-        # device=-1 forces CPU; "mps" works on Apple Silicon for ~3x speedup.
+        if device is None:
+            device = _autodetect_device()
         kwargs = {"task": "depth-estimation", "model": model_name}
         if device is not None:
             kwargs["device"] = device
         self._pipe = pipeline(**kwargs)
         self._scale = float(scale)
+        if device:
+            print(f"[depth] {model_name} → device={device}")
 
     def depth(self, frame_bgr: np.ndarray) -> np.ndarray:
         """Run depth inference on a single BGR frame.

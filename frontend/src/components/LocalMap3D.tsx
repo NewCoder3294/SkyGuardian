@@ -34,6 +34,9 @@ interface Props {
   statusLine?: string;
   /** Increments each time the buildings cache is refreshed (from useWorldClient). */
   buildingsVersion?: number;
+  /** "indoor" hides the OSM buildings layer — they're geographic city footprints
+   *  with no relationship to an indoor SLAM frame. Default "outdoor". */
+  environment?: "outdoor" | "indoor";
 }
 
 export function LocalMap3D({
@@ -45,11 +48,15 @@ export function LocalMap3D({
   buildingsRadiusM = 0,
   statusLine,
   buildingsVersion,
+  environment = "outdoor",
 }: Props) {
   // When a buildings layer is configured we frame the camera against the
   // building radius (not the SLAM span) so the campus is visible on first
-  // paint. Otherwise stick with the tight SLAM-only default.
-  const cameraSpan = buildingsRadiusM > 0 ? buildingsRadiusM * 0.9 : spanMeters;
+  // paint. Otherwise stick with the tight SLAM-only default. Indoor mode
+  // collapses to the SLAM span regardless of building config so the camera
+  // doesn't start zoomed-out staring at empty space.
+  const showBuildings = environment === "outdoor";
+  const cameraSpan = showBuildings && buildingsRadiusM > 0 ? buildingsRadiusM * 0.9 : spanMeters;
   return (
     <div className="relative h-full w-full bg-bg">
       <Canvas
@@ -63,7 +70,7 @@ export function LocalMap3D({
 
         <SceneFloor span={cameraSpan} />
         <OriginMarker />
-        {apiBase && (
+        {showBuildings && apiBase && (
           <Buildings apiBase={apiBase} clipRadiusM={buildingsRadiusM} buildingsVersion={buildingsVersion} />
         )}
 

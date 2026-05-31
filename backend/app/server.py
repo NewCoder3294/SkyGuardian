@@ -297,6 +297,18 @@ if _YOLO_COCO_WEIGHTS and _YOLO_CLASSES:
     _strip = set(_YOLO_COCO_KEEP)
     _YOLO_CLASSES = [c for c in _YOLO_CLASSES if c.lower() not in _strip]
 
+# Optional specialty detector (e.g. weapons-finetuned YOLOv8). Runs alongside
+# world + COCO; its raw classes are filtered to `YOLO_SPECIALTY_KEEP` so the
+# operator opts in to which of its labels reach the dashboard. Unset by
+# default — no behaviour change for stacks that don't ship a specialty model.
+_YOLO_SPECIALTY_WEIGHTS = os.environ.get("YOLO_SPECIALTY_WEIGHTS") or None
+_yolo_specialty_keep_env = os.environ.get("YOLO_SPECIALTY_KEEP")
+_YOLO_SPECIALTY_KEEP: list[str] = (
+    [c.strip().lower() for c in _yolo_specialty_keep_env.split(",") if c.strip()]
+    if _yolo_specialty_keep_env
+    else []
+)
+
 # Monocular depth model — unlocks true 3D positions for YOLO entities.
 # Disable with DEPTH_MODEL="off". Calibration: DEPTH_SCALE tunes the
 # (relative inverse depth) → metres mapping.
@@ -326,6 +338,8 @@ perception = PerceptionPipeline(
     yolo_conf=_YOLO_CONF,
     yolo_coco_weights=_YOLO_COCO_WEIGHTS,
     yolo_coco_keep=_YOLO_COCO_KEEP,
+    yolo_specialty_weights=_YOLO_SPECIALTY_WEIGHTS,
+    yolo_specialty_keep=_YOLO_SPECIALTY_KEEP,
     depth_model=_DEPTH_MODEL,
     depth_scale=_DEPTH_SCALE,
     tag_size_m=float(os.environ.get("ANCHOR_TAG_SIZE_M", "0.20")),
