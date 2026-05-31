@@ -392,7 +392,7 @@ function MapViewToggle({
   onChange: (v: "2d" | "3d") => void;
 }) {
   return (
-    <div className="pointer-events-auto absolute right-4 top-4 flex border border-border-strong bg-surface/85 font-mono text-[10px] uppercase tracking-[0.3em] backdrop-blur-sm">
+    <div className="pointer-events-auto absolute right-4 top-4 flex border border-border bg-surface/85 font-mono text-[10px] uppercase tracking-[0.3em] backdrop-blur-sm">
       {(["2d", "3d"] as const).map((v) => (
         <button
           key={v}
@@ -401,8 +401,8 @@ function MapViewToggle({
           aria-pressed={value === v}
           className={`px-3 py-1.5 transition-colors ${
             value === v
-              ? "bg-accent/15 text-accent"
-              : "text-text-muted hover:text-accent"
+              ? "bg-text text-invert"
+              : "text-text-dim hover:text-text"
           }`}
         >
           {v.toUpperCase()}
@@ -420,7 +420,7 @@ function EnvironmentToggle({
   onChange: (v: "outdoor" | "indoor") => void;
 }) {
   return (
-    <div className="pointer-events-auto absolute right-4 top-14 flex border border-border-strong bg-surface/85 font-mono text-[10px] uppercase tracking-[0.3em] backdrop-blur-sm">
+    <div className="pointer-events-auto absolute right-4 top-14 flex border border-border bg-surface/85 font-mono text-[10px] uppercase tracking-[0.3em] backdrop-blur-sm">
       {(["outdoor", "indoor"] as const).map((v) => (
         <button
           key={v}
@@ -429,8 +429,8 @@ function EnvironmentToggle({
           aria-pressed={value === v}
           className={`px-3 py-1.5 transition-colors ${
             value === v
-              ? "bg-accent/15 text-accent"
-              : "text-text-muted hover:text-accent"
+              ? "bg-text text-invert"
+              : "text-text-dim hover:text-text"
           }`}
         >
           {v}
