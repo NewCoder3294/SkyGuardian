@@ -41,25 +41,34 @@ Use "Configure without datasource" / Edits-Enabled. Note the ontology RID →
 | `label` | String |
 | `count`, `train`, `val` | Integer |
 
-## 3. Actions — create 4
+## 3. Actions — let Foundry auto-generate them
 
-`create-capture-mission`, `edit-capture-mission`, `create-detection-class`,
-`edit-detection-class`.
+Saving each object type auto-generates `create-`, `edit-`, and `delete-` actions.
+Keep them. The exporter targets `create-capture-mission`, `edit-capture-mission`,
+`create-detection-class`, `edit-detection-class` (override via env in step 5 if
+yours differ).
 
-**Two gotchas (verified on this tenant during the Mendacity build):**
-- **Add the PK as a manual parameter** (`missionId` on the CaptureMission actions,
-  `classKey` on the DetectionClass actions) to **both** create *and* edit, and bind
-  it to the PK property. Foundry's auto-generated Create action omits the PK, but the
-  exporter sends it.
-- **All parameter API names must be camelCase**, exactly as the property names above
-  (`missionId`, `framesOut`, `classKey`, …). Auto-generated params are already
-  camelCased; the manually-added PK params you must type in camelCase.
-- The exporter sends the **same full parameter set** to create and edit, so the edit
-  action must accept all the same properties (auto-generated edit actions do — just
-  add the PK param).
+**The primary key is the one thing to get right** (verified end-to-end against the
+live tenant on 2026-05-30). A "configure without datasource" object exposes its PK
+through *two differently-named inputs*, and Foundry does **not** name either after
+your PK property — so the exporter remaps the PK onto the real input ids:
 
-If your action API names differ from the defaults, override them with the env vars
-in step 5.
+- **Create action — PK is a string parameter.** When you add it, Foundry defaults its
+  input **id** to `new_parameter` even if you set the display name to `missionId` /
+  `classKey`. You must (a) add this parameter and (b) in the create **Rule** set the
+  PK property's `MAP TO` to this parameter — otherwise the PK gets a random UUID
+  instead of your value. The exporter sends the PK under this id (default
+  `new_parameter`; override with `FOUNDRY_MISSION_PK_PARAM` / `FOUNDRY_CLASS_PK_PARAM`).
+- **Edit action — object located by an object-reference parameter.** Its input id is
+  the **object type's API name** (`CaptureMission` / `DetectionClass`), not your PK.
+  Leave it as auto-generated — **do not rename its id**, because the edit form's
+  prefills reference it by id and renaming orphans them (5 "parameter used in prefill
+  is missing" errors). The exporter locates the object under this id on re-runs
+  (override with `FOUNDRY_MISSION_EDIT_LOCATOR` / `FOUNDRY_CLASS_EDIT_LOCATOR`).
+
+All other parameters are auto-named camelCase matching the property names and need no
+changes. Confirm the real input ids any time with:
+`GET /api/v2/ontologies/{rid}/actionTypes/{action-api-name}` → the `parameters` map.
 
 ## 4. Token
 
@@ -79,6 +88,11 @@ export FOUNDRY_DATASET_RID=ri.foundry.main.dataset....
 # export FOUNDRY_ACTION_CLASS=create-detection-class
 # export FOUNDRY_ACTION_MISSION_EDIT=edit-capture-mission
 # export FOUNDRY_ACTION_CLASS_EDIT=edit-detection-class
+# PK input ids (see step 3 — defaults match a "configure without datasource" object):
+# export FOUNDRY_MISSION_PK_PARAM=new_parameter        # create-capture-mission PK string input
+# export FOUNDRY_CLASS_PK_PARAM=new_parameter          # create-detection-class PK string input
+# export FOUNDRY_MISSION_EDIT_LOCATOR=CaptureMission   # edit-capture-mission object-ref input
+# export FOUNDRY_CLASS_EDIT_LOCATOR=DetectionClass     # edit-detection-class object-ref input
 # export FOUNDRY_TIMEOUT_S=30
 # export FOUNDRY_MAX_RETRIES=3
 
