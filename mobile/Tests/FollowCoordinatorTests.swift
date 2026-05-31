@@ -20,7 +20,7 @@ final class FollowCoordinatorTests: XCTestCase {
         super.setUp()
         sink = RecordingCommandSink()
         clock = 1000
-        coord = FollowCoordinator(commands: sink, now: { [unowned self] in self.clock })
+        coord = FollowCoordinator(commands: sink, now: { [weak self] in self?.clock ?? 0 })
     }
 
     private func tag(distance: Double = 2.0, bearingDeg: Double = 0, margin: Float = 50) -> TagDetection {

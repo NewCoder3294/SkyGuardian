@@ -72,10 +72,17 @@ final class FollowCoordinator: ObservableObject {
     private let commands: DroneCommandSink
     private let now: () -> CFTimeInterval
 
-    /// Synchronous mirror of `phase` (the @Published one updates on the main queue
-    /// asynchronously). Tests read this immediately after driving the loop.
+    /// Synchronous, TEST-ONLY mirror of `phase`. The @Published `phase` updates on
+    /// the main queue asynchronously, so tests read this instead for an immediate
+    /// value. It is written from `setPhase` on whatever thread calls it (main-thread
+    /// public API OR rcQueue via tick), so it is ONLY safe to read from single-
+    /// threaded tests that never start the real rc timer (the established seam
+    /// contract). Production code must not read it.
     private(set) var currentPhase: Phase = .disarmed
 
+    /// `commands`/`now` are injected for testability. Pass an explicit `commands:`
+    /// in tests so the real TelloCommander singleton (which owns a UDP socket) is
+    /// never touched. Production uses the singleton + the real monotonic clock.
     init(commands: DroneCommandSink = TelloCommander.shared,
          now: @escaping () -> CFTimeInterval = { CACurrentMediaTime() }) {
         self.commands = commands
