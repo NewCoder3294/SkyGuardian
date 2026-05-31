@@ -130,4 +130,20 @@ export interface DeviceLocation {
   t: number;
 }
 
-export type ClientMessage = IntentMessage | DeviceLocation;
+/**
+ * Operator label decision recorded for the data flywheel: confirm a true
+ * positive, reject a false positive, or correct the class. box (if present)
+ * is [cx, cy, w, h] normalized 0..1.
+ */
+export interface LabelEvent {
+  type: "label_event";
+  kind: "confirm" | "reject" | "correct";
+  source: string;
+  label?: string;
+  corrected_label?: string;
+  box?: number[];
+  note?: string;
+  t: number;
+}
+
+export type ClientMessage = IntentMessage | DeviceLocation | LabelEvent;
