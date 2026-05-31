@@ -111,8 +111,8 @@ instead of crashing):
   `gemma3:4b`); `IntelChat` answers operator Q&A on the same model grounded in the
   current feed; `IntelSummary` is the result record; `ollama_alive()` gates both.
   Fully local — no cloud. Disabled if Ollama is unreachable. Env: `INTEL_MODEL`
-  (default `gemma3:4b`, `off` disables), `INTEL_VISION` (default `0`; the image
-  pass is ~30× slower), `INTEL_INTERVAL_S` (default 5).
+  (default `gemma3:4b`, `off` disables), `INTEL_VISION` (default `1` — image-aware;
+  `0` is the ~30× faster text-only path), `INTEL_INTERVAL_S` (default 5).
 - `world_model.py`, `state_machine.py`, `ws_hub.py`, `clock.py`, `video.py` round
   out the spine.
 

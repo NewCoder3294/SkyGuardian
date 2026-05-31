@@ -114,12 +114,16 @@ unreachable, an inference is already in flight, or no perception frame has lande
     `-world` checkpoints), `YOLO_IMGSZ` (default `960`), `YOLO_CONF` (default `0.20`),
     `YOLO_COCO_WEIGHTS` + `YOLO_COCO_KEEP` (optional COCO YOLOv8 ensemble),
     `DEPTH_MODEL` (`off` to disable), `DEPTH_SCALE`, `PERCEPTION_FPS` (default `5`),
-    `ANCHOR_TAG_SIZE_M`.
+    `ANCHOR_TAG_SIZE_M`. The upload/playback path runs a separate, heavier detector
+    stack via `UPLOAD_YOLO_*` overrides (`UPLOAD_YOLO_WEIGHTS`/`_CLASSES`/`_IMGSZ`/
+    `_CONF`, `_COCO_WEIGHTS`/`_COCO_KEEP`, `_SPECIALTY_WEIGHTS`/`_SPECIALTY_KEEP`/
+    `_SPECIALTY_CONF`); each falls back to its live `YOLO_*` value when unset.
   - Follow / Tello: `FOLLOW_TAG_SIZE_M`, `FOLLOW_TAG_ID`, `TELLO_RETRY_S`,
     `TELLO_DISABLE` (`1` skips the laptop Tello client/camera/follow at startup →
     `tello: "disabled"`; for the demo where the phone owns the Tello).
   - Reasoning: `INTEL_MODEL` (default `gemma3:4b`, `off` disables), `INTEL_VISION`
-    (default `0`), `INTEL_INTERVAL_S` (default `5`).
+    (default `1` — image-aware; `0` is the ~30× faster text-only path),
+    `INTEL_INTERVAL_S` (default `5`).
   - Hardening: `DASHBOARD_ORIGINS` (CORS allowlist), `OPERATOR_KEY` (optional
     `X-Operator-Key` gate on state-mutating POSTs), `MAX_UPLOAD_MB` (default `500`).
   Tests use `FakeClock` where timing matters.
