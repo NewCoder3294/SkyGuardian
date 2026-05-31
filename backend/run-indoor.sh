@@ -29,10 +29,10 @@ exec env \
   YOLO_COCO_KEEP="person,backpack" \
   YOLO_SPECIALTY_WEIGHTS="$MODELS/threat-yolov8n.pt" \
   YOLO_SPECIALTY_KEEP="gun" \
-  YOLO_SPECIALTY_CONF="0.30" \
+  YOLO_SPECIALTY_CONF="0.20" \
   YOLO_DRONE_WEIGHTS="$MODELS/flying-yolov8m.pt" \
   YOLO_DRONE_KEEP="drone" \
-  YOLO_DRONE_CONF="0.35" \
+  YOLO_DRONE_CONF="0.25" \
   YOLO_DRONE_RELABEL="0:drone,4:drone" \
   YOLO_CONF="0.30" \
   YOLO_IMGSZ="480" \
