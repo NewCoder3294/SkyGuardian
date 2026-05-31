@@ -17,10 +17,13 @@ def main() -> int:
     ap.add_argument("--root", type=Path, default=Path("captures"))
     ap.add_argument("--dup-threshold", type=int, default=5)
     ap.add_argument("--conf-floor", type=float, default=0.1)
+    ap.add_argument("--blank-std", type=float, default=5.0,
+                    help="grayscale std below which a frame is treated as blank")
     args = ap.parse_args()
 
     report = clean_mission(args.root / args.mission,
-                           dup_threshold=args.dup_threshold, conf_floor=args.conf_floor)
+                           dup_threshold=args.dup_threshold, conf_floor=args.conf_floor,
+                           blank_std=args.blank_std)
     print(f"[clean] {json.dumps(report)}")
     return 0
 

@@ -44,6 +44,11 @@ def _clean_boxes(dets: list[dict], conf_floor: float) -> list[dict]:
         cx, cy, w, h = (list(box) + [0, 0, 0, 0])[:4]
         if w <= 0 or h <= 0:
             continue
+        # Component-wise bounds: the centre must be inside the frame and the size
+        # must be positive and <= 1. We deliberately do NOT drop edge-clipped
+        # boxes (centre in-frame, an edge slightly past 0/1) — partially-out-of-
+        # frame objects are valid detections and useful training data; the YOLO
+        # trainer clamps them. Only truly degenerate boxes are removed here.
         if not (0.0 <= cx <= 1.0 and 0.0 <= cy <= 1.0 and 0.0 < w <= 1.0 and 0.0 < h <= 1.0):
             continue
         if float(d.get("conf", 0.0)) < conf_floor:
@@ -53,7 +58,10 @@ def _clean_boxes(dets: list[dict], conf_floor: float) -> list[dict]:
 
 
 def clean_mission(mission_dir: Path, *, dup_threshold: int = 5,
-                  conf_floor: float = 0.1, blank_std: float = 12.0) -> dict:
+                  conf_floor: float = 0.1, blank_std: float = 5.0) -> dict:
+    # blank_std default 5.0 targets lens-cap / truly featureless frames. Low-
+    # texture-but-valid scenes (open sky, sandy terrain) sit above this; raise
+    # via --blank-std only if such frames are being wrongly dropped.
     mission_dir = Path(mission_dir)
     obs_path = mission_dir / "observations.jsonl"
     report = {"frames_in": 0, "dropped_corrupt": 0, "dropped_duplicate": 0,
@@ -74,7 +82,12 @@ def clean_mission(mission_dir: Path, *, dup_threshold: int = 5,
             continue
 
         report["frames_in"] += 1
-        img = cv2.imread(str(mission_dir / rec["frame_path"]))
+        # Guard against a frame_path escaping the mission dir (path traversal).
+        resolved = (mission_dir / rec["frame_path"]).resolve()
+        if not resolved.is_relative_to(mission_dir.resolve()):
+            report["dropped_corrupt"] += 1
+            continue
+        img = cv2.imread(str(resolved))
         if img is None or _is_blank(img, blank_std):
             report["dropped_corrupt"] += 1
             continue
