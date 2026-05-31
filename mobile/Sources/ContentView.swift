@@ -331,14 +331,16 @@ struct ContentView: View {
     private func handle(_ action: DroneAction) {
         let fn = action.function
 
-        if fn == .followMe {
-            // Initial arm (takeoff) must be confirmed; resuming from manual does not.
-            if follow.phase == .disarmed { pendingArm = .visualMe } else { follow.resumeFollow() }
+        if fn == .followMe || fn == .track {   // both mean "lock onto me" (visual)
+            if follow.phase == .disarmed { pendingArm = .visualMe } else { follow.requestLock(.visualMe) }
             return
         }
-
-        if fn == .track {   // "track that boat" — tag-free visual tracking
-            if follow.phase == .disarmed { pendingArm = .visualMe } else { follow.relock() }
+        if fn == .trackTag {                    // designate another target via AprilTag
+            if follow.phase == .disarmed { pendingArm = .tag } else { follow.requestLock(.tag) }
+            return
+        }
+        if fn == .confirm {                     // approve the shown lock
+            if follow.isArmed { follow.confirmTarget() }
             return
         }
 
