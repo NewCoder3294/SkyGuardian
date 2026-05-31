@@ -7,7 +7,7 @@ entity's ttl lapses relative to the clock. Producers never set `lost`.
 from __future__ import annotations
 
 from .clock import Clock, RealClock
-from .contracts import Entity, EntityStatus, Vec3
+from .contracts import Entity, EntityStatus
 
 
 class WorldModel:

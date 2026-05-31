@@ -78,10 +78,6 @@ class Command(str, Enum):
     APPROACH = "approach"
 
 
-# stop/recall are always-live and highest priority, honored from any stage.
-PRIORITY_COMMANDS = {Command.STOP, Command.RECALL}
-
-
 # --- server -> clients ---
 
 class WorldSnapshot(BaseModel):
