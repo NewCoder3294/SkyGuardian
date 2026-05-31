@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreMedia
 import CoreVideo
 import Foundation
 
@@ -24,18 +25,23 @@ final class AnchorCamera: NSObject, ObservableObject {
         let decisionMargin: Float
     }
 
-    /// The AprilTag id printed on the launch anchor marker. Distinct from the
-    /// soldier follow tag id. Set to match your printed anchor before `start()`.
-    var anchorTagID: Int = 0
-    /// Printed anchor tag edge length (black border), metres.
-    var anchorTagSizeMeters: Double = 0.16 {
-        didSet { videoQueue.async { [detector, anchorTagSizeMeters] in detector.tagSizeMeters = anchorTagSizeMeters } }
-    }
+    /// The AprilTag id printed on the launch anchor marker (distinct from the
+    /// soldier follow tag id) and its printed edge length (metres). Immutable after
+    /// init so the capture-queue delegate can read them without synchronization.
+    private let anchorTagID: Int
+    private let anchorTagSizeMeters: Double
 
     private let session = AVCaptureSession()
     private let videoQueue = DispatchQueue(label: "anchor.camera.video")
     private let output = AVCaptureVideoDataOutput()
     private let detector = AprilTagDetector()
+
+    /// `anchorTagID` / `anchorTagSizeMeters` must match the printed launch anchor.
+    init(anchorTagID: Int = 0, anchorTagSizeMeters: Double = 0.16) {
+        self.anchorTagID = anchorTagID
+        self.anchorTagSizeMeters = anchorTagSizeMeters
+        super.init()
+    }
 
     /// Request camera access (if needed) and start capture. Idempotent.
     func start() {
@@ -100,10 +106,10 @@ extension AnchorCamera: AVCaptureVideoDataOutputSampleBufferDelegate {
                        from connection: AVCaptureConnection) {
         // Runs on videoQueue — the only queue allowed to touch `detector`.
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        // Match the dimensions the detector uses (luma plane 0) so intrinsics align.
         detector.intrinsics = CameraIntrinsics.phone(
-            width: CVPixelBufferGetWidth(pixelBuffer),
-            height: CVPixelBufferGetHeight(pixelBuffer),
-        )
+            width: CVPixelBufferGetWidthOfPlane(pixelBuffer, 0),
+            height: CVPixelBufferGetHeightOfPlane(pixelBuffer, 0))
         let detections = detector.detect(pixelBuffer)
         guard let anchor = detections.first(where: { $0.id == anchorTagID && $0.distance > 0 }) else { return }
         let fix = AnchorFix(distance: anchor.distance, bearingRad: anchor.bearingRad,

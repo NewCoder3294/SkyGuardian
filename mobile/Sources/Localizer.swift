@@ -26,7 +26,10 @@ final class Localizer: ObservableObject {
         // phone link drops (a 0 timestamp would read as "ancient" and never active).
         let now = Date().timeIntervalSince1970
         var ents: [Entity] = [
-            Entity(id: "operator", type: .soldier, position: Vec3(x: 0, y: 0, z: 0),
+            // id "soldier" (not "operator") so the world-frame report and the
+            // backend's device_location fallback upsert the SAME entity
+            // (last-writer-wins) instead of producing two soldier markers.
+            Entity(id: "soldier", type: .soldier, position: Vec3(x: 0, y: 0, z: 0),
                    confidence: 1, timestamp: now, source: .manual, label: "operator",
                    ttlS: 4, status: .active),
         ]
