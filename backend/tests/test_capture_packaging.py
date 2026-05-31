@@ -155,5 +155,14 @@ def test_manifest_has_per_class_counts(tmp_path: Path):
     assert set(cc.keys()) == set(manifest["yolo"]["classes"])
     for label, c in cc.items():
         assert c["count"] == c["train"] + c["val"]
-    total = sum(c["count"] for c in cc.values())
-    assert total >= 1
+    # Deterministic fixture: frames 0,2 -> "soldier", frames 1,3 -> "car"; val_frac=0 -> all train.
+    assert cc["soldier"] == {"count": 2, "train": 2, "val": 0}
+    assert cc["car"] == {"count": 2, "train": 2, "val": 0}
+    assert sum(c["count"] for c in cc.values()) == 4
+
+    # val_frac=1.0 routes every frame to the val bucket -> exercises the non-train side.
+    out_val = tmp_path / "datasets" / "dc_val"
+    m_val = package_dataset(mdir, out_val, val_frac=1.0, created_t=1.0)
+    cc_val = m_val["yolo"]["class_counts"]
+    assert cc_val["soldier"] == {"count": 2, "train": 0, "val": 2}
+    assert cc_val["car"] == {"count": 2, "train": 0, "val": 2}
