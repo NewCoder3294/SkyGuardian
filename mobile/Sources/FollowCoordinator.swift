@@ -34,8 +34,8 @@ final class FollowCoordinator: ObservableObject {
 
     private let detector = AprilTagDetector()
     private let tracker = ObjectTracker()
-    enum Mode { case tag, track }
-    private var mode: Mode = .tag   // control state — only touched on rcQueue (see ":51")
+    enum TargetMode { case visualMe, tag }
+    private(set) var mode: TargetMode = .visualMe   // control state — only touched on rcQueue (see ":51")
 
     private var controller = FollowController()
 
@@ -125,7 +125,7 @@ final class FollowCoordinator: ObservableObject {
                 self.tookOffAt = self.now()
                 self.latest = nil   // re-acquire fresh at hover; don't confirm on a climb-stale lock
                 self.latestTime = self.now()
-                if self.mode == .track {
+                if self.mode == .visualMe {
                     // Re-lock the visual tracker on the hover-height view — the
                     // ground-level lock taken at arm time may not survive the climb.
                     self.detectQueue.async { self.tracker.reset() }
@@ -149,7 +149,7 @@ final class FollowCoordinator: ObservableObject {
 
         commands.send("takeoff")
         rcQueue.async {
-            self.mode = .track       // visual tracker is the target source (set on rcQueue, the owner)
+            self.mode = .visualMe    // visual tracker is the target source (set on rcQueue, the owner)
             self.armed = true
             self.followActive = true
             self.tookOff = false
@@ -162,7 +162,7 @@ final class FollowCoordinator: ObservableObject {
                 self.tookOffAt = self.now()
                 self.latest = nil   // re-acquire fresh at hover; don't confirm on a climb-stale lock
                 self.latestTime = self.now()
-                if self.mode == .track {
+                if self.mode == .visualMe {
                     // Re-lock the visual tracker on the hover-height view — the
                     // ground-level lock taken at arm time may not survive the climb.
                     self.detectQueue.async { self.tracker.reset() }
@@ -226,7 +226,7 @@ final class FollowCoordinator: ObservableObject {
         rcQueue.async {                    // rcTimer + control state are rcQueue-owned
             self.rcTimer?.cancel(); self.rcTimer = nil
             s?.onPixelBuffer = nil         // stop feeding ingest before clearing mode/tracker
-            self.mode = .tag
+            self.mode = .visualMe          // reset to the default "track me"
             self.armed = false; self.followActive = false; self.confirmed = false
             self.manualHover = false; self.scripted = false
             self.detectQueue.async { self.tracker.reset() }
@@ -245,7 +245,7 @@ final class FollowCoordinator: ObservableObject {
         rcQueue.async {
             self.rcTimer?.cancel(); self.rcTimer = nil
             s?.onPixelBuffer = nil         // stop feeding ingest before clearing mode/tracker
-            self.mode = .tag
+            self.mode = .visualMe          // reset to the default "track me"
             self.armed = false; self.followActive = false; self.confirmed = false
             self.detectQueue.async { self.tracker.reset() }
         }
@@ -271,7 +271,7 @@ final class FollowCoordinator: ObservableObject {
             self.detectQueue.async { [weak self] in
                 guard let self else { return }
                 let synth: TagDetection?
-                if mode == .track {
+                if mode == .visualMe {
                     synth = self.trackStep(pixelBuffer)         // publishes its own box
                 } else {
                     let best = self.pickTarget(self.detector.detect(pixelBuffer))
@@ -424,5 +424,15 @@ final class FollowCoordinator: ObservableObject {
     func injectDetectionForTest(_ d: TagDetection?, age: CFTimeInterval = 0) {
         latest = d
         latestTime = now() - age
+    }
+
+    /// Place the coordinator directly into an airborne, confirmed, following-ready
+    /// state without takeoff — the precondition for re-lock / manual tests. Test-only
+    /// (sets rcQueue-owned state synchronously; safe because tests don't run the timer).
+    func enterAirborneForTest(mode: TargetMode) {
+        self.mode = mode
+        armed = true; followActive = true; tookOff = true; confirmed = true
+        landing = false; manualHover = false; scripted = false
+        setPhase(.following)
     }
 }
