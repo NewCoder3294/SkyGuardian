@@ -58,4 +58,21 @@ final class FollowCoordinatorTests: XCTestCase {
         coord.tickForTest()
         XCTAssertGreaterThan(sink.lastRC?.yaw ?? 0, 0)
     }
+
+    func testConfirmTimeoutOnInitialArmLands() {
+        coord.enterAirborneForTest(mode: .visualMe)
+        coord.setConfirmTimeoutLandsForTest(true)
+        coord.setUnconfirmedHoverForTest(tookOffAtAge: 31)
+        coord.tickForTest()
+        coord.runMainQueueForTest()   // let the tick's deferred disarmAndLand() send "land"
+        XCTAssertTrue(sink.sent.contains("land"))
+    }
+    func testConfirmTimeoutMidFlightFallsBackToManualNotLand() {
+        coord.enterAirborneForTest(mode: .visualMe)
+        coord.setConfirmTimeoutLandsForTest(false)
+        coord.setUnconfirmedHoverForTest(tookOffAtAge: 31)
+        coord.tickForTest()
+        XCTAssertFalse(sink.sent.contains("land"))
+        XCTAssertEqual(coord.currentPhase, .manual)
+    }
 }

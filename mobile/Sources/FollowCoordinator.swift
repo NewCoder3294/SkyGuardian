@@ -357,11 +357,18 @@ final class FollowCoordinator: ObservableObject {
         // for the operator to approve. No follow/track rc is sent until confirmTarget().
         if !confirmed {
             commands.rc(.hover)
-            if t - tookOffAt > confirmTimeout {
-                // Operator never confirmed — land for safety rather than hover forever.
-                landing = true
-                rcTimer?.cancel(); rcTimer = nil
-                DispatchQueue.main.async { self.disarmAndLand() }
+            if now() - tookOffAt > confirmTimeout {
+                if confirmTimeoutLands {
+                    // Initial arm: operator never confirmed the takeoff — land for safety.
+                    landing = true
+                    rcTimer?.cancel(); rcTimer = nil
+                    DispatchQueue.main.async { self.disarmAndLand() }
+                } else {
+                    // Mid-flight re-lock: drone is already airborne under prior intent —
+                    // fall back to a manual hover instead of landing.
+                    followActive = false; manualHover = true; confirmed = false
+                    setPhase(.manual)
+                }
             } else {
                 setPhase(fresh ? .confirming : .searching)
             }
@@ -418,6 +425,19 @@ final class FollowCoordinator: ObservableObject {
     /// API that schedules rcQueue.async work + startRCLoop() (arm/requestLock/…).
     func drainForTest() {
         rcQueue.sync { self.rcTimer?.cancel(); self.rcTimer = nil }
+    }
+
+    /// Spin the main runloop briefly so any `DispatchQueue.main.async` work the tick
+    /// scheduled (e.g. the timeout-land path's deferred disarmAndLand()) actually runs
+    /// before the assertion. Test-only; production timing is unchanged.
+    func runMainQueueForTest() {
+        RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+    }
+
+    func setConfirmTimeoutLandsForTest(_ v: Bool) { confirmTimeoutLands = v }
+    func setUnconfirmedHoverForTest(tookOffAtAge: CFTimeInterval) {
+        confirmed = false; tookOff = true; manualHover = false
+        tookOffAt = now() - tookOffAtAge
     }
 
     /// Place the coordinator directly into an airborne, confirmed, following-ready
