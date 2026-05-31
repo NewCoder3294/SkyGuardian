@@ -105,7 +105,9 @@ python3 scripts/export_to_foundry.py --dataset datasets/<name>
 
 A `datasets/<name>` is produced by the collect → clean → package pipeline:
 `CAPTURE_ENABLED=1` during a mission → `scripts/clean_captures.py --mission <id>`
-→ `scripts/package_dataset.py --mission <id> --out datasets/<name>`.
+→ `scripts/package_dataset.py --mission <id> --out datasets/<name>`. See
+[`DATA_FLYWHEEL.md`](DATA_FLYWHEEL.md) for the full capture→export runbook
+(including the capture operating rules).
 
 ## 6. First-run check
 
