@@ -156,6 +156,34 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* Demo Video */}
+      <section id="demo-video" className="border-b border-border">
+        <div className="mx-auto max-w-7xl px-5 py-20 md:px-8">
+          <div className="flex flex-col items-center text-center">
+            <p className="font-mono text-[11px] uppercase tracking-[0.42em] text-accent">
+              See it in action
+            </p>
+            <h2 className="mt-5 max-w-2xl text-3xl font-semibold leading-tight md:text-5xl">
+              Watch the demo
+            </h2>
+          </div>
+          <div className="mx-auto mt-12 max-w-4xl">
+            <div className="tac-corners border border-border-strong bg-bg p-2 shadow-[0_26px_90px_oklch(0.12_0.03_130_/_0.12)]">
+              <div className="relative aspect-video overflow-hidden border border-border bg-surface">
+                {/* Replace YOUTUBE_VIDEO_ID with your actual video ID */}
+                <iframe
+                  src="https://www.youtube.com/embed/YOUTUBE_VIDEO_ID"
+                  title="SkyGuardian Demo"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                  className="absolute inset-0 h-full w-full"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Problem */}
       <section id="problem" className="border-b border-border bg-surface">
         <div className="mx-auto grid max-w-7xl gap-10 px-5 py-20 md:grid-cols-[0.9fr_1.4fr] md:px-8">
