@@ -15,9 +15,10 @@ def _is_val(frame_path: str, val_frac: float) -> bool:
     return (int(digest, 16) % 1000) < int(val_frac * 1000)
 
 
-def _correction_for(events: list[dict], label: str, box) -> Optional[str]:
-    """Return a corrected label for a (label, box) if a matching 'correct' event
-    exists; '' if a matching 'reject' (drop this box); None if no event."""
+def _correction_for(events: list[dict], label: str) -> Optional[str]:
+    """Resolve an operator decision for a detection CLASS (matching is class-wide,
+    not per-box): the corrected label if a 'correct' event exists for this label,
+    '' if a 'reject' event exists (drop boxes of this class), else None."""
     for ev in events:
         if ev.get("label") != label:
             continue
@@ -48,7 +49,7 @@ def package_dataset(mission_dir: Path, out_dir: Path, *, val_frac: float = 0.2,
     for rec in obs:
         kept = []
         for d in rec.get("detections", []):
-            corr = _correction_for(events, d["label"], d.get("box"))
+            corr = _correction_for(events, d["label"])
             if corr == "":
                 continue
             label = corr or d["label"]
@@ -70,18 +71,33 @@ def package_dataset(mission_dir: Path, out_dir: Path, *, val_frac: float = 0.2,
     for rec, kept in resolved:
         split = "val" if _is_val(rec["frame_path"], val_frac) else "train"
         counts[split] += 1
-        stem = Path(rec["frame_path"]).stem
-        shutil.copyfile(mission_dir / rec["frame_path"],
-                        out_dir / "yolo" / "images" / split / f"{stem}.jpg")
+        # Derive a collision-proof stem from the full relative path (frames may
+        # later live in per-source subdirs; a bare filename stem could clash).
+        stem = rec["frame_path"].replace("/", "_").replace("\\", "_").rsplit(".", 1)[0]
+        src = mission_dir / rec["frame_path"]
+        try:
+            shutil.copyfile(src, out_dir / "yolo" / "images" / split / f"{stem}.jpg")
+        except FileNotFoundError:
+            raise FileNotFoundError(
+                f"Frame not found: {src} (observation t={rec.get('t')!r})")
         label_txt = "\n".join(
-            f"{class_id[label]} {b[0]} {b[1]} {b[2]} {b[3]}" for label, b in kept)
+            f"{class_id[label]} {b[0]:.6f} {b[1]:.6f} {b[2]:.6f} {b[3]:.6f}"
+            for label, b in kept)
         (out_dir / "yolo" / "labels" / split / f"{stem}.txt").write_text(
             label_txt + ("\n" if label_txt else ""))
 
+        # Gemma gold: scope to events whose label is actually visible in THIS
+        # frame, so a per-frame example isn't mislabeled with an unrelated answer.
+        kept_labels = {lbl for lbl, _ in kept}
         gold = None
         for ev in events:
-            if ev["kind"] in ("correct", "confirm"):
-                gold = ev.get("corrected_label") or ev.get("label")
+            if ev["kind"] not in ("correct", "confirm"):
+                continue
+            ans = ev.get("corrected_label") or ev.get("label")
+            # Match either the original or the corrected label against what this
+            # frame actually contains (kept holds post-correction labels).
+            if ans in kept_labels or ev.get("label") in kept_labels:
+                gold = ans
                 break
         labeled = gold is not None
         labeled_count += int(labeled)

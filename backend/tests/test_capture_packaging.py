@@ -80,3 +80,39 @@ def test_package_missing_cleaned_raises(tmp_path: Path):
     (tmp_path / "m2").mkdir()
     with pytest.raises(FileNotFoundError):
         package_dataset(tmp_path / "m2", tmp_path / "out", created_t=0.0)
+
+
+def test_reject_drops_boxes_and_unlabeled_gemma(tmp_path: Path):
+    mdir = tmp_path / "m3"
+    (mdir / "frames").mkdir(parents=True)
+    cv2.imwrite(str(mdir / "frames/000000.jpg"),
+                np.full((48, 64, 3), 80, dtype=np.uint8))
+    cleaned = mdir / "cleaned"
+    cleaned.mkdir(parents=True)
+    (cleaned / "observations.jsonl").write_text(json.dumps({
+        "v": 1, "t": 0.0, "mission_id": "m3", "frame_path": "frames/000000.jpg",
+        "source": "leader", "image_w": 64, "image_h": 48, "pose": None,
+        "detections": [{"label": "debris", "conf": 0.9, "box": [0.5, 0.5, 0.2, 0.2]}],
+        "sampled_reason": "cadence",
+    }) + "\n")
+    (cleaned / "cleaning_report.json").write_text(json.dumps({"frames_out": 1}))
+    # No events at all -> no labels, gold_answer None (background sample).
+    out = tmp_path / "datasets" / "d3"
+    manifest = package_dataset(mdir, out, val_frac=0.0, created_t=1.0)
+    label = next((out / "yolo" / "labels" / "train").glob("*.txt"))
+    assert label.read_text().strip() != ""          # the detection is kept
+    gemma = json.loads((out / "gemma" / "examples.jsonl").read_text().splitlines()[0])
+    assert gemma["gold_answer"] is None and gemma["labeled"] is False
+    assert manifest["gemma"]["labeled_count"] == 0
+
+    # Add a reject event for "debris" -> the box is dropped, no classes remain.
+    (mdir / "events.jsonl").write_text(json.dumps({
+        "v": 1, "t": 0.0, "mission_id": "m3", "kind": "reject", "source": "leader",
+        "label": "debris", "box": [0.5, 0.5, 0.2, 0.2],
+    }) + "\n")
+    out2 = tmp_path / "datasets" / "d3b"
+    manifest2 = package_dataset(mdir, out2, val_frac=0.0, created_t=1.0)
+    label2 = next((out2 / "yolo" / "labels" / "train").glob("*.txt"))
+    assert label2.read_text().strip() == ""          # rejected box gone
+    assert manifest2["yolo"]["classes"] == []
+    assert manifest2["label_events"]["reject"] == 1
