@@ -29,7 +29,7 @@ exec env \
   YOLO_COCO_KEEP="person,backpack" \
   YOLO_SPECIALTY_WEIGHTS="$MODELS/threat-yolov8n.pt" \
   YOLO_SPECIALTY_KEEP="gun" \
-  YOLO_SPECIALTY_CONF="0.40" \
+  YOLO_SPECIALTY_CONF="0.30" \
   YOLO_CONF="0.30" \
   YOLO_IMGSZ="480" \
   DEPTH_MODEL="off" \
