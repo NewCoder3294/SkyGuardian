@@ -27,5 +27,6 @@ def test_pipeline_emit_capture_calls_recorder():
     assert source == "leader" and t == 5.0 and w == 64 and h == 48
     assert pose.x == 1.0
 
-    # No recorder -> no error, no call.
+    # No recorder -> no error, and the spy is not touched again.
     PerceptionPipeline._emit_capture(None, frame, boxes, None, 5.0, "leader")
+    assert len(spy.calls) == 1

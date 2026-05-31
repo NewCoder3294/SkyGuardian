@@ -361,7 +361,11 @@ class PerceptionPipeline:
                             if current_pose is not None:
                                 p = current_pose.position
                                 cap_pose = Vec3(x=float(p[0]), y=float(p[1]), z=float(p[2]))
-                            self._emit_capture(
+                            # Offload the capture write (JPEG encode + disk) to a
+                            # thread, like the detectors/depth above, so it never
+                            # stalls the perception/WS event loop.
+                            await asyncio.to_thread(
+                                self._emit_capture,
                                 self._recorder, frame_bgr, self._latest_boxes,
                                 cap_pose, now, "leader",
                             )

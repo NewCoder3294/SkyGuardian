@@ -43,7 +43,7 @@ class CaptureRecorder:
 
     def _ensure_dir(self) -> None:
         if not self._dir_ready:
-            self._dir.mkdir(parents=True, exist_ok=True)
+            (self._dir / "frames").mkdir(parents=True, exist_ok=True)
             self._dir_ready = True
 
     def _reason(self, boxes: list[DetectionBox], t: float) -> Optional[str]:
@@ -71,7 +71,6 @@ class CaptureRecorder:
                 return False
 
             self._ensure_dir()
-            (self._dir / "frames").mkdir(parents=True, exist_ok=True)
             rel = f"frames/{self._seq:06d}.jpg"
             ok, buf = cv2.imencode(".jpg", frame_bgr)
             if not ok:
