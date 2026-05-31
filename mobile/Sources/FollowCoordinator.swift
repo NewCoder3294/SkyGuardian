@@ -57,6 +57,8 @@ final class FollowCoordinator: ObservableObject {
     private var tookOffAt: CFTimeInterval = 0   // when the climb settled (confirm timeout base)
     private var confirmed = false      // operator approved the locked target (gate follow rc)
     private var landing = false        // lost-land in progress (fire once)
+    private var manualHover = false    // manual takeover: stream a steady hover (not dead air)
+    private var scripted = false       // a scripted maneuver (e.g. scout) owns the channel; loop yields
     private let takeoffSettle: CFTimeInterval = 4.0   // let the takeoff climb finish before follow rc
     private let confirmTimeout: CFTimeInterval = 30.0 // auto-land if the operator never confirms
 
@@ -156,10 +158,22 @@ final class FollowCoordinator: ObservableObject {
     /// drone stays airborne; "follow me" resumes. (Pause-and-hold model.)
     func pauseToManual() {
         guard isArmed else { return }
-        // Stop the rc loop entirely so a stray follow tick can't override the manual
-        // move/turn the operator just issued.
-        rcQueue.async { self.followActive = false; self.rcTimer?.cancel(); self.rcTimer = nil }
-        TelloCommander.shared.rc(.hover)            // neutralize follow motion
+        // Keep the rc loop ALIVE but switch it to a steady hover stream (manualHover).
+        // Previously this cancelled the timer, leaving the Tello with no rc — it then
+        // coasted on its last command (drift) and felt unresponsive. A continuous
+        // hover is the correct, stable manual hold.
+        rcQueue.async { self.followActive = false; self.manualHover = true }
+        TelloCommander.shared.rc(.hover)            // immediate neutralize; loop sustains it
+        setPhase(.manual)
+    }
+
+    /// Hand the rc channel to a scripted maneuver (e.g. scout). The follow loop
+    /// yields (sends no hover ticks) so the maneuver's discrete moves run
+    /// uncontested; the Tello auto-hovers between discrete moves. resumeFollow()
+    /// or a land restores normal follow control.
+    func beginScript() {
+        guard isArmed else { return }
+        rcQueue.async { self.followActive = false; self.manualHover = false; self.scripted = true }
         setPhase(.manual)
     }
 
@@ -168,6 +182,8 @@ final class FollowCoordinator: ObservableObject {
         guard isArmed else { return }
         rcQueue.async {
             self.followActive = true
+            self.manualHover = false       // leave the steady-hover hold, resume follow ticks
+            self.scripted = false          // any scripted maneuver is over
             self.landing = false
             self.tookOff = true            // already airborne — no settle delay needed
             self.confirmed = true          // target was confirmed before the takeover; don't re-confirm
@@ -175,7 +191,7 @@ final class FollowCoordinator: ObservableObject {
             self.latestTime = CACurrentMediaTime()  // fresh grace before lost-land
         }
         setPhase(.searching)
-        startRCLoop()                      // pauseToManual cancelled the loop — restart it
+        startRCLoop()                      // idempotent: restart the timer if it isn't running
     }
 
     /// Stop following and land. Safe to call any time.
@@ -184,6 +200,7 @@ final class FollowCoordinator: ObservableObject {
         rcQueue.async {                    // rcTimer + control state are rcQueue-owned
             self.rcTimer?.cancel(); self.rcTimer = nil
             self.armed = false; self.followActive = false; self.confirmed = false
+            self.manualHover = false; self.scripted = false
         }
         TelloCommander.shared.rc(.hover)
         TelloCommander.shared.send("land")
@@ -298,8 +315,19 @@ final class FollowCoordinator: ObservableObject {
     }
 
     private func tick() {
-        guard armed, followActive, !landing else { return }   // manual takeover / landing → no follow rc
-        guard tookOff else { return }                         // takeoff climb still settling
+        guard armed, !landing else { return }
+        // A scripted maneuver (e.g. scout) drives the channel with its own discrete
+        // moves — yield so hover ticks don't fight it.
+        if scripted { return }
+        // Solid control: stream a steady stick command in EVERY armed state. The
+        // Tello holds its last rc until the next one, so any gap makes it coast on a
+        // stale command (drift) and ignore the operator (unresponsive). During the
+        // takeoff climb and during a manual takeover we stream a true hover rather
+        // than going silent.
+        if !tookOff || manualHover {
+            TelloCommander.shared.rc(.hover)
+            return
+        }
         let now = CACurrentMediaTime()
         let age = now - latestTime
         let fresh = age < staleTimeout && latest != nil

@@ -68,7 +68,7 @@ final class ScoutController: ObservableObject {
         self.follow = follow
         state = .scouting
 
-        follow.pauseToManual()                       // stop follow ticks, hover
+        follow.beginScript()                         // hand the channel to the maneuver
 
         let steps = Scout.plan(forwardCm: forwardCm, scanSeconds: scanSeconds)
         var delay = 0.0
@@ -94,11 +94,13 @@ final class ScoutController: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: finish)
     }
 
-    /// Cancel the maneuver immediately. The caller (LAND/STOP) handles the drone;
-    /// this just stops issuing further scout commands and clears state.
+    /// Cancel the maneuver immediately and hand control back to the follow loop so
+    /// the Tello returns to a steady hover (not a scripted dead-channel). LAND/STOP
+    /// callers run disarmAndLand right after, which supersedes this.
     func abort() {
         workItems.forEach { $0.cancel() }
         workItems.removeAll()
         state = .idle
+        follow?.resumeFollow()
     }
 }
