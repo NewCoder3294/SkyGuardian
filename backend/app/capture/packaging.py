@@ -86,11 +86,16 @@ def package_dataset(mission_dir: Path, out_dir: Path, *, val_frac: float = 0.2,
     (out_dir / "gemma").mkdir(parents=True, exist_ok=True)
 
     counts = {"train": 0, "val": 0}
+    class_counts: dict[str, dict[str, int]] = {}
     gemma_lines = []
     labeled_count = 0
     for rec, kept in resolved:
         split = "val" if _is_val(rec["frame_path"], val_frac) else "train"
         counts[split] += 1
+        for label, _ in kept:
+            cc = class_counts.setdefault(label, {"count": 0, "train": 0, "val": 0})
+            cc["count"] += 1
+            cc[split] += 1
         # Derive a collision-proof stem from the full relative path (frames may
         # later live in per-source subdirs; a bare filename stem could clash).
         stem = rec["frame_path"].replace("/", "_").replace("\\", "_").rsplit(".", 1)[0]
@@ -155,7 +160,8 @@ def package_dataset(mission_dir: Path, out_dir: Path, *, val_frac: float = 0.2,
         "source_counts": {"leader": sum(1 for r, _ in resolved if r["source"] == "leader"),
                           "follower": sum(1 for r, _ in resolved if r["source"] == "follower")},
         "yolo": {"path": "yolo/", "classes": names, "train": counts["train"],
-                 "val": counts["val"], "format": "ultralytics"},
+                 "val": counts["val"], "format": "ultralytics",
+                 "class_counts": class_counts},
         "gemma": {"path": "gemma/examples.jsonl", "count": len(gemma_lines),
                   "labeled_count": labeled_count},
         "cleaning_report": cleaning_report,

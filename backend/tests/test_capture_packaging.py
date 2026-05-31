@@ -144,3 +144,25 @@ def test_reject_drops_boxes_and_unlabeled_gemma(tmp_path: Path):
     assert label2.read_text().strip() == ""          # rejected box gone
     assert manifest2["yolo"]["classes"] == []
     assert manifest2["label_events"]["reject"] == 1
+
+
+def test_manifest_has_per_class_counts(tmp_path: Path):
+    mdir = _setup_cleaned(tmp_path)   # 4 frames: i%2 -> "car" (odd), else "person"->"soldier"
+    out = tmp_path / "datasets" / "dc"
+    manifest = package_dataset(mdir, out, val_frac=0.0, created_t=1.0)
+
+    cc = manifest["yolo"]["class_counts"]
+    assert set(cc.keys()) == set(manifest["yolo"]["classes"])
+    for label, c in cc.items():
+        assert c["count"] == c["train"] + c["val"]
+    # Deterministic fixture: frames 0,2 -> "soldier", frames 1,3 -> "car"; val_frac=0 -> all train.
+    assert cc["soldier"] == {"count": 2, "train": 2, "val": 0}
+    assert cc["car"] == {"count": 2, "train": 2, "val": 0}
+    assert sum(c["count"] for c in cc.values()) == 4
+
+    # val_frac=1.0 routes every frame to the val bucket -> exercises the non-train side.
+    out_val = tmp_path / "datasets" / "dc_val"
+    m_val = package_dataset(mdir, out_val, val_frac=1.0, created_t=1.0)
+    cc_val = m_val["yolo"]["class_counts"]
+    assert cc_val["soldier"] == {"count": 2, "train": 0, "val": 2}
+    assert cc_val["car"] == {"count": 2, "train": 0, "val": 2}
