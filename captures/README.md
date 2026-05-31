@@ -3,10 +3,11 @@
 Recorded Mavic clips (and Tello frames with an AprilTag in view) so perception
 and the follow controller can be developed and replayed without live drones.
 
-Only this README is tracked. Video files are git-ignored by extension
-(`captures/**/*.mp4`, `*.mov`, `*.avi` — see [`.gitignore`](../.gitignore)),
-so drop recordings here and share them out-of-band. Keep clips short and
-representative.
+Only this README is tracked. Everything else here is git-ignored two ways (see
+[`.gitignore`](../.gitignore)): every mission/working **subdirectory** under
+`captures/` is ignored wholesale (`captures/*/`), and video files are also ignored
+by extension (`captures/**/*.mp4`, `*.mov`, `*.avi`). So drop recordings here and
+share them out-of-band. Keep clips short and representative.
 
 Suggested layout (create as needed):
 
@@ -15,6 +16,12 @@ Suggested layout (create as needed):
   [`docs/SLAM.md`](../docs/SLAM.md)).
 - `tello/` — recorded Tello frames with an AprilTag in view, for follow tuning
   ([`backend/app/follow/`](../backend/app/follow/)).
+- `<mission_id>/` — a recorded mission's raw capture (frames + `observations.jsonl`
+  / `events.jsonl`), written by `app.capture.recorder.CaptureRecorder` and consumed
+  by the capture data flywheel ([`scripts/clean_captures.py`](../scripts/clean_captures.py)
+  → [`scripts/package_dataset.py`](../scripts/package_dataset.py) →
+  [`scripts/export_to_foundry.py`](../scripts/export_to_foundry.py), which read the
+  mission via `--root captures --mission <mission_id>`).
 
 ## How clips here get consumed
 

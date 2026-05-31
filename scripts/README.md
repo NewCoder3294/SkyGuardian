@@ -1,8 +1,9 @@
 # `scripts/` — Operational helpers
 
 Small standalone CLI scripts for provisioning, offline map prep, offline
-perception dev, and bring-up. No app runtime depends on these; they are dev/ops
-convenience only.
+perception dev, bring-up, and the post-mission capture data flywheel (clean →
+package → export). No app runtime depends on these; they are dev/ops convenience
+only.
 
 ## Owns
 
@@ -53,15 +54,62 @@ convenience only.
   See [`docs/SLAM.md`](../docs/SLAM.md). Deps: `opencv-python` (`cv2`), `numpy`
   (+ the backend SLAM module).
 
+### Capture data flywheel (clean → package → export)
+
+Three thin CLI wrappers over `backend/app/capture/`, run in order on a recorded
+mission directory under `captures/<mission_id>/`. Each inserts `backend/` on
+`sys.path` and calls the matching `app.capture.*` module (the wrapper holds no
+logic of its own). Mission subdirectories under `captures/` are git-ignored.
+
+- ✅ **`clean_captures.py`** — clean phase. Filters a mission's raw capture into a
+  curated observation set (drops corrupt/blank frames, near-duplicate frames via
+  perceptual hash, and low-confidence boxes; quarantines unparseable records),
+  writing `cleaned/observations.jsonl` + an auditable `cleaning_report.json`. Calls
+  `app.capture.cleaning.clean_mission`. Args: `--mission` (required, the id under
+  `--root`), `--root` (default `captures`), `--dup-threshold` (default `5`),
+  `--conf-floor` (default `0.1`), `--blank-std` (grayscale std below which a frame
+  is treated as blank, default `5.0`). Prints `[clean] <report-json>`. Deps:
+  `opencv-python` (`cv2`), `numpy` (backend venv).
+
+- ✅ **`package_dataset.py`** — package phase. Turns the cleaned observations (+
+  events) into a YOLO dataset + Gemma example set + a Foundry-ready
+  `manifest.json`. The train/val split is a deterministic hash of the frame path
+  (reproducible, no RNG). Calls `app.capture.packaging.package_dataset`. Args:
+  `--mission` (required), `--root` (default `captures`), `--out` (required, the
+  output dataset dir), `--val-frac` (default `0.2`), `--created-t` (timestamp
+  stamped into the manifest; injected, default `0`). Prints `[package]
+  <manifest-json>`. Deps: stdlib + the backend `app.capture` module (backend venv).
+
+- ✅ **`export_to_foundry.py`** — export phase (post-mission, **ONLINE**). Pushes a
+  packaged dataset dir (the one with `manifest.json`) into Palantir Foundry. Calls
+  `app.capture.foundry_export.export_dataset` with a `FoundryConfig.from_env()` +
+  `FoundryClient`. Requires internet + Foundry credentials from env:
+  `FOUNDRY_HOST`, `FOUNDRY_TOKEN`, `FOUNDRY_ONTOLOGY_RID`, `FOUNDRY_DATASET_RID`
+  (optional overrides: `FOUNDRY_ACTION_MISSION`, `FOUNDRY_ACTION_CLASS`,
+  `FOUNDRY_ACTION_MISSION_EDIT`, `FOUNDRY_ACTION_CLASS_EDIT`, `FOUNDRY_TIMEOUT_S`,
+  `FOUNDRY_MAX_RETRIES`). Args: `--dataset` (required), `--dry-run` (validate
+  config + payloads and write the report with **no** network call — the client is
+  replaced by a stub that asserts on any call). A missing/invalid config exits `2`.
+  Prints `[foundry] <subset-of-report-json>`. The `CaptureMission` + `DetectionClass`
+  object types and their create-/edit- actions must already exist in the ontology.
+
 ## Build notes
 
-- `asc.py` and `fetch_buildings.py` run standalone (system Python is fine;
-  `asc.py` needs `pyjwt` + `requests`, `fetch_buildings.py` is stdlib-only).
-- `run_slam_video.py` inserts `backend/` on `sys.path` and needs the backend
-  venv (`opencv-python`, `numpy`) — run it with the backend `.venv` active.
-- `fetch_buildings.py` is the one script that requires network; run it ahead of
-  any offline deployment so `.context/buildings.json` is cached locally.
-- Clips and weights live in git-ignored `captures/` and `models/`.
+- `asc.py` runs standalone but needs `pyjwt` + `requests`.
+- `fetch_buildings.py` inserts `backend/` on `sys.path` (the fetch/projection/write
+  logic lives in `backend/app/map_area.py`, shared with the dashboard's
+  `POST /map/area`), so run it with the backend `.venv` active.
+- `run_slam_video.py`, `clean_captures.py`, and `package_dataset.py` all insert
+  `backend/` on `sys.path` and need the backend venv (`run_slam_video.py` +
+  `clean_captures.py` use `opencv-python` / `numpy`; `package_dataset.py` is
+  otherwise stdlib) — run them with the backend `.venv` active.
+- Network is needed at two points only: `fetch_buildings.py` (Overpass; run it
+  ahead of any offline deployment so `.context/buildings.json` is cached locally),
+  `export_to_foundry.py` (Foundry; post-mission, ONLINE — or `--dry-run` to skip
+  the network), plus `asc.py` (App Store Connect). Everything else is local.
+- Clips and weights live in git-ignored `captures/` and `models/`; the capture
+  flywheel scripts read/write mission subdirectories under `captures/`, which are
+  also git-ignored.
 
 ## Planned
 
@@ -70,5 +118,7 @@ convenience only.
 - ⬜ `check_routing.sh` — `route get` per interface to verify the dual-WiFi
   networking (Tello AP vs. phone network). See
   [`CLAUDE.md`](../CLAUDE.md) "Networking".
-- ⬜ `record_mavic.py` — capture a Mavic clip into `captures/mavic/` for
-  perception dev.
+- ⬜ `record_mavic.py` — a standalone CLI to capture a Mavic clip into
+  `captures/mavic/` for perception dev. (In-mission recording itself already
+  exists in the backend as `app.capture.recorder.CaptureRecorder`; this would be
+  the loose dev wrapper around it.)

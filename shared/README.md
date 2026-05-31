@@ -16,6 +16,10 @@ codegen — a change to one is a manual change to all three.
 **Owns**
 
 - ✅ `contracts.ts` — Contract A (Entity) + Contract B (WS protocol) as TS types.
+  Server messages: `world_snapshot · mission_state · health · detections ·
+  follow_state · buildings_updated`. Client messages: `intent · device_location ·
+  entity_report · label_event` (plus the bidirectional `follow_state`, listed under
+  `ServerMessage` here since the dashboard only consumes the rebroadcast).
 
 **Interfaces**
 
@@ -59,17 +63,27 @@ highest priority, honored from any stage (see `PRIORITY_COMMANDS` in
   normalised image-plane units (0..1), so the dashboard overlay scales to any
   source resolution; `image_w/h` are advisory pixel dimensions (Python ints,
   default `0`).
-- `follow_state { active, phase, distance_m, bearing_deg, source, t }` — the
-  companion Tello's position **relative to the soldier**, for a self-contained
-  follow inset. NOT in the SLAM map frame: the phone's follow frame and the Mavic
-  SLAM frame aren't co-registered, so this carries only range + bearing, never
-  absolute map coordinates. `active` is true when the drone is airborne under
-  follow control; `phase` ∈ `disarmed · searching · confirming · following · lost
-  · manual · stale`; `distance_m` is the soldier → Tello range in metres (bounded
-  `0..200`); `bearing_deg` is the Tello bearing relative to the soldier
-  (`-360..360`); `source` is advisory (defaults `"phone"`, not trusted for any
-  decision). Python rejects NaN/inf (`allow_inf_nan=False`) so a malformed payload
-  can't poison the render. This message is *bidirectional* — see below.
+- `follow_state { active, phase, distance_m, bearing_deg, source, target_type?,
+  target_label?, t }` — the companion Tello's position **relative to the soldier**,
+  for a self-contained follow inset. NOT in the SLAM map frame: the phone's follow
+  frame and the Mavic SLAM frame aren't co-registered, so this carries only range +
+  bearing, never absolute map coordinates. `active` is true when the drone is
+  airborne under follow control; `phase` ∈ `disarmed · searching · confirming ·
+  following · lost · manual · stale`; `distance_m` is the soldier → Tello range in
+  metres (bounded `0..200`); `bearing_deg` is the Tello bearing relative to the
+  soldier (`-360..360`); `source` is advisory (defaults `"phone"`, not trusted for
+  any decision). `target_type` ∈ `visual_me · tag` (or `null` when not following)
+  says what the lock is on — `visual_me` is the default `ObjectTracker` lock on the
+  soldier, `tag` is an AprilTag designating another target; `target_label` is a raw
+  id hint only (e.g. the tag id `"7"`, `null` for `visual_me`) — the human display
+  string is composed on the dashboard, not sent here. Python rejects NaN/inf
+  (`allow_inf_nan=False`) so a malformed payload can't poison the render. This
+  message is *bidirectional* — see below.
+- `buildings_updated { origin: GeoPoint, radius_m, count, t }` — signal that the
+  served OSM buildings layer changed (operator set a new operational area). Clients
+  re-GET `/map/buildings` on receipt; the polygon blob is intentionally NOT carried
+  over the socket. `GeoPoint { lat, lng }` is a WGS84 pair geo-referencing the
+  local map frame's origin.
 
 **clients → server** (`ClientMessage`):
 
@@ -81,15 +95,28 @@ highest priority, honored from any stage (see `PRIORITY_COMMANDS` in
   flows phone→laptop then laptop→dashboard. The phone only ever sends the five live
   phases; `stale` is server-injected when the phone's stream ages out
   (`_FOLLOW_STALE_S` fail-stale TTL in `server.py`).
+- `entity_report { entities[], source, t }` — `source` = `"phone"`. Phone-localized
+  entities (operator + drone) in the shared **world** frame (north-up metres, launch
+  anchor tag = origin): the phone co-registers against the same launch tag the Mavic
+  uses, so these upsert directly into the world model and render on both maps.
+  Bounded (`entities` ≤ 8) and NaN/inf-rejecting so a malformed payload can't poison
+  the snapshot.
+- `label_event { kind, source, label?, corrected_label?, box?, note?, t }` — an
+  operator label decision recorded for the data flywheel: `kind` ∈ `confirm ·
+  reject · correct` (confirm a true positive, reject a false positive, or correct
+  the class). `box` (if present) is `[cx, cy, w, h]` normalized `0..1` (exactly four
+  floats).
 
 Each message is discriminated on the `type` field. This contract carries only
-**mission-level** intent (`hold` / `recall` / `follow_me` / `stop`) and device
-location to the backend — it is *not* the Tello flight-control path. In the
-current build the phone is the primary Tello controller and flies the drone
-directly over the Tello AP (`192.168.10.1:8889`); the backend's `FollowController`
-is an alternate controller, armed one-at-a-time (no code interlock yet — see
-CLAUDE.md). So `intent` here is advisory mission state the backend arbitrates into
-the world model, not a command relayed to the drone.
+**mission-level** intent (`hold` / `recall` / `follow_me` / `stop`), device
+location, phone-localized world entities, and operator label events to the backend
+— it is *not* the Tello flight-control path. In the current build the phone is the
+primary Tello controller and flies the drone directly over the Tello AP
+(`192.168.10.1:8889`); the backend's `FollowController` is an alternate controller,
+armed one-at-a-time behind a real code interlock (`ArmingLock`,
+`backend/app/follow/arming.py` — arming owner `"phone"` disarms every laptop
+controller; see CLAUDE.md). So `intent` here is advisory mission state the backend
+arbitrates into the world model, not a command relayed to the drone.
 
 ## Build notes
 
@@ -108,10 +135,16 @@ the world model, not a command relayed to the drone.
   matching `case` there.
 - **`follow_state` is the one bidirectional message.** Swift mirrors it as
   `FollowStateMessage` (`Encodable` only) — the phone *sends* it (snake_case keys
-  `distance_m` / `bearing_deg` on the wire as-is, no `CodingKeys` needed). On the
-  Python side `FollowState` is in **both** `ServerMessage` and `ClientMessage`, and
-  `parse_client_message` accepts it inbound. TS lists it under `ServerMessage` (the
-  dashboard only consumes the rebroadcast).
+  `distance_m` / `bearing_deg` / `target_type` / `target_label` on the wire as-is,
+  no `CodingKeys` needed). On the Python side `FollowState` is in **both**
+  `ServerMessage` and `ClientMessage`, and `parse_client_message` accepts it inbound.
+  TS lists it under `ServerMessage` (the dashboard only consumes the rebroadcast).
+- **The other phone→server messages are Swift `Encodable`-only too.**
+  `EntityReportMessage` (`entity_report`) and `LabelEventMessage` (`label_event`)
+  are outbound-only mirrors on the phone (`LabelEventMessage` maps `corrected_label`
+  via `CodingKeys`); the phone never decodes them back. `BuildingsUpdated` /
+  `GeoPoint` have no Swift struct — like `detections`, they fold into
+  `.unknown(type)` on the phone, which only needs the world snapshot + mission/health.
 - Validation is one-directional: Python rejects malformed/unknown **client**
   payloads at the WS boundary (`parse_client_message` raises on unknown `type`,
   Pydantic raises on a bad enum/field), so the backend fails loud, not silent.
