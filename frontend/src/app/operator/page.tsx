@@ -77,6 +77,19 @@ export default function Page() {
     window.localStorage.setItem("sg.mapView", mapView);
   }, [mapView]);
 
+  // Environment: outdoor (OSM buildings shown, ops-area form visible) vs
+  // indoor (buildings hidden, ops-area hidden — the local SLAM frame stands
+  // alone). The OSM polygons are city building footprints in lat/lon and have
+  // no relationship to an indoor scene, so showing them indoors looks broken.
+  const [environment, setEnvironment] = useState<"outdoor" | "indoor">("outdoor");
+  useEffect(() => {
+    const saved = window.localStorage.getItem("sg.environment");
+    if (saved === "outdoor" || saved === "indoor") setEnvironment(saved);
+  }, []);
+  useEffect(() => {
+    window.localStorage.setItem("sg.environment", environment);
+  }, [environment]);
+
   // ---- mode dispatch: live RTMP vs playback file ------------------------
   const [source, setSource] = useState<SourceState | null>(null);
   const onSource = useCallback((s: SourceState | null) => setSource(s), []);
@@ -227,14 +240,14 @@ export default function Page() {
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-x-4 border-b border-border bg-surface/60 px-4">
-        <nav className="flex items-stretch gap-0">
+      <div className="flex h-11 items-center justify-between gap-x-4 border-b border-border bg-surface/60 px-4">
+        <nav className="flex items-stretch gap-0 self-stretch">
           {TABS.map((t) => (
             <button
               key={t.id}
               type="button"
               onClick={() => setTab(t.id)}
-              className={`relative -mb-px border-b-2 px-5 py-2.5 font-sans text-[12px] font-semibold uppercase tracking-[0.25em] transition-colors ${
+              className={`relative -mb-px border-b-2 px-5 font-sans text-[12px] font-semibold uppercase tracking-[0.25em] transition-colors ${
                 tab === t.id
                   ? "border-accent text-accent"
                   : "border-transparent text-text-dim hover:text-text-muted"
@@ -247,9 +260,9 @@ export default function Page() {
             </button>
           ))}
         </nav>
-        {tab === "feed" && (
+        <div className={tab === "feed" ? "" : "invisible"}>
           <SourceSelector apiBase={apiBase} onState={onSource} />
-        )}
+        </div>
       </div>
 
       <ThreatAlert detections={effectiveDetections} />
@@ -295,6 +308,7 @@ export default function Page() {
                   entities={effectiveOpEntities}
                   apiBase={apiBase}
                   buildingsVersion={wsLive.buildingsVersion}
+                  environment={environment}
                   statusLine={
                     isPlayback && playbackData
                       ? `${effectiveOpEntities.length} entities · t=${playbackTime.toFixed(1)}s`
@@ -309,6 +323,7 @@ export default function Page() {
                   apiBase={apiBase}
                   buildingsRadiusM={800}
                   buildingsVersion={wsLive.buildingsVersion}
+                  environment={environment}
                   statusLine={
                     isPlayback && playbackData
                       ? `${effectiveOpEntities.length} entities · t=${playbackTime.toFixed(1)}s`
@@ -317,9 +332,12 @@ export default function Page() {
                 />
               )}
               <MapViewToggle value={mapView} onChange={setMapView} />
-              <div className="pointer-events-auto absolute left-3 top-3 z-10 max-w-sm">
-                <OperationalArea apiBase={apiBase} />
-              </div>
+              <EnvironmentToggle value={environment} onChange={setEnvironment} />
+              {environment === "outdoor" && (
+                <div className="pointer-events-auto absolute left-3 top-3 z-10 max-w-sm">
+                  <OperationalArea apiBase={apiBase} />
+                </div>
+              )}
               <div className="pointer-events-auto absolute left-3 bottom-3 right-3 md:right-auto md:max-w-md">
                 <IntelSummaryCard apiBase={apiBase} variant="compact" />
               </div>
@@ -378,6 +396,34 @@ function MapViewToggle({
           }`}
         >
           {v.toUpperCase()}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function EnvironmentToggle({
+  value,
+  onChange,
+}: {
+  value: "outdoor" | "indoor";
+  onChange: (v: "outdoor" | "indoor") => void;
+}) {
+  return (
+    <div className="pointer-events-auto absolute right-4 top-14 flex border border-border-strong bg-surface/85 font-mono text-[10px] uppercase tracking-[0.3em] backdrop-blur-sm">
+      {(["outdoor", "indoor"] as const).map((v) => (
+        <button
+          key={v}
+          type="button"
+          onClick={() => onChange(v)}
+          aria-pressed={value === v}
+          className={`px-3 py-1.5 transition-colors ${
+            value === v
+              ? "bg-accent/15 text-accent"
+              : "text-text-muted hover:text-accent"
+          }`}
+        >
+          {v}
         </button>
       ))}
     </div>
