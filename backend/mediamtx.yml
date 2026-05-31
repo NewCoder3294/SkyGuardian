@@ -12,7 +12,10 @@
 logLevel: info
 
 api: yes
-apiAddress: :9997
+# Loopback-only: the admin/control API is for local diagnostics, never a LAN
+# consumer. Binding to all interfaces would expose path control to anyone on
+# the network.
+apiAddress: 127.0.0.1:9997
 
 rtsp: no
 hls: no
@@ -20,11 +23,15 @@ webrtc: no
 srt: no
 
 rtmp: yes
-rtmpAddress: :1935
+# Loopback-only: only a publisher running ON THIS LAPTOP can push (the canonical
+# setup per docs/DEMO.md — DJI HDMI capture / DJI app on the laptop). Prevents an
+# unauthenticated LAN host from pushing a spoofed Mavic feed. To allow a publisher
+# on another LAN device, switch to credentialed publish (publishUser/publishPass)
+# instead of opening this bind.
+rtmpAddress: 127.0.0.1:1935
 
 paths:
-  # Default path the SkyGuardian backend reads (rtmp://127.0.0.1:1935/live).
+  # The ONLY path. The backend reads rtmp://127.0.0.1:1935/live; no catch-all,
+  # so arbitrary publish paths are rejected (smaller attack surface).
   live:
     source: publisher
-  # Accept any other publish path as well.
-  all_others:
