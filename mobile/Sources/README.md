@@ -42,7 +42,7 @@ by [`ModelDownloader`](#voice--intent) and the SETUP overlay blocks the UI until
   `LocationProvider`, `TelloDirectStream`, `FollowCoordinator`, `Localizer`). Blocks the UI
   behind a SETUP overlay until the on-device model is present, then routes resolved voice
   actions through the single drone arbiter (`handle(_:)`): `follow me` → arm/resume the
-  AprilTag follow loop, `track` → arm/relock the tag-free visual tracker, `land`/`stop`/
+  AprilTag follow loop, `track` → arm/re-lock via `requestLock(.visualMe)`, `land`/`stop`/
   `emergency` → land/cut (always win), other flight → manual takeover (pause-and-hold),
   `hold`/`recall` → mission intent to the laptop. Drives `Localizer` from `LocationProvider`
   + `FollowCoordinator` so the map renders with no laptop, and `publishFollow()` pushes the
@@ -105,8 +105,10 @@ by [`ModelDownloader`](#voice--intent) and the SETUP overlay blocks the UI until
   the autonomous loop in two modes: **tag** (`AprilTagDetector`) or **track**
   (`ObjectTracker`, synthesized into a `TagDetection` so the same controller drives the
   drone). Decode tap → detect (backpressured, ~10 Hz cap) → `FollowController` → `rc` sticks
-  at a fixed ~15 Hz cadence. Explicit `arm`/`armTrack` (takeoff + settle delay), `relock`,
-  `pauseToManual`/`resumeFollow` (voice takeover), `disarmAndLand`, `emergencyCut`, and an
+  at a fixed ~15 Hz cadence. Explicit `arm` (takeoff + settle delay), `requestLock(_:)`
+  (mid-flight target switch or re-lock — voice "follow me"/"track the tag" or the ControlBar
+  `ME`/`TAG` toggle), `pauseToManual`/`resumeFollow` (voice takeover), `disarmAndLand`,
+  `emergencyCut`, and an
   automatic lost-tag land after a long timeout. **Airborne target confirmation:** after the
   takeoff climb settles the drone HOVERS in a `.confirming` (lock visible) / `.searching`
   (no lock) pre-confirm state and sends **no** follow/track `rc` until the operator calls

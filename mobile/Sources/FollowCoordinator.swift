@@ -148,9 +148,6 @@ final class FollowCoordinator: ObservableObject {
         startRCLoop()
     }
 
-    /// Re-acquire the centered object (operator re-frames and says "track" again).
-    func relock() { detectQueue.async { self.tracker.reset() } }
-
     /// Acquire / switch to / re-acquire a lock of the given kind WITHOUT taking off
     /// (drone already airborne). Always routes through the confirm gate: re-inits the
     /// detector, drops any prior reading, hovers in `searching` until confirmTarget().
