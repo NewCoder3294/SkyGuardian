@@ -11,10 +11,30 @@ this to a local-frame Vec3 using the current SLAM camera pose.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+
+
+def _autodetect_device() -> str | None:
+    """Pick a sensible inference device. `YOLO_DEVICE` env wins (e.g. "cpu",
+    "mps", "cuda:0"). Otherwise prefer Apple-Silicon MPS when available — the
+    CPU default is ~5x slower for the YOLO-World + COCO ensemble. Returns
+    None when nothing is set so ultralytics keeps its own default."""
+    env = os.environ.get("YOLO_DEVICE", "").strip()
+    if env:
+        return env
+    try:
+        import torch  # noqa: PLC0415
+        if torch.backends.mps.is_available():
+            return "mps"
+        if torch.cuda.is_available():
+            return "cuda:0"
+    except Exception:
+        pass
+    return None
 
 
 @dataclass(frozen=True)
@@ -66,13 +86,19 @@ class YoloDetector:
 
         self._conf = conf_threshold
         self._imgsz = int(imgsz)
+        self._device = _autodetect_device()
+        if self._device:
+            print(f"[yolo] {path.name} → device={self._device}")
 
     def detect(self, frame_bgr: np.ndarray) -> list[YoloDetection]:
         """Run inference on a single BGR frame. Returns detections above threshold.
         Never returns None; returns an empty list on a clean frame with no detections."""
-        results = self._model(
-            frame_bgr, conf=self._conf, imgsz=self._imgsz, verbose=False,
-        )
+        kwargs: dict = {
+            "conf": self._conf, "imgsz": self._imgsz, "verbose": False,
+        }
+        if self._device:
+            kwargs["device"] = self._device
+        results = self._model(frame_bgr, **kwargs)
         detections: list[YoloDetection] = []
         for result in results:
             boxes = result.boxes

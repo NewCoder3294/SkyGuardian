@@ -40,7 +40,8 @@ interface Props {
   /** Optional single-line status (entity count, playback time, etc.). */
   statusLine?: string;
   buildingsVersion?: number;
-  /** Operational environment hint (outdoor/indoor); accepted for parity with the call site. */
+  /** "indoor" suppresses the OSM building polygons — they're geographic and
+   *  make no sense overlaid on an indoor SLAM frame. Default "outdoor". */
   environment?: "outdoor" | "indoor";
 }
 
@@ -56,6 +57,7 @@ export function LocalMap2D({
   initialSpanM = 0,
   statusLine,
   buildingsVersion = 0,
+  environment = "outdoor",
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -124,7 +126,18 @@ export function LocalMap2D({
   }, [draw, initialSpanM]);
 
   // Load (or reload) buildings; re-fetches when buildingsVersion bumps.
+  // Indoor mode skips the fetch entirely and clears any cached polygons —
+  // OSM city footprints are meaningless overlaid on an indoor SLAM frame.
   useEffect(() => {
+    if (environment === "indoor") {
+      buildingsRef.current = [];
+      setBuildingsState("ready");
+      // Re-centre at the launch point with a tight default span so entities
+      // and the local SLAM frame fill the view.
+      viewRef.current = { scale: 0.1, cx: 0, cy: 0 };
+      draw();
+      return;
+    }
     if (!apiBase) {
       setBuildingsState("missing");
       return;
@@ -152,7 +165,7 @@ export function LocalMap2D({
     return () => {
       stopped = true;
     };
-  }, [apiBase, fitToBuildings, buildingsVersion]);
+  }, [apiBase, fitToBuildings, buildingsVersion, environment, draw]);
 
   // Redraw whenever entities change.
   useEffect(() => {
@@ -254,11 +267,17 @@ export function LocalMap2D({
         className="block h-full w-full cursor-grab active:cursor-grabbing"
       />
       <div className="tac-corners absolute left-4 top-4 space-y-1 border border-border-strong bg-surface/85 px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-text-muted backdrop-blur-sm">
-        <div className="text-accent">◢ Local frame · top-down</div>
+        <div className="text-accent">
+          ◢ Local frame · top-down
+          {environment === "indoor" && (
+            <span className="ml-2 text-text-dim">· indoor</span>
+          )}
+        </div>
         <div className="text-text-dim">
-          {buildingsState === "loading" && "loading buildings…"}
-          {buildingsState === "ready" && "drag · scroll zoom"}
-          {buildingsState === "missing" && "no buildings cached"}
+          {environment === "indoor" && "drag · scroll zoom"}
+          {environment === "outdoor" && buildingsState === "loading" && "loading buildings…"}
+          {environment === "outdoor" && buildingsState === "ready" && "drag · scroll zoom"}
+          {environment === "outdoor" && buildingsState === "missing" && "no buildings cached"}
         </div>
         {statusLine && (
           <div className="text-text-muted">{statusLine}</div>

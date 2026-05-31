@@ -129,10 +129,19 @@ def test_follow_state_target_type_defaults_to_none():
 
 
 def test_follow_state_rejects_bad_target_type():
-    import pytest
-    from pydantic import ValidationError
     with pytest.raises((ValidationError, ValueError)):
         FollowState(t=1.0, target_type="rocket")
+
+
+def test_follow_state_accepts_tag_target_type():
+    msg = parse_client_message({
+        "type": "follow_state", "active": True, "phase": "following",
+        "distance_m": 3.0, "bearing_deg": -20.0, "t": 2.0,
+        "target_type": "tag", "target_label": "7",
+    })
+    assert isinstance(msg, FollowState)
+    assert msg.target_type == "tag"
+    assert msg.target_label == "7"
 
 
 def test_follow_state_stale_copy_preserves_target_type():

@@ -66,6 +66,13 @@ class PerceptionPipeline:
         # class space and don't produce duplicates.
         yolo_coco_weights: str | Path | None = None,
         yolo_coco_keep: list[str] | None = None,
+        # Optional third detector: a specialty model (e.g. weapon-finetuned
+        # YOLOv8n). Boxes are filtered to `yolo_specialty_keep` if provided,
+        # otherwise all classes pass through. Lets the open-vocab detector
+        # focus on what it does well and delegate weak classes to a supervised
+        # model trained on them.
+        yolo_specialty_weights: str | Path | None = None,
+        yolo_specialty_keep: list[str] | None = None,
         depth_model: str | None = None,
         depth_scale: float = 5.0,
         tag_size_m: float = 0.20,
@@ -85,6 +92,8 @@ class PerceptionPipeline:
         self._detector = None       # YoloDetector | None — open-vocab (YOLO-World)
         self._coco_detector = None  # YoloDetector | None — supervised COCO
         self._coco_keep: set[str] = {c.lower() for c in (yolo_coco_keep or [])}
+        self._specialty_detector = None  # YoloDetector | None — specialty/weapons
+        self._specialty_keep: set[str] = {c.lower() for c in (yolo_specialty_keep or [])}
         self._depth = None          # DepthEstimator | None
         self._health = "starting"
         self._task: asyncio.Task | None = None
@@ -137,6 +146,26 @@ class PerceptionPipeline:
             except ImportError:
                 print("[perception] COCO ensemble disabled: ultralytics missing")
 
+        # Optional third detector: specialty supervised model (e.g. weapons).
+        # Runs alongside world + COCO, post-filtered to `_specialty_keep`.
+        if yolo_specialty_weights is not None:
+            try:
+                from .yolo import YoloDetector  # noqa: PLC0415
+                self._specialty_detector = YoloDetector(
+                    yolo_specialty_weights,
+                    conf_threshold=yolo_conf,
+                    classes=None,
+                    imgsz=yolo_imgsz,
+                )
+                print(
+                    f"[perception] specialty ensemble loaded from {yolo_specialty_weights} "
+                    f"(keep={sorted(self._specialty_keep) or 'ALL'}, imgsz={yolo_imgsz})"
+                )
+            except FileNotFoundError as exc:
+                print(f"[perception] specialty ensemble disabled: {exc}")
+            except ImportError:
+                print("[perception] specialty ensemble disabled: ultralytics missing")
+
         # Try to load monocular depth model. Failure -> SLAM + YOLO only,
         # entities will clamp to ground plane.
         if depth_model:
@@ -166,6 +195,14 @@ class PerceptionPipeline:
                 results.extend(coco)
             except Exception as exc:
                 print(f"[perception] COCO YOLO error: {exc}")
+        if self._specialty_detector is not None:
+            try:
+                spec = self._specialty_detector.detect(frame_bgr)
+                if self._specialty_keep:
+                    spec = [d for d in spec if d.label.lower() in self._specialty_keep]
+                results.extend(spec)
+            except Exception as exc:
+                print(f"[perception] specialty YOLO error: {exc}")
         return results
 
     @staticmethod
@@ -316,7 +353,11 @@ class PerceptionPipeline:
                             local_map.integrate(self._world, now)
 
                         # --- YOLO + (optional) depth + fusion ---
-                        any_detector = self._detector is not None or self._coco_detector is not None
+                        any_detector = (
+                            self._detector is not None
+                            or self._coco_detector is not None
+                            or self._specialty_detector is not None
+                        )
                         if any_detector and frame_bgr is not None:
                             detections = await asyncio.to_thread(
                                 self._run_detectors, frame_bgr
