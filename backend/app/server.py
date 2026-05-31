@@ -856,7 +856,25 @@ async def post_map_area(
             t=clock.now(),
         )
     )
-    return {"origin": payload["origin"], "radius_m": payload["radius_m"], "count": payload["count"]}
+    basemap_meta = None
+    basemap_error = None
+    try:
+        from app.basemap import extract_basemap
+        from dataclasses import asdict
+
+        meta = await asyncio.to_thread(
+            extract_basemap, req.lat, req.lng, req.radius_m, out_path=_BASEMAP_PATH
+        )
+        basemap_meta = asdict(meta)
+    except Exception as exc:  # noqa: BLE001 — basemap is best-effort; buildings already saved
+        basemap_error = str(exc)[:200]
+    return {
+        "origin": payload["origin"],
+        "radius_m": payload["radius_m"],
+        "count": payload["count"],
+        "basemap": basemap_meta,
+        "basemap_error": basemap_error,
+    }
 
 
 @app.get("/intel/summary")
