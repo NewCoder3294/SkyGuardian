@@ -86,6 +86,8 @@ export interface FollowState {
   phase: string;         // disarmed | searching | confirming | following | lost | manual | stale ("stale" is server-injected)
   distance_m: number;    // soldier → Tello range, metres
   bearing_deg: number;   // Tello bearing relative to the soldier, degrees
+  target_type?: "visual_me" | "tag" | null; // what the lock is on; null when not following
+  target_label?: string | null;             // raw id hint (e.g. tag id); null for visual_me
   t: number;
 }
 
