@@ -120,7 +120,7 @@ struct ContentView: View {
         localizer.update(distance: follow.distance,
                          bearingRad: follow.bearingDeg * .pi / 180,
                          headingDeg: location.headingDeg,
-                         active: follow.phase == .following)
+                         active: follow.isArmed)
         publishFollow()   // distance/bearing moved → keep the laptop's follow inset live
 
         // Co-registered map: once aligned to the launch anchor, re-express the

@@ -11,13 +11,10 @@ struct DronePilot {
     func resolve(_ transcript: String) async -> DroneAction? {
         let cleaned = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return nil }
-
-        // Prefer the model's function call; fall back to keyword matching.
-        if service.isAvailable,
-           let raw = try? await service.complete(system: Self.systemPrompt, user: cleaned),
-           let action = DroneAction.fromModelOutput(raw) {
-            return action
-        }
+        // Deterministic keyword matching ONLY — offline, instant, and crash-proof.
+        // The on-device LLM (Gemma via Cactus) is weak and its C path can crash the
+        // app, so it is deliberately NOT on the live command path. DroneIntent.match
+        // covers the full closed vocabulary; unmatched speech returns nil (no action).
         return DroneIntent.match(cleaned)
     }
 

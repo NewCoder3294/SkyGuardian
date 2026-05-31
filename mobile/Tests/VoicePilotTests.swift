@@ -46,11 +46,14 @@ final class VoicePilotTests: XCTestCase {
 
     // MARK: - DronePilot resolution paths
 
-    func testResolveUsesParseableModelOutput() async {
+    func testResolveUsesKeywordOnlyRegardlessOfModelOutput() async {
+        // LLM path is removed — resolve() is keyword-only.
+        // "nudge up a bit" contains "up" → keyword fires → DroneAction(.up, nil).
+        // Model JSON (even if parseable) is never consulted.
         let cactus = FakeCactus(available: true, output: "{\"function\":\"up\",\"value\":80}")
         let pilot = DronePilot(service: cactus)
         let action = await pilot.resolve("nudge up a bit")
-        XCTAssertEqual(action, DroneAction(.up, 80))
+        XCTAssertEqual(action, DroneAction(.up, nil))
     }
 
     func testResolveFallsBackToKeywordWhenUnavailable() async {

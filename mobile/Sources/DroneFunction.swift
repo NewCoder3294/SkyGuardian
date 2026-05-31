@@ -184,14 +184,14 @@ enum DroneIntent {
 
         // Movement.
         if has(t, ["flip", "barrel roll", "do a flip", "backflip", "front flip"]) { return DroneAction(.flip) }
-        if has(t, ["rotate left", "turn left", "spin left", "yaw left"]) { return DroneAction(.rotateCCW, n) }
-        if has(t, ["rotate right", "turn right", "spin right", "yaw right"]) { return DroneAction(.rotateCW, n) }
-        if has(t, ["ascend", "go up", "rise", "higher", "climb"]) { return DroneAction(.up, n) }
-        if has(t, ["descend", "go down", "lower", "drop"]) { return DroneAction(.down, n) }
-        if has(t, ["forward", "ahead", "advance"]) { return DroneAction(.forward, n) }
-        if has(t, ["back", "backward", "back up", "reverse", "retreat", "go back"]) { return DroneAction(.back, n) }
-        if has(t, ["strafe left", "slide left", "move left"]) { return DroneAction(.left, n) }
-        if has(t, ["strafe right", "slide right", "move right"]) { return DroneAction(.right, n) }
+        if has(t, ["rotate left", "turn left", "spin left", "yaw left", "look left", "pan left"]) { return DroneAction(.rotateCCW, n) }
+        if has(t, ["rotate right", "turn right", "spin right", "yaw right", "look right", "pan right"]) { return DroneAction(.rotateCW, n) }
+        if has(t, ["ascend", "go up", "rise", "higher", "climb", "fly up", "move up", "go higher", "gain altitude"]) { return DroneAction(.up, n) }
+        if has(t, ["descend", "go down", "lower", "drop", "fly down", "move down", "come down", "go lower"]) { return DroneAction(.down, n) }
+        if has(t, ["forward", "ahead", "advance", "go forward", "fly forward", "move forward", "forwards"]) { return DroneAction(.forward, n) }
+        if has(t, ["back", "backward", "backwards", "back up", "reverse", "retreat", "go back", "go backward", "go backwards", "fly back", "move back", "pull back"]) { return DroneAction(.back, n) }
+        if has(t, ["strafe left", "slide left", "move left", "go left", "fly left"]) { return DroneAction(.left, n) }
+        if has(t, ["strafe right", "slide right", "move right", "go right", "fly right"]) { return DroneAction(.right, n) }
         if has(t, ["up"]) { return DroneAction(.up, n) }
         if has(t, ["down"]) { return DroneAction(.down, n) }
         if has(t, ["left"]) { return DroneAction(.left, n) }

@@ -26,4 +26,17 @@ final class DroneIntentTests: XCTestCase {
     func testThatTagMapsToTrackTag() {
         XCTAssertEqual(DroneIntent.match("lock onto that tag")?.function, .trackTag)
     }
+    func testBackwardsMapsToBack() {
+        XCTAssertEqual(DroneIntent.match("go backwards")?.function, .back)
+        XCTAssertEqual(DroneIntent.match("backwards")?.function, .back)
+    }
+    func testGoForwardMapsToForward() {
+        XCTAssertEqual(DroneIntent.match("go forward")?.function, .forward)
+    }
+    func testFlyUpMapsToUp() {
+        XCTAssertEqual(DroneIntent.match("fly up")?.function, .up)
+    }
+    func testComeDownMapsToDown() {
+        XCTAssertEqual(DroneIntent.match("come down")?.function, .down)
+    }
 }
