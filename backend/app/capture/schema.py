@@ -16,7 +16,7 @@ class Detection(BaseModel):
     """One detection on a saved frame. `box` is [cx, cy, w, h], normalized 0..1."""
     label: str
     conf: float = Field(ge=0.0, le=1.0)
-    box: list[float]
+    box: list[float] = Field(min_length=4, max_length=4)  # exactly [cx, cy, w, h]
 
 
 class Observation(BaseModel):
@@ -42,5 +42,5 @@ class Event(BaseModel):
     source: str
     label: Optional[str] = None
     corrected_label: Optional[str] = None
-    box: Optional[list[float]] = None
+    box: Optional[list[float]] = Field(default=None, min_length=4, max_length=4)
     note: Optional[str] = None

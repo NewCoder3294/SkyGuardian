@@ -31,6 +31,13 @@ def test_observation_pose_optional():
 def test_detection_conf_bounds():
     with pytest.raises(ValidationError):
         Detection(label="x", conf=1.5, box=[0, 0, 0, 0])
+    with pytest.raises(ValidationError):
+        Detection(label="x", conf=-0.1, box=[0, 0, 0, 0])
+
+
+def test_detection_box_must_be_length_four():
+    with pytest.raises(ValidationError):
+        Detection(label="x", conf=0.5, box=[0, 0, 0])
 
 
 def test_event_round_trips():
