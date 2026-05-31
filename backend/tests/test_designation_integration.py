@@ -27,14 +27,20 @@ def test_apply_designation_emits_designated_target():
     server.world.remove("designated_target")
     server.world.upsert(_yolo("yolo_person_9", "person"))
 
-    server._apply_designation(server.clock.now())
+    # The broadcast loop takes ONE snapshot per tick and passes it in; designation
+    # upserts the mark into the world AND reflects it in the passed snapshot.
+    snap = server.world.snapshot()
+    server._apply_designation(server.clock.now(), snap)
 
-    snap = {e.id: e for e in server.world.snapshot()}
-    assert "designated_target" in snap
-    dt = snap["designated_target"]
+    # Reflected in the passed-in snapshot (rides this same broadcast tick)...
+    by_id = {e.id: e for e in snap}
+    assert "designated_target" in by_id
+    dt = by_id["designated_target"]
     assert dt.label == "DESIGNATED: person"
     assert dt.type is EntityType.POI
     assert dt.position.x == 2.0
+    # ...and persisted in the world model for subsequent ticks.
+    assert "designated_target" in {e.id for e in server.world.snapshot()}
     # Cleanup so we don't leak into other tests sharing the module-level world.
     server.world.remove("designated_target")
     server.world.remove("yolo_person_9")
@@ -45,7 +51,9 @@ def test_apply_designation_no_candidate_is_noop():
     # Only a non-high-value detection present.
     server.world.upsert(_yolo("yolo_debris_1", "debris"))
 
-    server._apply_designation(server.clock.now())
+    snap = server.world.snapshot()
+    server._apply_designation(server.clock.now(), snap)
 
+    assert "designated_target" not in {e.id for e in snap}
     assert "designated_target" not in _ids(server.world)
     server.world.remove("yolo_debris_1")

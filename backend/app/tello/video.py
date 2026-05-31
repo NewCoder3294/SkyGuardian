@@ -8,6 +8,7 @@ so the rest of the system stays uniform.
 from __future__ import annotations
 
 import threading
+import time
 from typing import Optional
 
 from .client import TelloClient
@@ -17,15 +18,24 @@ class TelloVideoSource:
     """FrameSource backed by the Tello SDK's frame reader.
 
     Calls `streamon` on `start()`; releases the reader on `stop()`. `read_jpeg()`
-    is non-blocking — returns the latest decoded JPEG or None if the link is down
-    or no frame has arrived yet.
+    is non-blocking — returns the latest decoded JPEG or None if the link is down,
+    no frame has arrived yet, or the last decode is stale (see `_FRESH_WINDOW_S`).
     """
+
+    # Mirrors StreamVideoSource: if the reader hasn't decoded a fresh frame in
+    # this window, treat the source as dead and return None. Without it, a
+    # video-only freeze (UDP stalls while the command channel still answers the
+    # 1 Hz heartbeat) leaves the last decoded JPEG cached, and the follow
+    # controller keeps detecting the tag on the frozen frame and issuing RC.
+    # Returning None makes the controller treat it as "tag lost -> hover".
+    _FRESH_WINDOW_S = 3.0
 
     def __init__(self, client: TelloClient, jpeg_quality: int = 80) -> None:
         self._client = client
         self._jpeg_quality = int(jpeg_quality)
         self._lock = threading.Lock()
         self._latest_jpeg: Optional[bytes] = None
+        self._latest_t: float = 0.0  # monotonic timestamp of last successful decode
         self._thread: Optional[threading.Thread] = None
         self._stop = threading.Event()
         # cv2 imported lazily to keep this module importable in test envs.
@@ -53,6 +63,10 @@ class TelloVideoSource:
 
     def read_jpeg(self) -> Optional[bytes]:
         with self._lock:
+            if self._latest_jpeg is None:
+                return None
+            if time.monotonic() - self._latest_t > self._FRESH_WINDOW_S:
+                return None
             return self._latest_jpeg
 
     def _reader(self) -> None:
@@ -61,6 +75,10 @@ class TelloVideoSource:
         while not self._stop.is_set():
             if not self._client.is_connected:
                 self._frame_reader = None
+                # Drop the cached frame so a dropped link can't keep serving a
+                # stale JPEG once the connection comes back symmetric to None.
+                with self._lock:
+                    self._latest_jpeg = None
                 self._stop.wait(0.5)
                 continue
             tello = self._client.raw
@@ -83,5 +101,6 @@ class TelloVideoSource:
                 continue
             with self._lock:
                 self._latest_jpeg = buf.tobytes()
+                self._latest_t = time.monotonic()
             # ~30 fps cap to avoid pegging the CPU; consumers throttle further.
             self._stop.wait(0.033)

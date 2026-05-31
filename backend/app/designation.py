@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from .contracts import Entity, EntitySource, Vec3
+from .contracts import Entity, EntitySource, EntityStatus, Vec3
 
 # High-value classes worth designating on a recon feed. Override via the server
 # if the deployed YOLO vocabulary differs.
@@ -44,14 +44,18 @@ class Designator:
     ) -> Optional[Designation]:
         """Pick the top-priority recon detection, or None if there is no candidate.
 
-        Candidates: entities sourced from YOLO whose label is in the high-value
-        set. Ranked by confidence (desc); ties broken by proximity to the launch
-        origin (closer first) for a deterministic, stable choice.
+        Candidates: ACTIVE entities sourced from YOLO whose label is in the
+        high-value set. Ranked by confidence (desc); ties broken by proximity to
+        the launch origin (closer first) for a deterministic, stable choice.
+
+        The ACTIVE filter prevents promoting a STALE/LOST detection (perception
+        last refreshed up to ~12 s ago) to the operator's designated target.
         """
         candidates = [
             e
             for e in entities
             if e.source == EntitySource.YOLO
+            and e.status == EntityStatus.ACTIVE
             and e.label is not None
             and e.label.lower() in self._high_value
         ]

@@ -8,10 +8,12 @@ Async loop:
   5. Publish the drone and soldier as world-model entities (source = follow).
 
 Mission stage handling:
-  - IDLE / HOLDING / RECALL / STOPPED → no RC sent, but the loop keeps detecting
-    so the dashboard still sees the soldier on the map.
+  - IDLE / HOLDING / RECALL / STOPPED → the loop keeps detecting so the
+    dashboard still sees the soldier on the map.
   - HOLDING → send a zero-RC hover to keep the Tello in place.
-  - RECALL → drive the Tello back toward (0, 0, ~1.2 m) — the launch point.
+  - RECALL → fly back toward the soldier along the last measured tag bearing.
+    Bounded: hover (no blind thrust) whenever the tag is not in view, and fail
+    closed to STOPPED after `_RECALL_MAX_S` so recall can never drive forever.
   - STOPPED → land if airborne, no further commands.
 
 The controller does *not* assume a Tello is connected. If the link is down it
@@ -53,6 +55,12 @@ _RC_LIMIT = 35
 # Frame loop pacing (Hz). Tello video is ~30 fps; controller runs at 15.
 _LOOP_HZ = 15.0
 
+# Maximum time the controller will drive in RECALL before failing closed to a
+# safe stop. Open-loop recall must never run unbounded: once this elapses we
+# trip the mission state machine's named failure (-> STOPPED), which lands the
+# drone on the next tick instead of flying backward indefinitely.
+_RECALL_MAX_S = 8.0
+
 
 class FollowController:
     """Owns the follow loop. Construct once at startup, call `start()` from the
@@ -89,6 +97,9 @@ class FollowController:
         self._prev_t: Optional[float] = None
         self._frames_seen = 0
         self._tag_loss_started_at: Optional[float] = None
+        # Wall-clock the controller first entered RECALL, so we can bound how
+        # long open-loop recall is allowed to drive before failing closed.
+        self._recall_started_at: Optional[float] = None
 
     @property
     def has_recent_tag(self) -> bool:
@@ -145,6 +156,11 @@ class FollowController:
             return
 
         stage = self._mission.stage
+        # RECALL is the only stage that arms the recall timer; clear it the
+        # moment we leave RECALL so a later recall starts a fresh budget.
+        if stage is not Stage.RECALL:
+            self._recall_started_at = None
+
         if stage is Stage.STOPPED:
             # Emergency: land if airborne, no further commands.
             if self._tello.is_connected:
@@ -157,11 +173,29 @@ class FollowController:
             return
 
         if stage is Stage.RECALL:
-            # Drive back to ~(0, 0): use bearing to launch in the local frame if
-            # available. With only tag-relative sensing we approximate by
-            # decreasing distance — i.e. fly back along the bearing toward where
-            # we last saw the soldier (operator initiates recall when near base).
-            self._tello.send_rc(0, -_RC_LIMIT // 2, 0, 0)
+            # Bounded recall. Open-loop thrust must never run forever, so:
+            #   1. With no valid tag reading we hover (mirrors the FOLLOWING
+            #      "tag lost" path) — never blind-thrust on no sensing.
+            #   2. We cap total recall time; once _RECALL_MAX_S elapses we trip
+            #      the mission's named failure (-> STOPPED) so the next tick
+            #      lands the drone instead of flying it backward indefinitely.
+            if self._recall_started_at is None:
+                self._recall_started_at = now
+            elif now - self._recall_started_at > _RECALL_MAX_S:
+                self._mission.fail("recall_timeout")
+                self._tello.hover()
+                return
+
+            if reading is None:
+                # No bearing to fly toward — hold position and wait for the tag.
+                self._tello.hover()
+                return
+
+            # Fly back toward the soldier along the measured bearing: yaw to
+            # re-centre the tag and close distance (fb < 0 = backward toward the
+            # operator-initiated recall point). Lateral hold via yaw, as in FOLLOW.
+            yaw = int(np.clip(_KP_YAW * reading.bearing_x_norm, -_RC_LIMIT, _RC_LIMIT))
+            self._tello.send_rc(0, -_RC_LIMIT // 2, 0, yaw)
             return
 
         if stage is not Stage.FOLLOWING:

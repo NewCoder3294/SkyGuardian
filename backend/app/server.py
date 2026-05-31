@@ -52,6 +52,7 @@ from .contracts import (
     Entity,
     EntityReport,
     EntitySource,
+    EntityStatus,
     EntityType,
     FollowState,
     Health,
@@ -217,6 +218,19 @@ _intel_state = {
     "running": False,          # an inference is currently in flight
     "last_error": None,        # str | None
 }
+# Single serialization point for ALL local-Ollama inference: the periodic intel
+# loop, on-demand deep-look, and operator chat share one model on one machine.
+# Without this they could run concurrently (the `running` flag was only checked
+# by the periodic loop) and double the load/latency on saturated hardware.
+# Lazily created on first use so module import doesn't bind an event loop.
+_ollama_lock: "asyncio.Lock | None" = None
+
+
+def _get_ollama_lock() -> "asyncio.Lock":
+    global _ollama_lock
+    if _ollama_lock is None:
+        _ollama_lock = asyncio.Lock()
+    return _ollama_lock
 # Dedicated vision-enabled reasoner for the on-demand /intel/deep-look route.
 # Always uses with_vision=True regardless of INTEL_VISION; constructed lazily
 # here so the model name stays in sync with the periodic reasoner.
@@ -371,18 +385,22 @@ approach = ApproachController(
 _designator = Designator()
 
 
-def _apply_designation(now: float) -> None:
+def _apply_designation(now: float, snapshot: list[Entity]) -> None:
     """Rank current recon detections and mark the top one as `designated_target`.
 
     No-op (the prior mark TTL-clears) when there's no high-value candidate. The
     emitted entity's label is not a high-value class, so it is excluded from
     re-selection — no feedback loop. Read-only situational awareness; commands
     nothing.
+
+    Takes the broadcast tick's single `world.snapshot()` rather than re-snapping,
+    so designation and the broadcast see exactly the same entity set (one `tick()`
+    per broadcast, not two).
     """
     threat = _intel_summary.threat_level if _intel_summary is not None else "unknown"
-    designation = _designator.select(world.snapshot(), threat)
+    designation = _designator.select(snapshot, threat)
     if designation is not None:
-        world.upsert(Entity(
+        target = Entity(
             id="designated_target",
             type=EntityType.POI,
             position=designation.position,
@@ -391,17 +409,34 @@ def _apply_designation(now: float) -> None:
             source=EntitySource.YOLO,
             label=f"DESIGNATED: {designation.label}",
             ttl_s=3.0,
-        ))
+        )
+        world.upsert(target)
+        # Reflect the fresh mark in this tick's snapshot so it broadcasts now
+        # (the snapshot was taken before the upsert). Replace any prior mark.
+        snapshot[:] = [e for e in snapshot if e.id != "designated_target"]
+        snapshot.append(target.model_copy(update={"status": EntityStatus.ACTIVE}))
 
 
-def _route_arming_for_command(command: Command, lock: ArmingLock) -> None:
-    """Transfer the Tello arming lock to match the commanded mode."""
-    if command is Command.APPROACH:
+def _route_arming_for_command(stage: Stage, lock: ArmingLock) -> None:
+    """Transfer the Tello arming lock to match the ACTUAL resulting mission stage.
+
+    Gating on the resulting stage (not the raw command) keeps the lock and the
+    stage in lockstep: a command the state machine rejects (a no-op transition)
+    must not move the lock, or the system lands in an inconsistent state (e.g.
+    lock=approach while stage stays IDLE) where neither laptop controller drives.
+
+      - APPROACH stage           -> arm the approach controller.
+      - FOLLOWING / RECALL stage -> arm the follow controller (it owns recall).
+      - STOPPED stage            -> release everything (disarm), so an emergency
+                                    stop never re-arms a laptop controller.
+      - any other stage          -> leave the lock untouched.
+    """
+    if stage is Stage.APPROACH:
         lock.release("follow"); lock.acquire("approach")
-    elif command is Command.FOLLOW_ME:
+    elif stage in (Stage.FOLLOWING, Stage.RECALL):
         lock.release("approach"); lock.acquire("follow")
-    elif command in (Command.STOP, Command.RECALL):
-        lock.release("approach"); lock.acquire("follow")
+    elif stage is Stage.STOPPED:
+        lock.release("approach"); lock.release("follow")
 
 app = FastAPI(title="SkyGuardian — local brain")
 # Dashboard runs on a different port (3000) and pulls MJPEG/JPEG via <img src>.
@@ -446,8 +481,13 @@ async def _broadcast_loop() -> None:
         # single producer of world/mission/health for every client.
         try:
             now = clock.now()
-            _apply_designation(now)
-            await hub.broadcast(WorldSnapshot(entities=world.snapshot(), t=now))
+            # One snapshot per tick, shared by designation and the broadcast, so
+            # the world lifecycle (tick) advances exactly once and both see the
+            # same entity set. _apply_designation may upsert designated_target,
+            # which then rides this same snapshot list out to the clients.
+            snap = world.snapshot()
+            _apply_designation(now, snap)
+            await hub.broadcast(WorldSnapshot(entities=snap, t=now))
             await hub.broadcast(MissionState(
                 stage=mission.stage.value,
                 # Only real mission-state faults surface to the dashboard. Tello
@@ -557,7 +597,10 @@ async def _intel_loop() -> None:
             labels = [b.label for b in boxes]
             _intel_state["running"] = True
             try:
-                summary = await _intel_reasoner.summarise(jpeg, labels)
+                # Serialize against deep-look/chat so only one Ollama inference
+                # runs at a time on the shared local model.
+                async with _get_ollama_lock():
+                    summary = await _intel_reasoner.summarise(jpeg, labels)
                 _intel_summary = summary
                 _intel_state["last_error"] = None
             except Exception as exc:
@@ -598,7 +641,9 @@ async def _run_deep_look(reasoner, jpeg, labels) -> "IntelSummary":
             model="",
             latency_ms=0.0,
         )
-    return await reasoner.summarise(jpeg, labels)
+    # Serialize against the periodic loop + chat: one Ollama inference at a time.
+    async with _get_ollama_lock():
+        return await reasoner.summarise(jpeg, labels)
 
 
 async def _approach_loop() -> None:
@@ -833,9 +878,11 @@ async def post_intel_chat(body: ChatRequest) -> dict:
     context = "\n".join(parts)
 
     try:
-        reply = await _intel_chat.reply(
-            history=[m.model_dump() for m in body.messages], context=context
-        )
+        # Serialize against the periodic loop + deep-look on the shared model.
+        async with _get_ollama_lock():
+            reply = await _intel_chat.reply(
+                history=[m.model_dump() for m in body.messages], context=context
+            )
         return {"reply": reply, "ok": True, "model": _INTEL_MODEL_ENV}
     except Exception as exc:
         return {
@@ -1097,21 +1144,40 @@ def _apply_device_location(msg: DeviceLocation) -> None:
     ))
 
 
+# Ids the server/follow stack owns and the phone must never overwrite. The
+# legitimate phone path emits "soldier" (shared operator marker) and "drone",
+# which stay writable by design.
+_RESERVED_ENTITY_IDS = frozenset({"designated_target", "tello"})
+# Receipt-time clamp on phone-reported TTLs. Independent of the wider contract
+# bound on Entity.ttl_s — keeps a reported marker from outliving the phone link.
+_MAX_REPORTED_TTL_S = 10.0
+
+
 def _apply_entity_report(msg: EntityReport) -> None:
     """Phone-localized entities (operator + drone), already in the shared world
     frame. The phone co-registers against the launch anchor tag, so these upsert
     straight into the world model. TTL on each entity ages them out if the phone
     link drops (no frozen drone left on the map).
 
-    Trust note: the phone is a trusted local peer on the offline network, so the
-    client-supplied id/timestamp/ttl_s are taken as-is. The TTL-staleness guarantee
-    therefore depends on the phone sending honest timestamps; a stuck/future
-    timestamp would keep an entity ACTIVE. Acceptable under the offline threat
-    model; namespacing phone ids / clamping timestamp to receipt time is a
-    future hardening step.
+    Hardening (the phone is a trusted local peer, but a malformed payload must
+    not corrupt server-owned state):
+      - Reserved ids (`designated_target`, `tello`) are rejected so the phone
+        can't clobber follow/server-owned markers. `soldier`/`drone` stay
+        writable (intended shared markers).
+      - `timestamp` is restamped to the laptop receipt time (`clock.now()`), so
+        a stuck/future client clock can't keep an entity ACTIVE — same discipline
+        already applied to FollowState.
+      - `ttl_s` is clamped to a small server max so a reported marker can't be
+        pinned ACTIVE indefinitely.
     """
+    now = clock.now()
     for entity in msg.entities:
-        world.upsert(entity)
+        if entity.id in _RESERVED_ENTITY_IDS:
+            continue
+        world.upsert(entity.model_copy(update={
+            "timestamp": now,
+            "ttl_s": min(entity.ttl_s, _MAX_REPORTED_TTL_S),
+        }))
 
 
 @app.websocket("/ws")
@@ -1127,8 +1193,10 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 # Unknown/malformed intent is rejected, never guessed.
                 continue
             if isinstance(msg, IntentMessage):
-                mission.apply(msg.command)
-                _route_arming_for_command(msg.command, arming)
+                # Route arming on the ACTUAL resulting stage, not the raw command,
+                # so a rejected transition can't desync the lock from the stage.
+                new_stage = mission.apply(msg.command)
+                _route_arming_for_command(new_stage, arming)
             elif isinstance(msg, DeviceLocation):
                 _apply_device_location(msg)
             elif isinstance(msg, FollowState):
