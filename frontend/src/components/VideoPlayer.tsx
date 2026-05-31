@@ -185,13 +185,13 @@ export function VideoPlayer({ apiBase, name, onTimeUpdate }: Props) {
 
       <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2 border border-border-strong bg-bg px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.3em] text-text-muted">
         <span aria-hidden className="relative inline-flex h-2 w-2">
-          <span className={`relative inline-block h-2 w-2 rounded-full ${data ? "bg-ok shadow-glow-cyan" : "bg-fail"}`} />
+          <span className={`relative inline-block h-2 w-2 rounded-full ${data ? "bg-ok shadow-glow-cyan" : "border border-text-dim bg-transparent"}`} />
         </span>
         <span className="text-text">Playback · {name}</span>
       </div>
 
       {loadError && (
-        <div className="absolute inset-x-4 bottom-16 rounded-md border border-fail/60 bg-surface/90 p-3 font-mono text-[10px] uppercase tracking-widest text-fail">
+        <div className="absolute inset-x-4 bottom-16 rounded-md border border-border-strong bg-surface/90 p-3 font-mono text-[10px] uppercase tracking-widest text-text">
           ▲ Detections fetch failed: {loadError}
         </div>
       )}

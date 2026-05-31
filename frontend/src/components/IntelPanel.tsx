@@ -21,9 +21,9 @@ export function IntelPanel({ detections, detectionLog }: Props) {
   const activeThreats = board.filter((r) => r.visibleNow && r.isThreat).length;
 
   return (
-    <div className="h-full overflow-auto bg-bg p-5">
-      <section className="tac-corners overflow-hidden border border-border bg-surface shadow-card">
-        <header className="flex items-baseline justify-between border-b border-border bg-surface-elevated px-5 py-3">
+    <div className="bg-bg p-5">
+      <section className="tac-corners flex h-[460px] flex-col overflow-hidden border border-border bg-surface shadow-card">
+        <header className="flex shrink-0 items-baseline justify-between border-b border-border bg-surface-elevated px-5 py-3">
           <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.3em] text-accent">
             ◢ Threat board
           </span>
@@ -38,8 +38,9 @@ export function IntelPanel({ detections, detectionLog }: Props) {
             </span>
           </div>
         </header>
+        <div className="min-h-0 flex-1 overflow-auto">
         {board.length === 0 ? (
-          <div className="px-5 py-10 text-center font-mono text-[10px] uppercase tracking-widest text-text-dim">
+          <div className="flex h-full items-center justify-center px-5 py-10 text-center font-mono text-[10px] uppercase tracking-widest text-text-dim">
             no detections yet — point the leader at something
           </div>
         ) : (
@@ -88,6 +89,7 @@ export function IntelPanel({ detections, detectionLog }: Props) {
             </tbody>
           </table>
         )}
+        </div>
       </section>
     </div>
   );

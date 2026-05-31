@@ -21,7 +21,7 @@ export function Clock() {
   }, []);
 
   return (
-    <span className="font-mono text-sm tabular-nums tracking-widest text-accent">
+    <span className="font-mono text-sm tabular-nums tracking-widest text-text">
       {now || "--:--:--"}
     </span>
   );

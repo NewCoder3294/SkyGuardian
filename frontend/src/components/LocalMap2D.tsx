@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Entity, EntityType } from "@/lib/contracts";
 import { isDesignatedTarget } from "@/lib/entities";
+import { SectionHeader, StatusTag } from "@/components/tactical";
 import { TrailStore } from "@/lib/trails";
 
 /**
@@ -88,8 +89,8 @@ export function LocalMap2D({
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // Warm parchment — matches --bg in globals.css (light theme).
-    ctx.fillStyle = "#f3efe2";
+    // Neutral paper — strict monochrome map surface.
+    ctx.fillStyle = "#f1f1f0";
     ctx.fillRect(0, 0, w, h);
 
     const v = viewRef.current;
@@ -266,13 +267,19 @@ export function LocalMap2D({
         ref={canvasRef}
         className="block h-full w-full cursor-grab active:cursor-grabbing"
       />
-      <div className="tac-corners absolute left-4 top-4 space-y-1 border border-border-strong bg-surface/85 px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-text-muted backdrop-blur-sm">
-        <div className="text-accent">
-          ◢ Local frame · top-down
-          {environment === "indoor" && (
-            <span className="ml-2 text-text-dim">· indoor</span>
-          )}
-        </div>
+      <div className="tac-corners absolute left-4 top-4 border border-border-strong bg-surface/85 backdrop-blur-sm">
+        <SectionHeader
+          index="01"
+          label="Local Frame"
+          aside={
+            <StatusTag
+              state="live"
+              label={environment === "indoor" ? "2D · INDOOR" : "2D"}
+            />
+          }
+          className="py-1.5"
+        />
+        <div className="space-y-1 px-3 pb-2 font-mono text-[10px] uppercase tracking-widest text-text-muted">
         <div className="text-text-dim">
           {environment === "indoor" && "drag · scroll zoom"}
           {environment === "outdoor" && buildingsState === "loading" && "loading buildings…"}
@@ -289,6 +296,7 @@ export function LocalMap2D({
         >
           Recenter
         </button>
+        </div>
       </div>
     </div>
   );
@@ -345,7 +353,7 @@ function drawGrid(
   const bottom = v.cy - (h / 2) * v.scale;
 
   // Minor
-  ctx.strokeStyle = "rgba(120, 80, 20, 0.08)";
+  ctx.strokeStyle = "rgba(20, 20, 20, 0.08)";
   ctx.lineWidth = 1;
   ctx.beginPath();
   for (let x = Math.ceil(left / minor) * minor; x <= right; x += minor) {
@@ -361,7 +369,7 @@ function drawGrid(
   ctx.stroke();
 
   // Major
-  ctx.strokeStyle = "rgba(120, 80, 20, 0.22)";
+  ctx.strokeStyle = "rgba(20, 20, 20, 0.22)";
   ctx.beginPath();
   for (let x = Math.ceil(left / major) * major; x <= right; x += major) {
     const sx = w / 2 + (x - v.cx) / v.scale;
@@ -377,7 +385,7 @@ function drawGrid(
 
   // Cardinal axes through origin (slightly brighter).
   const [ox, oy] = worldToScreen(0, 0, w, h, v);
-  ctx.strokeStyle = "rgba(120, 80, 20, 0.35)";
+  ctx.strokeStyle = "rgba(20, 20, 20, 0.35)";
   ctx.beginPath();
   ctx.moveTo(0, oy);
   ctx.lineTo(w, oy);
@@ -418,17 +426,14 @@ function drawBuildings(
     }
     if (bxMax < left || bxMin > right || byMax < bottom || byMin > top) continue;
 
-    // Taller building → slightly hotter fill so the campus has visual depth.
-    // Olive-green base with a phosphor-amber hairline outline matches the
-    // teammate's Buildings.tsx (R3F) treatment.
+    // Taller building → slightly darker fill so the campus has visual depth.
+    // Strict monochrome: neutral ink fill with a deeper ink hairline outline.
     const t = Math.max(0, Math.min(1, (b.height_m - 4) / 40));
-    // Light theme: muted olive-grey fill, deeper olive hairline. Taller =
-    // slightly darker fill so the campus has visual depth.
-    const fillAlpha = 0.32 + t * 0.30;
+    const fillAlpha = 0.10 + t * 0.12;
     const strokeAlpha = 0.55 + t * 0.25;
 
-    ctx.fillStyle = `rgba(166, 162, 138, ${fillAlpha.toFixed(3)})`;
-    ctx.strokeStyle = `rgba(86, 74, 38, ${strokeAlpha.toFixed(3)})`;
+    ctx.fillStyle = `rgba(20, 20, 20, ${fillAlpha.toFixed(3)})`;
+    ctx.strokeStyle = `rgba(20, 20, 20, ${strokeAlpha.toFixed(3)})`;
 
     ctx.beginPath();
     const first = b.polygon[0];
@@ -454,8 +459,8 @@ function drawOrigin(
   const [x, y] = worldToScreen(0, 0, w, h, v);
   if (x < -50 || y < -50 || x > w + 50 || y > h + 50) return;
 
-  ctx.strokeStyle = "#a76b1c";
-  ctx.fillStyle = "#a76b1c";
+  ctx.strokeStyle = "#1a1a1a";
+  ctx.fillStyle = "#1a1a1a";
   ctx.lineWidth = 1.5;
 
   ctx.beginPath();
@@ -468,8 +473,7 @@ function drawOrigin(
   ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace";
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
-  ctx.fillStyle = "#d9a441";
-  ctx.fillStyle = "#a76b1c";
+  ctx.fillStyle = "#1a1a1a";
   ctx.fillText("LAUNCH", x + 16, y);
 }
 
@@ -481,7 +485,7 @@ function drawTrails(
   trails: TrailStore,
 ) {
   ctx.lineWidth = 1.5;
-  ctx.strokeStyle = "rgba(167, 107, 28, 0.45)"; // amber, matches drone glyph
+  ctx.strokeStyle = "rgba(20, 20, 20, 0.45)"; // ink, matches drone glyph
   for (const pts of trails.all().values()) {
     if (pts.length < 2) continue;
     ctx.beginPath();
@@ -521,8 +525,8 @@ function drawEntities(
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
       ctx.fillStyle = isDesignated
-        ? `rgba(160, 50, 30, ${alpha.toFixed(3)})` // red callout for the target
-        : `rgba(86, 60, 20, ${(alpha * 0.9).toFixed(3)})`;
+        ? `rgba(224, 72, 58, ${alpha.toFixed(3)})` // threat red — designated target only
+        : `rgba(20, 20, 20, ${(alpha * 0.9).toFixed(3)})`;
       ctx.fillText(label, x + 12, y - 12);
     }
   }
@@ -537,7 +541,7 @@ function drawDesignationReticle(
   alpha: number,
 ) {
   const r = 13;
-  ctx.strokeStyle = `rgba(160, 50, 30, ${alpha.toFixed(3)})`;
+  ctx.strokeStyle = `rgba(224, 72, 58, ${alpha.toFixed(3)})`; // threat red — designated target only
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -564,15 +568,14 @@ function drawEntityGlyph(
   alpha: number,
 ) {
   ctx.lineWidth = 1.5;
-  // Colour discipline: green = friendly (soldier), red = threat (hazard),
-  // amber = neutral telemetry (drones, POIs, generic objects). Mirrors the
-  // NATO C2 palette in globals.css.
-  // Darker palette for the light-mode parchment background.
-  const amber = `rgba(167, 107, 28, ${alpha.toFixed(3)})`;
-  const amberFill = `rgba(167, 107, 28, ${(alpha * 0.4).toFixed(3)})`;
-  const green = `rgba(56, 110, 60, ${alpha.toFixed(3)})`;
-  const greenFill = `rgba(56, 110, 60, ${(alpha * 0.4).toFixed(3)})`;
-  const red = `rgba(160, 50, 30, ${alpha.toFixed(3)})`;
+  // Colour discipline: strict monochrome ink for every non-threat track
+  // (soldiers, drones, POIs, generic objects). Red is reserved exclusively for
+  // threats (hazards / designated targets).
+  const amber = `rgba(26, 26, 26, ${alpha.toFixed(3)})`;
+  const amberFill = `rgba(26, 26, 26, ${(alpha * 0.4).toFixed(3)})`;
+  const green = `rgba(90, 90, 90, ${alpha.toFixed(3)})`;
+  const greenFill = `rgba(90, 90, 90, ${(alpha * 0.4).toFixed(3)})`;
+  const red = `rgba(224, 72, 58, ${alpha.toFixed(3)})`; // threat red — hazard only
 
   switch (type) {
     case "soldier": {
@@ -644,7 +647,7 @@ function drawScaleBar(
   const x1 = w - 24;
   const y = h - 24;
 
-  ctx.strokeStyle = "rgba(76, 60, 20, 0.7)";
+  ctx.strokeStyle = "rgba(20, 20, 20, 0.7)";
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.moveTo(x0, y);
@@ -658,7 +661,7 @@ function drawScaleBar(
   ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace";
   ctx.textAlign = "right";
   ctx.textBaseline = "bottom";
-  ctx.fillStyle = "rgba(76, 60, 20, 0.9)";
+  ctx.fillStyle = "rgba(20, 20, 20, 0.9)";
   ctx.fillText(formatMetres(metres), x1, y - 6);
 }
 
@@ -673,7 +676,7 @@ function drawCursor(
   ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace";
   ctx.textAlign = "left";
   ctx.textBaseline = "bottom";
-  ctx.fillStyle = "rgba(76, 60, 20, 0.75)";
+  ctx.fillStyle = "rgba(20, 20, 20, 0.75)";
   ctx.fillText(
     `E ${wx.toFixed(0)} m   N ${wy.toFixed(0)} m`,
     16,

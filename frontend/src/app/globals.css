@@ -36,6 +36,63 @@
   --cta-active: oklch(0.42 0.105 142);
 }
 
+/* ── Operator console: strict black & white military theme ──────────────
+ * Scoped to /operator only (landing keeps the amber/green C2 palette).
+ * Neutral monochrome on light paper; the ONLY hue is --fail (signal red),
+ * reserved strictly for threats. All other status reads by ink value +
+ * pattern + shape + motion. */
+.operator-theme {
+  --bg: oklch(0.962 0 0);               /* paper */
+  --surface: oklch(0.988 0 0);          /* panels */
+  --surface-elevated: oklch(1 0 0);     /* raised / inputs */
+  --border: oklch(0.84 0 0);            /* hairline */
+  --border-strong: oklch(0.66 0 0);     /* framing ticks, dividers */
+  --text: oklch(0.20 0 0);              /* ink */
+  --text-muted: oklch(0.42 0 0);
+  --text-dim: oklch(0.58 0 0);
+  --invert: oklch(0.962 0 0);           /* text on ink blocks = paper */
+
+  /* Status → monochrome (severity by pattern/shape/motion, not hue). */
+  --ok: oklch(0.20 0 0);                /* system OK = solid ink */
+  --warn: oklch(0.46 0 0);              /* caution = mid grey */
+  --fail: oklch(0.505 0.213 27);        /* SIGNAL RED — threats ONLY (the lone hue) */
+
+  /* Brand/data accents → ink. */
+  --accent: oklch(0.20 0 0);            /* data, grid, reticle, active tab */
+  --accent-dim: oklch(0.58 0 0);
+  --cta: oklch(0.20 0 0);               /* primary action = inverted ink fill */
+  --cta-hover: oklch(0.30 0 0);
+  --cta-active: oklch(0.14 0 0);
+}
+
+/* Recolor the hardcoded-amber tactical utilities to ink WITHIN the operator
+ * subtree only (landing versions stay amber). */
+/* No graticule lines in the operator console — clean paper surface. */
+.operator-theme .hud-grid,
+.operator-theme .hud-grid-drift {
+  background-image: none;
+}
+/* No sweeping scan beam in the operator console. */
+.operator-theme .scan-beam {
+  display: none;
+}
+.operator-theme .glow-cyan { box-shadow: 0 0 0 1px oklch(0.20 0 0 / 0.45); }
+.operator-theme .glow-blue { box-shadow: 0 0 0 1px oklch(0.20 0 0 / 0.45); }
+
+/* Diagonal danger-tape hatch (monochrome) for non-threat emphasis. */
+.danger-hatch {
+  background-image: repeating-linear-gradient(-45deg, var(--text) 0 2px, transparent 2px 7px);
+}
+/* Edge tick rulers. */
+.tick-ruler-y { background-image: repeating-linear-gradient(to bottom, var(--border-strong) 0 1px, transparent 1px 8px); }
+.tick-ruler-x { background-image: repeating-linear-gradient(to right, var(--border-strong) 0 1px, transparent 1px 8px); }
+/* Slow breathing for idle/standby chrome. */
+@keyframes breathe { 0%,100% { opacity: 0.5; } 50% { opacity: 0.9; } }
+.breathe { animation: breathe 2.6s ease-in-out infinite; }
+/* Single alert blink. */
+@keyframes alert-blink { 0%,40% { background-color: var(--text); color: var(--invert); } 100% { background-color: transparent; } }
+.alert-blink { animation: alert-blink 700ms steps(2,end) 1 both; }
+
 html,
 body {
   background: var(--bg);
@@ -261,7 +318,9 @@ button:focus-visible {
   .hud-grid-drift,
   .signal-dot,
   .signal-dot-y,
-  .node-pulse {
+  .node-pulse,
+  .breathe,
+  .alert-blink {
     animation: none;
   }
   .scan-beam {

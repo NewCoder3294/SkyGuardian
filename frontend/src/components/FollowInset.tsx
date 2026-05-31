@@ -15,15 +15,17 @@ export function FollowInset({ state }: { state: FollowState | null }) {
 
   const targetLabel = followTargetLabel(state);
 
-  // "stale" = the laptop hasn't heard from the phone recently (link dead/wedged);
-  // surfaced in red so a frozen reading can't be mistaken for a live follow.
+  // "stale" = the laptop hasn't heard from the phone recently (link dead/wedged).
+  // Monochrome console: link-loss reads as full-strength ink + the "link lost"
+  // subtitle (red is reserved strictly for threats), so a frozen reading still
+  // can't be mistaken for a live follow.
   const phaseColor =
     state.phase === "following"
-      ? "text-ok"
+      ? "text-text"
       : state.phase === "lost" || state.phase === "stale"
-        ? "text-fail"
+        ? "text-text font-semibold"
         : state.phase === "manual" || state.phase === "confirming"
-          ? "text-accent"
+          ? "text-text-muted"
           : "text-text-dim";
 
   const subtitle =
@@ -84,7 +86,7 @@ export function FollowInset({ state }: { state: FollowState | null }) {
             {state.distance_m.toFixed(1)} m · {Math.round(state.bearing_deg)}°
           </span>
         ) : (
-          <span className={`text-[11px] ${state.phase === "stale" ? "text-fail" : "text-text-dim"}`}>
+          <span className={`text-[11px] ${state.phase === "stale" ? "text-text font-semibold" : "text-text-dim"}`}>
             {subtitle}
           </span>
         )}

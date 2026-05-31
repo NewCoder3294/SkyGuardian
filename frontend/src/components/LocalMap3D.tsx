@@ -6,6 +6,7 @@ import { Grid, Html, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import type { Entity, EntityStatus, EntityType, Vec3 } from "@/lib/contracts";
 import { isDesignatedTarget } from "@/lib/entities";
+import { SectionHeader, StatusTag } from "@/components/tactical";
 import { Buildings } from "./Buildings";
 
 /**
@@ -62,12 +63,12 @@ export function LocalMap3D({
     <div className="relative h-full w-full bg-bg">
       <Canvas
         camera={{ position: [cameraSpan, cameraSpan, cameraSpan], fov: 45 }}
-        style={{ background: "#f3efe2" }}
+        style={{ background: "#f1f1f0" }}
         dpr={[1, 2]}
       >
         <ambientLight intensity={0.5} />
-        <directionalLight position={[10, 20, 10]} intensity={0.5} color="#e8dcc0" />
-        <directionalLight position={[-10, 15, -10]} intensity={0.25} color="#5f7a52" />
+        <directionalLight position={[10, 20, 10]} intensity={0.5} color="#ffffff" />
+        <directionalLight position={[-10, 15, -10]} intensity={0.25} color="#cfcfcf" />
 
         <SceneFloor span={cameraSpan} />
         <OriginMarker />
@@ -116,10 +117,10 @@ function SceneFloor({ span }: { span: number }) {
         position={[0, 0, 0]}
         cellSize={cellSize}
         cellThickness={0.6}
-        cellColor="#2f3a28"
+        cellColor="#1f1f1f"
         sectionSize={sectionSize}
         sectionThickness={1.2}
-        sectionColor="#7d6a35"
+        sectionColor="#3a3a3a"
         fadeDistance={span * 3}
         fadeStrength={1.2}
         followCamera={false}
@@ -127,7 +128,7 @@ function SceneFloor({ span }: { span: number }) {
       />
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.001, 0]} receiveShadow>
         <planeGeometry args={[span * 8, span * 8]} />
-        <meshBasicMaterial color="#11140f" transparent opacity={0} />
+        <meshBasicMaterial color="#141414" transparent opacity={0} />
       </mesh>
     </>
   );
@@ -138,11 +139,11 @@ function OriginMarker() {
     <group position={[0, 0.01, 0]}>
       <mesh>
         <cylinderGeometry args={[0.12, 0.12, 0.02, 24]} />
-        <meshBasicMaterial color="#d9a441" />
+        <meshBasicMaterial color="#1a1a1a" />
       </mesh>
       <mesh position={[0, 0.05, 0]}>
         <ringGeometry args={[0.18, 0.22, 32]} />
-        <meshBasicMaterial color="#d9a441" transparent opacity={0.5} side={2} />
+        <meshBasicMaterial color="#1a1a1a" transparent opacity={0.5} side={2} />
       </mesh>
       <Html position={[0, 0.55, 0]} center distanceFactor={8} zIndexRange={[0, 0]}>
         <div className="pointer-events-none whitespace-nowrap border border-accent/60 bg-surface/85 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.3em] text-accent backdrop-blur-sm">
@@ -227,17 +228,24 @@ function LandmarkCloud({ landmarks }: { landmarks: Entity[] }) {
           args={[positions, 3]}
         />
       </bufferGeometry>
-      <pointsMaterial color="#7d6a35" size={0.06} sizeAttenuation transparent opacity={0.5} />
+      <pointsMaterial color="#8a8a8a" size={0.06} sizeAttenuation transparent opacity={0.5} />
     </points>
   );
 }
 
 function ViewLegend({ statusLine }: { statusLine?: string }) {
   return (
-    <div className="tac-corners pointer-events-none absolute left-4 top-4 space-y-1 border border-border-strong bg-surface/80 px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-text-muted backdrop-blur-sm">
-      <div className="text-accent">◢ Local frame · 3D</div>
-      <div className="text-text-dim">Drag · orbit · scroll zoom</div>
-      {statusLine && <div className="text-text-muted">{statusLine}</div>}
+    <div className="tac-corners pointer-events-none absolute left-4 top-4 border border-border-strong bg-surface/80 backdrop-blur-sm">
+      <SectionHeader
+        index="01"
+        label="Local Frame"
+        aside={<StatusTag state="live" label="3D" />}
+        className="py-1.5"
+      />
+      <div className="space-y-1 px-3 pb-2 font-mono text-[10px] uppercase tracking-widest text-text-muted">
+        <div className="text-text-dim">Drag · orbit · scroll zoom</div>
+        {statusLine && <div className="text-text-muted">{statusLine}</div>}
+      </div>
     </div>
   );
 }
@@ -247,10 +255,10 @@ function ViewLegend({ statusLine }: { statusLine?: string }) {
 // ---------------------------------------------------------------------------
 
 function renderShape(type: EntityType, alpha: number): JSX.Element {
-  // Hazards lock to signal red; soldiers read foliage green (friendly); all
-  // other tracks are phosphor amber.
+  // Hazards lock to signal red (the only hue — reserved for threats); every
+  // other track reads monochrome ink (solid markers near-black, secondary grey).
   const color =
-    type === "hazard" ? "#e0483a" : type === "soldier" ? "#7d9a63" : "#d9a441";
+    type === "hazard" ? "#e0483a" : type === "soldier" ? "#5a5a5a" : "#1a1a1a";
   const mat = (
     <meshStandardMaterial
       color={color}

@@ -205,8 +205,10 @@ export function SourceSelector({ apiBase, onState }: Props) {
     <div className="flex items-center justify-end gap-2 py-1">
       <div className="flex items-center gap-2 border border-border bg-surface-elevated px-3 py-1.5">
         <span
-          className={`inline-block h-1.5 w-1.5 rounded-full ${
-            live ? "bg-ok shadow-glow-cyan" : "bg-fail"
+          className={`inline-block h-1.5 w-1.5 ${
+            live
+              ? "rounded-full bg-text shadow-glow-cyan"
+              : "border border-dashed border-text-dim bg-transparent"
           }`}
           aria-hidden
         />
@@ -236,7 +238,7 @@ export function SourceSelector({ apiBase, onState }: Props) {
           className={`inline-flex items-center gap-1.5 border px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.18em] transition-colors duration-100 ${
             busy !== ""
               ? "cursor-not-allowed border-border-strong bg-surface-elevated text-text-muted opacity-60"
-              : "border-fail/60 bg-fail/5 text-fail hover:bg-fail/10"
+              : "border-border-strong text-text hover:bg-surface-elevated"
           }`}
         >
           <CloseIcon className="h-3 w-3" />
@@ -306,7 +308,7 @@ export function SourceSelector({ apiBase, onState }: Props) {
       )}
 
       {(error || upload?.error) && (
-        <div className="mx-1 mb-1 border border-fail/60 bg-fail/10 px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest text-fail">
+        <div className="mx-1 mb-1 border border-border-strong bg-surface-elevated px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest text-text">
           ▲ {error || upload?.error}
         </div>
       )}

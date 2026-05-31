@@ -108,7 +108,7 @@ export function OperationalArea({ apiBase }: Props) {
         {status.kind === "success" && (
           <span className="text-ok">✓ {status.count} buildings cached for this area</span>
         )}
-        {status.kind === "error" && <span className="text-fail">{status.message}</span>}
+        {status.kind === "error" && <span className="text-text-dim">{status.message}</span>}
         {status.kind === "idle" && (
           <span className="text-text-dim">Requires internet (pre-mission staging only)</span>
         )}

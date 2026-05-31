@@ -116,8 +116,8 @@ export function Buildings({ apiBase, clipRadiusM = 0, opacity = 0.55, buildingsV
       {meshes.map((m) => (
         <mesh key={m.key} geometry={m.geometry} position={m.pos}>
           <meshStandardMaterial
-            color="#3a4736"
-            emissive="#7d6a35"
+            color="#3a3a3a"
+            emissive="#8a8a8a"
             emissiveIntensity={0.12}
             transparent
             opacity={opacity}

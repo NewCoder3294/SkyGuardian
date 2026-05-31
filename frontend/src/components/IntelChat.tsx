@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { StandbyState } from "@/components/tactical";
 
 /**
  * Operator chat surface over the local Ollama model. Posts to /intel/chat
@@ -80,10 +81,16 @@ export function IntelChat({ apiBase }: Props) {
 
       <div
         ref={listRef}
-        className="max-h-72 min-h-[10rem] space-y-2 overflow-y-auto px-5 py-4"
+        className="h-[360px] space-y-2 overflow-y-auto px-5 py-4"
       >
         {messages.length === 0 && !pending && (
           <div className="space-y-3">
+            <StandbyState
+              title="Intel standing by"
+              caveat="Awaiting query"
+              grid={false}
+              className="min-h-[8rem]"
+            />
             <p className="font-mono text-[11px] uppercase tracking-widest text-text-dim">
               Ask the on-device model about the current feed. Try:
             </p>
@@ -113,7 +120,7 @@ export function IntelChat({ apiBase }: Props) {
           </div>
         )}
         {error && (
-          <div className="font-mono text-[11px] uppercase tracking-widest text-fail">
+          <div className="font-mono text-[11px] uppercase tracking-widest text-text-dim">
             {error}
           </div>
         )}

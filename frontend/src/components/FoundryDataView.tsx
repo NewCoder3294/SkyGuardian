@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { DangerStripe, SectionHeader } from "@/components/tactical";
 import {
   answerData,
   classesForMission,
@@ -233,16 +234,17 @@ function useCountUp(target: number): number {
 
 function PanelHeader({ label, count }: { label: string; count?: number }) {
   return (
-    <div className="mb-3 flex items-center justify-between border-b border-border pb-2">
-      <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.3em] text-accent">
-        ◢ {label}
-      </span>
-      {count != null && (
-        <span className="border border-border-strong bg-surface-elevated px-2 py-0.5 font-mono text-[10px] tabular-nums text-text-muted">
-          {count.toString().padStart(2, "0")}
-        </span>
-      )}
-    </div>
+    <SectionHeader
+      label={label}
+      className="mb-3 px-0"
+      aside={
+        count != null ? (
+          <span className="border border-border-strong bg-surface-elevated px-2 py-0.5 font-mono text-[10px] tabular-nums text-text-muted">
+            {count.toString().padStart(2, "0")}
+          </span>
+        ) : undefined
+      }
+    />
   );
 }
 
@@ -562,10 +564,10 @@ function LoadingState() {
 function ErrorState({ message }: { message: string }) {
   return (
     <div className="mx-auto mt-10 max-w-2xl">
-      <div className="tac-corners border border-warn/40 bg-warn/10 px-6 py-6">
-        <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.3em] text-warn">
-          ◢ Foundry Fetch Fault
-        </div>
+      <div className="tac-corners border border-border-strong bg-surface px-6 py-6">
+        <DangerStripe tone="mono" className="mb-4">
+          Foundry Fetch Fault
+        </DangerStripe>
         <p className="mt-3 font-mono text-[12px] leading-relaxed text-text-muted">
           {message}
         </p>
@@ -581,9 +583,9 @@ function NotConfiguredState() {
   return (
     <div className="mx-auto mt-10 max-w-2xl">
       <div className="tac-corners border border-border bg-surface px-6 py-7">
-        <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.3em] text-accent">
-          ◢ Foundry Link Not Configured
-        </div>
+        <DangerStripe tone="mono" className="mb-4">
+          Foundry Link Not Configured
+        </DangerStripe>
         <p className="mt-4 font-sans text-[13px] leading-relaxed text-text-muted">
           This surface reads mission data from a Palantir Foundry ontology. Set
           the following in{" "}

@@ -1,6 +1,11 @@
-/** Binary status — every channel is either ONLINE (green) or OFFLINE (red).
- *  No amber/yellow/intermediate tier. If a system isn't actively producing
- *  what it's supposed to, it's offline. */
+/** Binary status — every channel is either ONLINE or OFFLINE. No amber/yellow/
+ *  intermediate tier. If a system isn't actively producing what it's supposed
+ *  to, it's offline.
+ *
+ *  Presentation is strict monochrome: a channel going down is a loss-of-link
+ *  event, NOT a threat, so it never renders red. ONLINE = solid ink, OFFLINE =
+ *  hollow/dim ink. Red (`--fail`) is reserved exclusively for actual threats
+ *  (see ThreatAlert). */
 
 export type StatusTier = "ok" | "fail";
 
@@ -21,9 +26,18 @@ export function perceptionTier(value: string | undefined): StatusTier {
   return value === "ok" ? "ok" : "fail";
 }
 
-/** Tailwind bg class for a tier dot. */
+/** Tailwind class(es) for a tier dot. ONLINE = solid ink dot; OFFLINE = hollow
+ *  dashed ink ring (monochrome — down is loss-of-link, not a threat, so no red). */
 export function dotClass(tier: StatusTier): string {
-  return tier === "ok" ? "bg-ok" : "bg-fail";
+  return tier === "ok"
+    ? "bg-text"
+    : "border border-dashed border-text-dim bg-transparent";
+}
+
+/** Tailwind text class for a channel label. ONLINE reads at muted ink, OFFLINE
+ *  drops to dim ink (never red). */
+export function labelClass(tier: StatusTier): string {
+  return tier === "ok" ? "text-text-muted" : "text-text-dim";
 }
 
 /** Display label for a tier — always one of two words. */
