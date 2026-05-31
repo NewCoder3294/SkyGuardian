@@ -339,7 +339,11 @@ struct ContentView: View {
     private func handle(_ action: DroneAction) {
         let fn = action.function
 
-        if fn == .followMe || fn == .track {   // both mean "lock onto me" (visual)
+        if fn == .followMe {                    // follow ME — reliable AprilTag follow (feeds localization)
+            if follow.phase == .disarmed { pendingArm = .tag } else { follow.requestLock(.tag) }
+            return
+        }
+        if fn == .track {                       // "track that" — tag-free visual lock
             if follow.phase == .disarmed { pendingArm = .visualMe } else { follow.requestLock(.visualMe) }
             return
         }

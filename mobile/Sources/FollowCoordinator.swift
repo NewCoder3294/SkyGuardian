@@ -112,7 +112,7 @@ final class FollowCoordinator: ObservableObject {
 
     /// Take off and begin acquiring a lock of the given kind. Caller confirms intent
     /// (launches a real drone). The lock still passes the confirm gate before follow rc.
-    func arm(stream: TelloDirectStream, mode: TargetMode = .visualMe) {
+    func arm(stream: TelloDirectStream, mode: TargetMode = .tag) {
         guard phase == .disarmed else { return }
         self.stream = stream
         stream.start()
@@ -163,7 +163,8 @@ final class FollowCoordinator: ObservableObject {
             self.scripted = false
             self.landing = false
             self.tookOff = true
-            self.confirmed = false
+            // re-lock resumes following immediately (initial-arm confirm gate is separate)
+            self.confirmed = true
             self.latest = nil
             self.latestTime = self.now()
         }

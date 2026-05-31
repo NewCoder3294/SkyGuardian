@@ -40,13 +40,13 @@ final class FollowCoordinatorTests: XCTestCase {
         coord.drainForTest()   // settle rcQueue work + stop the real timer
         XCTAssertEqual(coord.currentPhase, .searching)
     }
-    func testRequestLockClearsConfirmationSoTickHovers() {
-        coord.enterAirborneForTest(mode: .visualMe)
+    func testRequestLockThenFreshTickFollowsImmediately() {
+        coord.enterAirborneForTest(mode: .tag)
         coord.requestLock(.tag)
-        coord.drainForTest()   // apply confirmed=false/latest=nil before injecting
-        coord.injectDetectionForTest(tag(), age: 0)
+        coord.drainForTest()   // settle confirmed=true/latest=nil before injecting
+        coord.injectDetectionForTest(tag(bearingDeg: 20), age: 0)
         coord.tickForTest()
-        XCTAssertEqual(sink.lastRC, .hover)
+        XCTAssertGreaterThan(sink.lastRC?.yaw ?? 0, 0)   // follows right away, no confirm needed
     }
     func testRequestLockThenConfirmThenTickFollows() {
         coord.enterAirborneForTest(mode: .visualMe)
@@ -76,18 +76,14 @@ final class FollowCoordinatorTests: XCTestCase {
         XCTAssertEqual(coord.currentPhase, .manual)
     }
 
-    func testResumeFollowGoesThroughConfirmNotAutoConfirm() {
-        coord.enterAirborneForTest(mode: .visualMe)
+    func testResumeFollowResumesImmediately() {
+        coord.enterAirborneForTest(mode: .tag)
         coord.pauseToManual()
         coord.resumeFollow()
-        coord.drainForTest()   // settle requestLock rcQueue work + stop the real timer
-        XCTAssertEqual(coord.currentPhase, .searching)
-        // Use an OFF-CENTER tag so that *if* resume auto-confirmed, the follow command
-        // would be a non-hover (yaw > 0). Confirm-gated resume hovers instead — this is
-        // what makes the assertion discriminate confirm-gate from the old auto-confirm.
+        coord.drainForTest()   // settle confirmed=true from requestLock's rcQueue body
         coord.injectDetectionForTest(tag(bearingDeg: 20), age: 0)
         coord.tickForTest()
-        XCTAssertEqual(sink.lastRC, .hover)
+        XCTAssertGreaterThan(sink.lastRC?.yaw ?? 0, 0)   // resumes following, no confirm tap
     }
 
     func testTargetTypeReflectsModeWhileFollowing() {
