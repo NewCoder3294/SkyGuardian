@@ -86,6 +86,7 @@ export function LocalMapGL({
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  const resizeObsRef = useRef<ResizeObserver | null>(null);
   const loadedRef = useRef(false);
   const originRef = useRef<{ lat: number; lng: number }>({ ...ORIGIN });
   const entitiesRef = useRef<Entity[]>(entities);
@@ -139,12 +140,20 @@ export function LocalMapGL({
         lng: meta.origin.lng ?? 0,
       };
       originRef.current = origin;
+      const bbox =
+        Array.isArray(meta.bbox) && meta.bbox.length === 4
+          ? (meta.bbox as [number, number, number, number])
+          : null;
+      // Stay within the extracted zoom range so MapLibre never requests tiles
+      // above the archive's maxzoom (which would render blank).
+      const fitZoom = Math.min(meta.maxzoom || 15, 16);
 
       map = new maplibregl.Map({
         container: containerRef.current,
         style: buildBasemapStyle(apiBase),
         center: [origin.lng, origin.lat],
-        zoom: 16,
+        zoom: Math.min(fitZoom, 15),
+        maxZoom: fitZoom,
         dragRotate: false,
         pitchWithRotate: false,
         attributionControl: {},
@@ -159,9 +168,27 @@ export function LocalMapGL({
 
       map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
 
+      // GL canvas can initialise at 0×0 if the flex container hasn't settled;
+      // resize on container changes so the map paints instead of staying blank.
+      const ro = new ResizeObserver(() => mapRef.current?.resize());
+      ro.observe(containerRef.current);
+      resizeObsRef.current = ro;
+
       map.on("load", () => {
         const m = mapRef.current;
         if (!m) return;
+
+        // Force a layout measure, then frame the cached area exactly.
+        m.resize();
+        if (bbox) {
+          m.fitBounds(
+            [
+              [bbox[0], bbox[1]],
+              [bbox[2], bbox[3]],
+            ],
+            { padding: 32, maxZoom: fitZoom, duration: 0 },
+          );
+        }
 
         m.addSource("slam", {
           type: "geojson",
@@ -230,6 +257,8 @@ export function LocalMapGL({
     return () => {
       cancelled = true;
       loadedRef.current = false;
+      resizeObsRef.current?.disconnect();
+      resizeObsRef.current = null;
       const m = mapRef.current;
       mapRef.current = null;
       if (m) m.remove();
