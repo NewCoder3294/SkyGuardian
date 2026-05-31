@@ -38,6 +38,10 @@ exec env \
   UPLOAD_YOLO_CLASSES="soldier,rifle,handgun,pistol,AK-47,AR-15,assault rifle,firearm,shotgun,knife,machete,helmet,tactical vest,vehicle,ship,vessel,ied,drone,weapon" \
   UPLOAD_YOLO_COCO_WEIGHTS="$MODELS/yolov8l.pt" \
   UPLOAD_YOLO_COCO_KEEP="person,car,truck,motorcycle,bicycle,bus,backpack,boat" \
+  UPLOAD_YOLO_SPECIALTY_WEIGHTS="$MODELS/threat-yolov8n.pt" \
+  UPLOAD_YOLO_SPECIALTY_KEEP="gun,knife,grenade" \
+  UPLOAD_YOLO_SPECIALTY_CONF="0.35" \
   UPLOAD_YOLO_IMGSZ="640" \
   UPLOAD_YOLO_CONF="0.20" \
+  ANCHOR_TAG_SIZE_M="${ANCHOR_TAG_SIZE_M:-0.20}" \
   "$UVICORN" app.server:app --host 0.0.0.0 --port 8000
