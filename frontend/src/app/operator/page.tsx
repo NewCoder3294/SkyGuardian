@@ -240,28 +240,30 @@ export default function Page() {
         </div>
       )}
 
-      <div className="flex h-11 items-center justify-between gap-x-4 border-b border-border bg-surface/60 px-4">
-        <nav className="flex items-stretch gap-0 self-stretch">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTab(t.id)}
-              className={`relative -mb-px border-b-2 px-5 font-sans text-[12px] font-semibold uppercase tracking-[0.25em] transition-colors ${
-                tab === t.id
-                  ? "border-accent text-accent"
-                  : "border-transparent text-text-dim hover:text-text-muted"
-              }`}
-            >
-              {tab === t.id && (
-                <span aria-hidden className="mr-2 text-text-dim">▸</span>
-              )}
-              {t.label}
-            </button>
-          ))}
-        </nav>
-        <div className={tab === "feed" ? "" : "invisible"}>
-          <SourceSelector apiBase={apiBase} onState={onSource} />
+      <div className="border-b border-border bg-surface/60">
+        <div className="flex items-center justify-between gap-x-4 px-4">
+          <nav className="flex items-stretch gap-0">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTab(t.id)}
+                className={`relative -mb-px border-b-2 px-5 py-2.5 font-sans text-[12px] font-semibold uppercase tracking-[0.25em] transition-colors ${
+                  tab === t.id
+                    ? "border-accent text-accent"
+                    : "border-transparent text-text-dim hover:text-text-muted"
+                }`}
+              >
+                {tab === t.id && (
+                  <span aria-hidden className="mr-2 text-text-dim">▸</span>
+                )}
+                {t.label}
+              </button>
+            ))}
+          </nav>
+          <div className={tab === "feed" ? "shrink-0" : "invisible shrink-0"}>
+            <SourceSelector apiBase={apiBase} onState={onSource} />
+          </div>
         </div>
       </div>
 
