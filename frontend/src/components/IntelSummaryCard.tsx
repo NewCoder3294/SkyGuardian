@@ -90,7 +90,7 @@ export function IntelSummaryCard({
           ) and pull the model.
         </p>
         {data.last_error && (
-          <p className="mt-1 font-mono text-[10px] uppercase tracking-widest text-fail">
+          <p className="mt-1 font-mono text-[10px] uppercase tracking-widest text-text-dim">
             ▲ {data.last_error}
           </p>
         )}
@@ -113,9 +113,9 @@ export function IntelSummaryCard({
   const tier =
     s.threat_level === "high" ? "fail" : s.threat_level === "med" ? "warn" : "ok";
   const tierStyles: Record<string, string> = {
-    fail: "border-fail/60 bg-fail/10 text-fail",
-    warn: "border-warn/60 bg-warn/10 text-warn",
-    ok: "border-ok/40 bg-ok/10 text-ok",
+    fail: "border-border-strong bg-surface-elevated text-text",
+    warn: "border-border bg-surface-elevated text-text-muted",
+    ok: "border-border bg-surface text-text-muted",
   };
 
   return (

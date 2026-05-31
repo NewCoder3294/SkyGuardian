@@ -13,7 +13,7 @@ import { LocalMap3D } from "@/components/LocalMap3D";
 import { OperationalArea } from "@/components/OperationalArea";
 import { SourceSelector, type SourceState } from "@/components/SourceSelector";
 import { StatusBar } from "@/components/StatusBar";
-import { ClassificationBanner, CoordReadout } from "@/components/tactical";
+import { ClassificationBanner, CoordReadout, SectionHeader } from "@/components/tactical";
 import { ThreatAlert } from "@/components/ThreatAlert";
 import { VideoFeed } from "@/components/VideoFeed";
 import { VideoPlayer } from "@/components/VideoPlayer";
@@ -362,12 +362,14 @@ export default function Page() {
             <div className="flex min-h-0 flex-1">
               <div className="min-w-0 flex-1 overflow-auto">
                 <div className="bg-bg p-5">
+                  <SectionHeader index="01" label="Summary" className="mb-3 px-0" />
                   <IntelSummaryCard apiBase={apiBase} />
                 </div>
                 <IntelPanel detections={effectiveDetections} detectionLog={effectiveDetectionLog} />
               </div>
               <aside className="hidden w-96 shrink-0 border-l border-border bg-bg md:flex md:flex-col">
                 <div className="min-h-0 flex-1 overflow-auto p-4">
+                  <SectionHeader index="02" label="Intel" className="mb-3 px-0" />
                   <IntelChat apiBase={apiBase} />
                 </div>
               </aside>
