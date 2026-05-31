@@ -71,6 +71,16 @@ final class ContractsTests: XCTestCase {
         XCTAssertEqual(obj["kind"] as? String, "confirm")
         XCTAssertEqual(obj["source"] as? String, "follower")
         XCTAssertEqual(obj["label"] as? String, "person")
+        XCTAssertNil(obj["corrected_label"])  // nil omitted, not serialized as null
+    }
+
+    func testLabelEventCorrectedLabelUsesSnakeCaseKey() throws {
+        let msg = LabelEventMessage(kind: "correct", source: "follower",
+                                   label: "person", correctedLabel: "soldier",
+                                   box: nil, note: nil, t: 1.0)
+        let data = try JSONEncoder().encode(msg)
+        let obj = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(obj["corrected_label"] as? String, "soldier")
     }
 
     func testBuildingsUpdatedDecodesAsUnknown() throws {

@@ -341,8 +341,10 @@ final class FollowCoordinator: ObservableObject {
             guard self.armed, !self.confirmed else { return }
             self.confirmed = true
             self.latestTime = CACurrentMediaTime()   // fresh grace as following begins
+            // Emit the label only on a genuine first confirm (inside the guard),
+            // so re-tapping CONFIRM can't record a duplicate true-positive.
+            DispatchQueue.main.async { self.onLabel?("confirm", nil) }
         }
-        onLabel?("confirm", nil)
         setPhase(.searching)
     }
 
