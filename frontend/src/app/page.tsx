@@ -364,6 +364,125 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* Team */}
+      <section id="team" className="border-b border-border bg-surface">
+        <div className="mx-auto max-w-7xl px-5 py-20 md:px-8">
+          <p className="font-mono text-[11px] uppercase tracking-[0.42em] text-accent">
+            Our team
+          </p>
+          <h2 className="mt-5 max-w-3xl text-4xl font-semibold leading-none md:text-6xl">
+            Deep robotics and military connections to execute.
+          </h2>
+
+          {/* Founders */}
+          <div className="mt-12 grid gap-4 md:grid-cols-2">
+            {[
+              {
+                name: "Alex Battikha",
+                role: "Co-Founder & CEO",
+                image: "/headshot-alex.png",
+                points: [
+                  "10+ yrs robotics; world champion (1st of 7,100+ teams)",
+                  "1 of 9 globally selected as an Irwin Jacobs full-ride scholar",
+                  "Patent-pending leader-follower system w/ Johns Hopkins",
+                ],
+              },
+              {
+                name: "Nicolas Dos Santos",
+                role: "Co-Founder & CEO",
+                image: "/headshot-nick.png",
+                points: [
+                  "TS clearance — access to top-tier government contracts",
+                  "Incoming at Amazon",
+                  "6+ hackathon winner; ex-founder",
+                ],
+              },
+            ].map((person) => (
+              <article key={person.name} className="tac-corners border border-border-strong bg-bg p-6">
+                <div className="flex items-center gap-5">
+                  <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-full border border-border-strong bg-surface">
+                    <Image src={person.image} alt={person.name} fill sizes="80px" className="object-cover" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-semibold leading-tight">{person.name}</h3>
+                    <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.28em] text-accent">{person.role}</p>
+                  </div>
+                </div>
+                <ul className="mt-5 space-y-2">
+                  {person.points.map((point) => (
+                    <li key={point} className="flex items-start gap-2 text-sm leading-snug text-text-muted">
+                      <span className="mt-1.5 block h-1 w-1 shrink-0 bg-accent" />
+                      {point}
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            ))}
+          </div>
+
+          {/* Advisors & Legal */}
+          <div className="mt-4 grid gap-4 md:grid-cols-3">
+            {[
+              {
+                name: "David Resilien",
+                role: "Advisor · Defense",
+                image: null,
+                initials: "DR",
+                points: [
+                  "Ex-Marine, 20+ yrs",
+                  "Deep Marines & DoD connections",
+                  "Multi-time startup founder",
+                ],
+              },
+              {
+                name: "CJ Mavor",
+                role: "Advisor · Business",
+                image: null,
+                initials: "CJ",
+                points: [
+                  "Ex-founder, multiple successful startups",
+                  "15+ yrs at Berkshire Hathaway",
+                ],
+              },
+              {
+                name: "Andre Jun Kim",
+                role: "Legal · Gov & Defense",
+                image: null,
+                initials: "AK",
+                points: [
+                  "Retired Marine, 20+ yrs",
+                  "Extensive DoD & government-contract experience",
+                ],
+              },
+            ].map((person) => (
+              <article key={person.name} className="tac-corners border border-border-strong bg-bg p-6">
+                <div className="flex items-center gap-4">
+                  <div className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border-strong bg-surface">
+                    {person.image ? (
+                      <Image src={person.image} alt={person.name} fill sizes="64px" className="object-cover" />
+                    ) : (
+                      <span className="font-mono text-sm font-semibold text-text-dim">{person.initials}</span>
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold leading-tight">{person.name}</h3>
+                    <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.28em] text-accent">{person.role}</p>
+                  </div>
+                </div>
+                <ul className="mt-4 space-y-2">
+                  {person.points.map((point) => (
+                    <li key={point} className="flex items-start gap-2 text-sm leading-snug text-text-muted">
+                      <span className="mt-1.5 block h-1 w-1 shrink-0 bg-accent" />
+                      {point}
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* CTA */}
       <section id="demo" className="relative overflow-hidden">
         <Image
