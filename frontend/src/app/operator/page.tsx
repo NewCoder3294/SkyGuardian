@@ -10,6 +10,7 @@ import { IntelPanel } from "@/components/IntelPanel";
 import { IntelSummaryCard } from "@/components/IntelSummaryCard";
 import { LocalMap2D } from "@/components/LocalMap2D";
 import { LocalMap3D } from "@/components/LocalMap3D";
+import { LocalMapGL } from "@/components/LocalMapGL";
 import { OperationalArea } from "@/components/OperationalArea";
 import { SourceSelector, type SourceState } from "@/components/SourceSelector";
 import { StatusBar } from "@/components/StatusBar";
@@ -19,6 +20,8 @@ import { VideoFeed } from "@/components/VideoFeed";
 import { VideoPlayer } from "@/components/VideoPlayer";
 import type { Entity, EntityStatus, EntityType, Health } from "@/lib/contracts";
 import { operationalEntities } from "@/lib/entities";
+import { fetchBasemapMeta } from "@/lib/basemapMeta";
+import { cn } from "@/lib/cn";
 import { httpFromWs } from "@/lib/feedUrl";
 import {
   cumulativeEntitiesAt,
@@ -90,6 +93,22 @@ export default function Page() {
   useEffect(() => {
     window.localStorage.setItem("sg.environment", environment);
   }, [environment]);
+
+  // Basemap vs grid backdrop for the 2D map. Persisted like mapView. A cached
+  // basemap must be staged (Set Area while online) before "BASEMAP" is usable;
+  // until then the toggle is disabled and the grid renders.
+  const [basemap, setBasemap] = useState<"grid" | "map">("grid");
+  useEffect(() => {
+    const s = window.localStorage.getItem("sg.basemap");
+    if (s === "grid" || s === "map") setBasemap(s);
+  }, []);
+  useEffect(() => {
+    window.localStorage.setItem("sg.basemap", basemap);
+  }, [basemap]);
+  const [bmStaged, setBmStaged] = useState(false);
+  useEffect(() => {
+    void fetchBasemapMeta(apiBase).then((m) => setBmStaged(m.staged));
+  }, [apiBase, wsLive.buildingsVersion]);
 
   // ---- mode dispatch: live RTMP vs playback file ------------------------
   const [source, setSource] = useState<SourceState | null>(null);
@@ -201,6 +220,11 @@ export default function Page() {
   const effectiveConnection: ConnectionState = isPlayback
     ? { kind: "connected" }
     : connection;
+
+  const mapStatus =
+    isPlayback && playbackData
+      ? `${effectiveOpEntities.length} entities · t=${playbackTime.toFixed(1)}s`
+      : `${effectiveOpEntities.length} entities`;
 
   return (
     <div className="operator-theme flex h-screen w-screen flex-col bg-bg text-text">
@@ -314,17 +338,23 @@ export default function Page() {
           {tab === "map" && (
             <div className="relative min-h-0 flex-1">
               {mapView === "2d" ? (
-                <LocalMap2D
-                  entities={effectiveOpEntities}
-                  apiBase={apiBase}
-                  buildingsVersion={wsLive.buildingsVersion}
-                  environment={environment}
-                  statusLine={
-                    isPlayback && playbackData
-                      ? `${effectiveOpEntities.length} entities · t=${playbackTime.toFixed(1)}s`
-                      : `${effectiveOpEntities.length} entities`
-                  }
-                />
+                basemap === "map" && bmStaged ? (
+                  <LocalMapGL
+                    entities={effectiveOpEntities}
+                    apiBase={apiBase}
+                    buildingsVersion={wsLive.buildingsVersion}
+                    environment={environment}
+                    statusLine={mapStatus}
+                  />
+                ) : (
+                  <LocalMap2D
+                    entities={effectiveOpEntities}
+                    apiBase={apiBase}
+                    buildingsVersion={wsLive.buildingsVersion}
+                    environment={environment}
+                    statusLine={mapStatus}
+                  />
+                )
               ) : (
                 <LocalMap3D
                   entities={effectiveOpEntities}
@@ -334,14 +364,13 @@ export default function Page() {
                   buildingsRadiusM={800}
                   buildingsVersion={wsLive.buildingsVersion}
                   environment={environment}
-                  statusLine={
-                    isPlayback && playbackData
-                      ? `${effectiveOpEntities.length} entities · t=${playbackTime.toFixed(1)}s`
-                      : `${effectiveOpEntities.length} entities`
-                  }
+                  statusLine={mapStatus}
                 />
               )}
               <MapViewToggle value={mapView} onChange={setMapView} />
+              {mapView === "2d" && (
+                <BasemapToggle value={basemap} onChange={setBasemap} staged={bmStaged} />
+              )}
               <EnvironmentToggle value={environment} onChange={setEnvironment} />
               {environment === "outdoor" && (
                 <div className="pointer-events-auto absolute left-3 top-3 z-10 max-w-sm">
@@ -438,6 +467,45 @@ function EnvironmentToggle({
           {v}
         </button>
       ))}
+    </div>
+  );
+}
+
+function BasemapToggle({
+  value,
+  onChange,
+  staged,
+}: {
+  value: "grid" | "map";
+  onChange: (v: "grid" | "map") => void;
+  staged: boolean;
+}) {
+  const opts: { v: "grid" | "map"; label: string }[] = [
+    { v: "grid", label: "grid" },
+    { v: "map", label: "basemap" },
+  ];
+  return (
+    <div className="pointer-events-auto absolute right-4 top-24 flex border border-border bg-surface/85 font-mono text-[10px] uppercase tracking-[0.3em] backdrop-blur-sm">
+      {opts.map(({ v, label }) => {
+        const disabled = v === "map" && !staged;
+        return (
+          <button
+            key={v}
+            type="button"
+            onClick={() => onChange(v)}
+            disabled={disabled}
+            aria-pressed={value === v}
+            title={disabled ? "Set Area while online to cache a basemap" : undefined}
+            className={cn(
+              "px-3 py-1.5 transition-colors",
+              value === v ? "bg-text text-invert" : "text-text-dim hover:text-text",
+              disabled && "cursor-not-allowed opacity-40 hover:text-text-dim",
+            )}
+          >
+            {label}
+          </button>
+        );
+      })}
     </div>
   );
 }

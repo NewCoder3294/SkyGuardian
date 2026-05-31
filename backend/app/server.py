@@ -34,12 +34,13 @@ from fastapi import (
     File,
     Header,
     HTTPException,
+    Request,
     UploadFile,
     WebSocket,
     WebSocketDisconnect,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from .clock import RealClock
@@ -194,6 +195,14 @@ _FOLLOW_STALE_S = 2.0
 # `scripts/fetch_buildings.py` BEFORE going offline. Served read-only to the
 # dashboard.
 _BUILDINGS_PATH = Path(__file__).resolve().parent.parent.parent / ".context" / "buildings.json"
+
+# Offline basemap (OSM raster/vector tiles as PMTiles) + its sidecar metadata,
+# staged alongside the buildings layer. basemap.py writes `<out>.meta.json`, so
+# with out=basemap.pmtiles the sidecar is basemap.meta.json (== _BASEMAP_PATH
+# .with_suffix(".meta.json")). Local glyph PBFs back map label rendering offline.
+_BASEMAP_PATH = _BUILDINGS_PATH.parent / "basemap.pmtiles"
+_BASEMAP_META_PATH = _BUILDINGS_PATH.parent / "basemap.meta.json"
+_GLYPHS_DIR = Path(__file__).resolve().parent.parent / "assets" / "glyphs"
 
 # On-device reasoning (offline equivalent of Gemini Live). Periodically runs a
 # vision LLM on the latest frame + detections. Disabled if Ollama isn't
@@ -851,6 +860,35 @@ async def get_buildings() -> Response:
     return FileResponse(_BUILDINGS_PATH, media_type="application/json")
 
 
+@app.get("/map/basemap.pmtiles")
+async def get_basemap_pmtiles(request: Request) -> Response:
+    """Serve the staged offline basemap PMTiles archive. FastAPI's FileResponse
+    honors the Range request header (HTTP 206) so the PMTiles client can fetch
+    byte ranges. 404s until a basemap has been staged (script or /map/area)."""
+    if not _BASEMAP_PATH.exists():
+        return JSONResponse({"detail": "no basemap staged"}, status_code=404)
+    return FileResponse(_BASEMAP_PATH, media_type="application/octet-stream")
+
+
+@app.get("/map/basemap/meta")
+async def get_basemap_meta() -> dict:
+    """Basemap staging metadata (whether staged, bbox, zoom range, origin)."""
+    from app.basemap import read_meta
+    from dataclasses import asdict
+
+    return asdict(read_meta(_BASEMAP_META_PATH))
+
+
+@app.get("/map/fonts/{fontstack}/{rng}.pbf")
+async def get_glyphs(fontstack: str, rng: str) -> Response:
+    """Serve local glyph PBFs for offline label rendering. Path is resolved and
+    confined to _GLYPHS_DIR to block traversal."""
+    safe = (_GLYPHS_DIR / fontstack / f"{rng}.pbf").resolve()
+    if _GLYPHS_DIR.resolve() not in safe.parents or not safe.exists():
+        return JSONResponse({"detail": "glyph not found"}, status_code=404)
+    return FileResponse(safe, media_type="application/x-protobuf")
+
+
 @app.post("/map/area")
 async def post_map_area(
     req: MapAreaRequest,
@@ -879,7 +917,25 @@ async def post_map_area(
             t=clock.now(),
         )
     )
-    return {"origin": payload["origin"], "radius_m": payload["radius_m"], "count": payload["count"]}
+    basemap_meta = None
+    basemap_error = None
+    try:
+        from app.basemap import extract_basemap
+        from dataclasses import asdict
+
+        meta = await asyncio.to_thread(
+            extract_basemap, req.lat, req.lng, req.radius_m, out_path=_BASEMAP_PATH
+        )
+        basemap_meta = asdict(meta)
+    except Exception as exc:  # noqa: BLE001 — basemap is best-effort; buildings already saved
+        basemap_error = str(exc)[:200]
+    return {
+        "origin": payload["origin"],
+        "radius_m": payload["radius_m"],
+        "count": payload["count"],
+        "basemap": basemap_meta,
+        "basemap_error": basemap_error,
+    }
 
 
 @app.get("/intel/summary")
