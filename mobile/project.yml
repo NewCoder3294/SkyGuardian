@@ -24,6 +24,7 @@ targets:
     sources:
       - path: Sources
       - path: Vendor/apriltag        # vendored AprilTag C lib, compiled in-target for iOS
+      - path: Resources              # bundled CoreML model (yolov8n.mlpackage) for on-device detection
     dependencies:
       - framework: Frameworks/cactus.xcframework
         embed: true

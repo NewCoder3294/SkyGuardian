@@ -20,6 +20,11 @@ final class TelloDirectStream: ObservableObject {
     /// follow loop's AprilTag detection. Called on a VideoToolbox thread — hop off it.
     var onPixelBuffer: ((CVPixelBuffer) -> Void)?
 
+    /// Secondary tap on the same decoded frames (e.g. the on-device object detector
+    /// drawing bounding boxes), independent of the follow loop's `onPixelBuffer`.
+    /// Called on a VideoToolbox thread — hop off it.
+    var onPixelBufferSecondary: ((CVPixelBuffer) -> Void)?
+
     private let videoPort: UInt16 = 11111
 
     private let q = DispatchQueue(label: "tello.video")
@@ -166,6 +171,7 @@ final class TelloDirectStream: ObservableObject {
                 guard status == noErr, let imageBuffer, let refcon else { return }
                 let me = Unmanaged<TelloDirectStream>.fromOpaque(refcon).takeUnretainedValue()
                 me.onPixelBuffer?(imageBuffer)
+                me.onPixelBufferSecondary?(imageBuffer)
             },
             decompressionOutputRefCon: Unmanaged.passUnretained(self).toOpaque())
         var session: VTDecompressionSession?
@@ -210,8 +216,9 @@ final class TelloDirectStream: ObservableObject {
             if self.state != .streaming { self.state = .streaming }
         }
 
-        // Tee the same frame to the decoder for follow-loop detection (only when tapped).
-        if onPixelBuffer != nil, let dec = decoder {
+        // Tee the same frame to the decoder for follow-loop detection and/or the
+        // object detector (only when something is tapping).
+        if (onPixelBuffer != nil || onPixelBufferSecondary != nil), let dec = decoder {
             VTDecompressionSessionDecodeFrame(dec, sampleBuffer: sample,
                                               flags: [._EnableAsynchronousDecompression],
                                               frameRefcon: nil, infoFlagsOut: nil)

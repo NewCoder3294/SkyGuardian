@@ -14,6 +14,7 @@ struct ContentView: View {
     @StateObject private var aligner = FrameAligner()
     @StateObject private var anchorCam = AnchorCamera()
     @StateObject private var scout = ScoutController()
+    @StateObject private var detector = TelloObjectDetector()
     @StateObject private var buildingsStore = BuildingsStore()
     @State private var showConnect = true
     @State private var center: CenterView = .map
@@ -37,7 +38,7 @@ struct ContentView: View {
                 if center == .map {
                     mapBody
                 } else {
-                    TelloDirectView(stream: stream, follow: follow, onCommand: handle)   // direct phone↔Tello, no laptop
+                    TelloDirectView(stream: stream, follow: follow, detector: detector, onCommand: handle)   // direct phone↔Tello, no laptop
                 }
                 if center == .map {
                     legend.padding(10)
@@ -59,6 +60,9 @@ struct ContentView: View {
         .onAppear {
             applyDebugLaunchArgs()
             location.start()
+            // On-device object detection on the Tello feed (bounding boxes), tapped
+            // independently of the follow loop's AprilTag detection.
+            stream.onPixelBufferSecondary = { pb in detector.feed(pb) }
             follow.onLabel = { [weak client] kind, label in
                 client?.sendLabelEvent(kind: kind, source: "follower", label: label)
             }

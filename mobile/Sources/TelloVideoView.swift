@@ -34,6 +34,7 @@ struct SampleLayerView: UIViewRepresentable {
 struct TelloDirectView: View {
     @ObservedObject var stream: TelloDirectStream
     @ObservedObject var follow: FollowCoordinator
+    @ObservedObject var detector: TelloObjectDetector
     @ObservedObject private var tello = TelloCommander.shared
     var onCommand: (DroneAction) -> Void = { _ in }
     @State private var confirmArm = false
@@ -55,6 +56,28 @@ struct TelloDirectView: View {
                         .stroke(follow.phase == .following ? Theme.olive : Theme.danger, lineWidth: 2)
                 }
             }
+
+            // On-device object detection: bounding boxes + labels over the video.
+            Canvas { ctx, size in
+                let fr = fitRect(in: size)
+                for det in detector.detections {
+                    let r = CGRect(x: fr.minX + det.rect.minX * fr.width,
+                                   y: fr.minY + det.rect.minY * fr.height,
+                                   width: det.rect.width * fr.width,
+                                   height: det.rect.height * fr.height)
+                    ctx.stroke(Path(r), with: .color(.cyan), lineWidth: 2)
+                    let pct = Int((det.confidence * 100).rounded())
+                    let resolved = ctx.resolve(
+                        Text("\(det.label.uppercased()) \(pct)%")
+                            .font(.system(size: 10, weight: .bold)))
+                    let ts = resolved.measure(in: size)
+                    let lr = CGRect(x: r.minX, y: max(0, r.minY - ts.height - 2),
+                                    width: ts.width + 6, height: ts.height + 2)
+                    ctx.fill(Path(lr), with: .color(.black.opacity(0.7)))
+                    ctx.draw(resolved, at: CGPoint(x: lr.minX + 3, y: lr.minY + 1), anchor: .topLeading)
+                }
+            }
+            .allowsHitTesting(false)
 
             VStack {
                 HStack(alignment: .top) {
