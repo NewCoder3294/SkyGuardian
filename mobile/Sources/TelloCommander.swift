@@ -161,3 +161,5 @@ final class TelloCommander: ObservableObject {
         DispatchQueue.main.async { if self.link != l { self.link = l } }
     }
 }
+
+extension TelloCommander: DroneCommandSink {}

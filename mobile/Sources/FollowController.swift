@@ -1,5 +1,13 @@
 import Foundation
 
+/// The minimal drone command surface the follow loop needs. `TelloCommander`
+/// is the production implementation; tests inject a recording double so the
+/// state machine can be exercised with no UDP socket / real drone.
+protocol DroneCommandSink: AnyObject {
+    func send(_ command: String)
+    func rc(_ command: RCCommand)
+}
+
 /// A Tello `rc a b c d` stick command. Each channel is -100…100.
 ///  a = left(-)/right(+)   b = back(-)/forward(+)   c = down(-)/up(+)   d = yaw ccw(-)/cw(+)
 struct RCCommand: Equatable {
