@@ -70,8 +70,9 @@ Action: `create-capture-mission` (+ optional `edit-capture-mission` for upsert).
 | `train` | integer | per-class train-split count |
 | `val` | integer | per-class val-split count |
 
-Action: `create-detection-class`. Optional link `DetectionClass → CaptureMission`
-on `missionId`.
+Actions: `create-detection-class` + `edit-detection-class` (the edit action enables
+the idempotent re-run upsert). Optional link `DetectionClass → CaptureMission` on
+`missionId`.
 
 ## Manifest enrichment (prerequisite, small change to packaging.py)
 
@@ -99,46 +100,72 @@ unchanged); existing packaging tests stay green, plus a new test asserting
 ### `backend/app/capture/foundry_export.py`
 - `FoundryConfig` — built from env, validated (missing required field → error):
   `host` (`FOUNDRY_HOST`), `token` (`FOUNDRY_TOKEN`), `ontology_rid`
-  (`FOUNDRY_ONTOLOGY_RID`), `dataset_rid` (`FOUNDRY_DATASET_RID`), and action-name
+  (`FOUNDRY_ONTOLOGY_RID`), `dataset_rid` (`FOUNDRY_DATASET_RID`); action-name
   overrides `mission_action` (`FOUNDRY_ACTION_MISSION`, default
   `create-capture-mission`), `class_action` (`FOUNDRY_ACTION_CLASS`, default
-  `create-detection-class`), optional `mission_edit_action`
-  (`FOUNDRY_ACTION_MISSION_EDIT`) for upsert fallback.
+  `create-detection-class`), `mission_edit_action`
+  (`FOUNDRY_ACTION_MISSION_EDIT`, default `edit-capture-mission`),
+  `class_edit_action` (`FOUNDRY_ACTION_CLASS_EDIT`, default `edit-detection-class`)
+  for idempotent upsert; and tuning `timeout_s` (`FOUNDRY_TIMEOUT_S`, default 30)
+  and `max_retries` (`FOUNDRY_MAX_RETRIES`, default 3).
 - `build_mission_params(manifest, dataset_rid) -> dict` — manifest → camelCase
   params for `CaptureMission` (pure).
 - `build_class_params(manifest) -> list[dict]` — one camelCase param dict per
   class from `yolo.class_counts` (pure).
 - `FoundryClient` — thin `httpx` wrapper, **injectable** (constructed from
-  `FoundryConfig`; tests pass a mock):
+  `FoundryConfig`; tests pass a mock or an httpx `MockTransport`). Sets an explicit
+  `timeout_s` on every request and retries transient failures (connect/read
+  timeouts, 429, 5xx) up to `max_retries` with exponential backoff; never retries
+  non-transient 4xx (auth/validation). Backoff sleep is injected (a no-op in tests)
+  so retry tests stay fast and deterministic.
+  - `preflight() -> None` — one cheap authenticated GET (e.g. the ontology metadata
+    endpoint) to fail fast on a bad host/token before any mutation.
   - `apply_action(action_api_name, params) -> dict` →
     `POST {host}/api/v2/ontologies/{ontology_rid}/actions/{action_api_name}/apply`
     body `{"parameters": params}`, `Authorization: Bearer {token}`.
   - `upload_dataset_file(dataset_rid, logical_path, data: bytes) -> None` → Foundry
     v2 Datasets upload. Exact endpoint pinned against Foundry's OpenAPI during
     implementation; all HTTP lives here so the rest is transport-agnostic.
-- `export_dataset(dataset_dir, client, config) -> dict` — orchestration:
-  1. Read `manifest.json`.
-  2. For each class: `client.apply_action(config.class_action, build_class_params(...)[i])`.
-  3. `client.apply_action(config.mission_action, build_mission_params(...))`; on a
-     PK-conflict response, retry with `config.mission_edit_action` if set.
-  4. Upload `manifest.json` and a zip of the dataset (`yolo/` + `gemma/`) via
-     `client.upload_dataset_file(...)`.
-  5. Return a summary `{classes_upserted, mission_upserted, files_uploaded}`.
+- `upsert_action(client, create_name, edit_name, params) -> str` — idempotent helper:
+  apply `create_name`; on a PK/already-exists conflict (Foundry validation error),
+  apply `edit_name` instead. Returns `"created"` or `"edited"`. Re-running the whole
+  export is therefore safe (no duplicates, no hard-fail).
+- `validate_manifest(manifest) -> None` — fail fast with a clear message if the
+  manifest is missing required keys (`mission_ids`, `yolo.class_counts`,
+  `cleaning_report`, `label_events`, …) before any network call.
+- `export_dataset(dataset_dir, client, config, *, dry_run=False, report_t=0.0) -> dict` — orchestration (`report_t` is injected by the CLI so the module has no clock dependency, mirroring the manifest's `created_t`):
+  1. Read + `validate_manifest`.
+  2. `client.preflight()` (skipped in dry_run).
+  3. For each class: `upsert_action(client, config.class_action, config.class_edit_action, build_class_params(...)[i])`.
+  4. `upsert_action(client, config.mission_action, config.mission_edit_action, build_mission_params(...))`.
+  5. Upload `manifest.json` and a zip of the dataset (`yolo/` + `gemma/`).
+  6. Write `export_report.json` into `dataset_dir` (objects upserted with
+     created/edited status + any returned RIDs, files uploaded, timestamp).
+  7. Return the report dict.
+  In **dry_run**, steps 1 and the payload builds run normally but every network
+  call (preflight/apply/upload) is skipped; the report records what *would* be sent
+  (action names + params + file list) and is written with `"dry_run": true`. This
+  lets the operator validate config + payloads against a live tenant's expectations
+  without mutating anything.
 
 ### `scripts/export_to_foundry.py`
-Thin CLI: `--dataset datasets/<name>`. Loads `FoundryConfig` from env, builds the
-real `FoundryClient`, calls `export_dataset`, prints the summary. Missing env →
-clear error + non-zero exit. Documents required env vars in `--help`.
+Thin CLI: `--dataset datasets/<name>` and `--dry-run`. Loads `FoundryConfig` from
+env, builds the real `FoundryClient`, stamps `report_t` (current time), calls
+`export_dataset(..., dry_run=args.dry_run, report_t=...)`, prints the report.
+Missing env → clear error + non-zero exit. Documents required env vars in `--help`.
 
 ## Error handling
 
 | Condition | Behavior |
 |---|---|
 | Missing/empty required env var | `FoundryConfig` raises a clear error; CLI exits non-zero before any network call |
-| `apply_action` PK conflict (object exists) | retry via `mission_edit_action` if configured; else surface which object failed |
-| `apply_action` other 4xx/5xx | raise with status + Foundry error body (token redacted) |
-| Dataset upload failure | report which file failed; objects already upserted are noted |
-| Network unreachable | clear error; re-runs are safe for edits (create may conflict — hence upsert option) |
+| Bad host/token | `preflight()` fails fast (~1 request) before any mutation |
+| Malformed manifest | `validate_manifest` raises a clear error before any network call |
+| `apply_action` PK conflict (object exists) | `upsert_action` applies the edit-action instead (idempotent re-run) |
+| Transient failure (timeout, 429, 5xx) | retried up to `max_retries` with exponential backoff |
+| `apply_action` non-transient 4xx (auth/validation) | not retried; raised with status + Foundry error body (token redacted) |
+| Dataset upload failure | report which file failed; objects already upserted are recorded in `export_report.json` |
+| `--dry-run` | builds + validates payloads, skips all network calls, writes a `"dry_run": true` report |
 
 Token is never logged; error bodies are emitted but the `Authorization` header is
 never included in any log/exception.
@@ -149,13 +176,21 @@ never included in any log/exception.
 - `build_mission_params` / `build_class_params`: a sample manifest → expected
   camelCase param dicts (incl. PK params `missionId`, `classKey`).
 - `FoundryConfig`: env present → populated; each missing required var → error.
-- `export_dataset` against a **mock `FoundryClient`** recording calls: asserts one
-  `create-detection-class` per class with correct params, one
-  `create-capture-mission` with correct params, `manifest.json` + dataset zip
-  uploaded; and the upsert fallback fires on a simulated PK conflict when an edit
-  action is configured.
-- `FoundryClient.apply_action` URL/headers/body construction via a stub transport
-  (httpx `MockTransport`): correct path, Bearer header, `{"parameters": ...}` body.
+- `export_dataset` against a **mock `FoundryClient`** recording calls: asserts
+  preflight ran, one class upsert per class with correct params, one mission upsert
+  with correct params, `manifest.json` + dataset zip uploaded, and an
+  `export_report.json` written with the upsert statuses/files.
+- `upsert_action`: create succeeds → `"created"`; create raises a PK-conflict →
+  edit applied → `"edited"`.
+- `validate_manifest`: a manifest missing a required key raises before any client call.
+- **Retries:** `FoundryClient` over an httpx `MockTransport` that returns 503 twice
+  then 200 → succeeds after retries (injected no-op sleep); a 401 → raises
+  immediately (no retry).
+- **Dry-run:** `export_dataset(dry_run=True)` against a mock client makes ZERO
+  network calls (no preflight/apply/upload) yet writes a `"dry_run": true` report
+  listing intended actions + params + files.
+- `FoundryClient.apply_action`/`preflight` URL/headers/body via httpx
+  `MockTransport`: correct path, Bearer header, `{"parameters": ...}` body.
 - Manifest enrichment: `class_counts` present and totals consistent with
   `yolo.train`/`yolo.val`.
 - **Import-isolation:** `import app.server` does not import
