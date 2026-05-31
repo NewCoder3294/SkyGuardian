@@ -117,7 +117,7 @@ export function LocalMap2D({
     draw();
   }, [draw, initialSpanM]);
 
-  // Load buildings once.
+  // Load (or reload) buildings; re-fetches when buildingsVersion bumps.
   useEffect(() => {
     if (!apiBase) {
       setBuildingsState("missing");
