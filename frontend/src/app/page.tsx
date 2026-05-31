@@ -239,10 +239,7 @@ export default function LandingPage() {
                   className="group relative flex items-start gap-5 border-b border-border px-5 py-4 transition-colors duration-200 last:border-b-0 hover:bg-surface"
                 >
                   <span className="absolute left-0 top-0 h-full w-0.5 origin-top scale-y-0 bg-accent transition-transform duration-200 group-hover:scale-y-100" />
-                  <span
-                    className="node-pulse mt-0.5 block rounded-full font-mono text-[11px] uppercase tracking-[0.28em] text-accent"
-                    style={{ animationDelay: `${index * 0.5}s` }}
-                  >
+                  <span className="relative z-10 mt-0.5 font-mono text-[11px] uppercase tracking-[0.28em] text-accent transition-colors group-hover:text-text">
                     {String(index + 1).padStart(2, "0")}
                   </span>
                   <div>
