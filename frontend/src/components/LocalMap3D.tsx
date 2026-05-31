@@ -31,6 +31,8 @@ interface Props {
   apiBase?: string;
   /** Building-clip radius (metres). 0 = show everything in the cache. */
   buildingsRadiusM?: number;
+  /** Operational environment hint (outdoor/indoor); accepted for parity with the call site. */
+  environment?: "outdoor" | "indoor";
   /** Optional single-line status (entity count, playback time, etc.). */
   statusLine?: string;
   /** Increments each time the buildings cache is refreshed (from useWorldClient). */

@@ -40,6 +40,8 @@ interface Props {
   /** Optional single-line status (entity count, playback time, etc.). */
   statusLine?: string;
   buildingsVersion?: number;
+  /** Operational environment hint (outdoor/indoor); accepted for parity with the call site. */
+  environment?: "outdoor" | "indoor";
 }
 
 interface ViewState {
