@@ -284,7 +284,10 @@ export function LocalMapGL({
 
   return (
     <div className="relative h-full w-full bg-bg">
-      <div ref={containerRef} className="absolute inset-0" />
+      {/* MapLibre forces position:relative on its container, which would void an
+          `absolute inset-0` and collapse the element to 0 height — give it an
+          intrinsic h-full/w-full box instead so the GL canvas gets real size. */}
+      <div ref={containerRef} className="h-full w-full" />
       <div className="tac-corners absolute left-4 top-4 border border-border-strong bg-surface/85 backdrop-blur-sm">
         <div className="space-y-1 px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest text-text-muted">
           <div className="text-text-dim">drag · scroll zoom</div>
