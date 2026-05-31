@@ -20,4 +20,10 @@ final class DroneIntentTests: XCTestCase {
     func testFollowMeDoesNotMatchTrackTag() {
         XCTAssertNotEqual(DroneIntent.match("follow me")?.function, .trackTag)
     }
+    func testFollowThatTagMapsToTrackTag() {
+        XCTAssertEqual(DroneIntent.match("follow that tag")?.function, .trackTag)
+    }
+    func testThatTagMapsToTrackTag() {
+        XCTAssertEqual(DroneIntent.match("lock onto that tag")?.function, .trackTag)
+    }
 }

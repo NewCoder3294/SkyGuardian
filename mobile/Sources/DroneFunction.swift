@@ -173,8 +173,9 @@ enum DroneIntent {
         // by an on-screen confirmation; the voice path should be confirmed too
         // (see ContentView.handle) — this just stops accidental triggers at parse.
         // Designate an AprilTag target — before the generic track/follow phrases.
-        if has(t, ["track the tag", "follow the tag", "track that tag", "the apriltag",
-                   "track the apriltag", "designate", "mark that", "lock the tag"]) { return DroneAction(.trackTag) }
+        if has(t, ["track the tag", "follow the tag", "track that tag", "follow that tag",
+                   "the apriltag", "track the apriltag", "designate", "mark that", "lock the tag",
+                   "that tag"]) { return DroneAction(.trackTag) }
         // Approve the shown lock. Bare "go" is intentionally NOT used (collides with "go up/down/back").
         if has(t, ["confirm", "lock it in", "approve target", "yes follow"]) { return DroneAction(.confirm) }
         if has(t, ["track me", "track that", "track the", "start tracking", "lock on", "lock onto", "follow that", "follow it", "follow him", "follow her"]) { return DroneAction(.track) }
