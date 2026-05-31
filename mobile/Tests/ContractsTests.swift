@@ -77,6 +77,28 @@ final class ContractsTests: XCTestCase {
         XCTAssertEqual(ents.first?["ttl_s"] as? Double, 4)
     }
 
+    func testLabelEventEncodesWithWireShape() throws {
+        let msg = LabelEventMessage(kind: "confirm", source: "follower",
+                                   label: "person", correctedLabel: nil, box: nil,
+                                   note: nil, t: 9.0)
+        let data = try JSONEncoder().encode(msg)
+        let obj = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(obj["type"] as? String, "label_event")
+        XCTAssertEqual(obj["kind"] as? String, "confirm")
+        XCTAssertEqual(obj["source"] as? String, "follower")
+        XCTAssertEqual(obj["label"] as? String, "person")
+        XCTAssertNil(obj["corrected_label"])  // nil omitted, not serialized as null
+    }
+
+    func testLabelEventCorrectedLabelUsesSnakeCaseKey() throws {
+        let msg = LabelEventMessage(kind: "correct", source: "follower",
+                                   label: "person", correctedLabel: "soldier",
+                                   box: nil, note: nil, t: 1.0)
+        let data = try JSONEncoder().encode(msg)
+        let obj = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(obj["corrected_label"] as? String, "soldier")
+    }
+
     func testBuildingsUpdatedDecodesAsUnknown() throws {
         let json = #"{"type":"buildings_updated","origin":{"lat":32.0,"lng":-117.0},"radius_m":400,"count":12,"t":3.5}"#
         let message = try JSONDecoder().decode(ServerMessage.self, from: Data(json.utf8))
