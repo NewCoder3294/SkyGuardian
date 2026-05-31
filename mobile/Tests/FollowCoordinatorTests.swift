@@ -75,4 +75,18 @@ final class FollowCoordinatorTests: XCTestCase {
         XCTAssertFalse(sink.sent.contains("land"))
         XCTAssertEqual(coord.currentPhase, .manual)
     }
+
+    func testResumeFollowGoesThroughConfirmNotAutoConfirm() {
+        coord.enterAirborneForTest(mode: .visualMe)
+        coord.pauseToManual()
+        coord.resumeFollow()
+        coord.drainForTest()   // settle requestLock rcQueue work + stop the real timer
+        XCTAssertEqual(coord.currentPhase, .searching)
+        // Use an OFF-CENTER tag so that *if* resume auto-confirmed, the follow command
+        // would be a non-hover (yaw > 0). Confirm-gated resume hovers instead — this is
+        // what makes the assertion discriminate confirm-gate from the old auto-confirm.
+        coord.injectDetectionForTest(tag(bearingDeg: 20), age: 0)
+        coord.tickForTest()
+        XCTAssertEqual(sink.lastRC, .hover)
+    }
 }

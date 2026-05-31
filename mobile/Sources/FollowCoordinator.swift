@@ -185,21 +185,11 @@ final class FollowCoordinator: ObservableObject {
         setPhase(.manual)
     }
 
-    /// Resume autonomous following after a manual takeover.
+    /// Resume autonomous following after a manual takeover or scripted maneuver.
+    /// Re-acquires the CURRENT target mode through the confirm gate (confirm-always).
     func resumeFollow() {
         guard isArmed else { return }
-        rcQueue.async {
-            self.followActive = true
-            self.manualHover = false       // leave the steady-hover hold, resume follow ticks
-            self.scripted = false          // any scripted maneuver is over
-            self.landing = false
-            self.tookOff = true            // already airborne — no settle delay needed
-            self.confirmed = true          // target was confirmed before the takeover; don't re-confirm
-            self.latest = nil
-            self.latestTime = self.now()  // fresh grace before lost-land
-        }
-        setPhase(.searching)
-        startRCLoop()                      // idempotent: restart the timer if it isn't running
+        requestLock(mode)
     }
 
     /// Stop following and land. Safe to call any time.
