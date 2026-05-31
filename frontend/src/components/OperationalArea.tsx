@@ -2,10 +2,16 @@
 
 import { useState } from "react";
 
+interface AreaResponse {
+  count: number;
+  basemap: { maxzoom: number } | null;
+  basemap_error: string | null;
+}
+
 type Status =
   | { kind: "idle" }
   | { kind: "fetching" }
-  | { kind: "success"; count: number }
+  | { kind: "success"; count: number; basemap: AreaResponse["basemap"] }
   | { kind: "error"; message: string };
 
 interface Props {
@@ -53,8 +59,8 @@ export function OperationalArea({ apiBase }: Props) {
         setStatus({ kind: "error", message: msg });
         return;
       }
-      const data = (await res.json()) as { count: number };
-      setStatus({ kind: "success", count: data.count });
+      const data = (await res.json()) as AreaResponse;
+      setStatus({ kind: "success", count: data.count, basemap: data.basemap });
     } catch {
       setStatus({ kind: "error", message: "No internet: pre-mission only" });
     }
@@ -106,7 +112,10 @@ export function OperationalArea({ apiBase }: Props) {
       </div>
       <div className="mt-2 h-4 text-[10px]">
         {status.kind === "success" && (
-          <span className="text-ok">✓ {status.count} buildings cached for this area</span>
+          <span className="text-text-dim">
+            ✓ {status.count} buildings · basemap{" "}
+            {status.basemap ? `z0–${status.basemap.maxzoom} cached` : "unavailable"}
+          </span>
         )}
         {status.kind === "error" && <span className="text-text-dim">{status.message}</span>}
         {status.kind === "idle" && (
