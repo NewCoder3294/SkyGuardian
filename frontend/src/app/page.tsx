@@ -170,9 +170,8 @@ export default function LandingPage() {
           <div className="mx-auto mt-12 max-w-4xl">
             <div className="tac-corners border border-border-strong bg-bg p-2 shadow-[0_26px_90px_oklch(0.12_0.03_130_/_0.12)]">
               <div className="relative aspect-video overflow-hidden border border-border bg-surface">
-                {/* Replace YOUTUBE_VIDEO_ID with your actual video ID */}
                 <iframe
-                  src="https://www.youtube.com/embed/YOUTUBE_VIDEO_ID"
+                  src="https://www.youtube.com/embed/KsTMO9560BY"
                   title="SkyGuardian Demo"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                   allowFullScreen
