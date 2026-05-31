@@ -55,6 +55,7 @@ from .contracts import (
     FollowState,
     Health,
     IntentMessage,
+    LabelEvent,
     MapAreaRequest,
     MissionState,
     WorldSnapshot,
@@ -1021,6 +1022,19 @@ async def serve_detections_json(name: str) -> Response:
     return FileResponse(src, media_type="application/json")
 
 
+def _record_label_event(msg: LabelEvent) -> None:
+    """Persist an operator label decision for the data flywheel (no-op when
+    capture is disabled)."""
+    if _capture_recorder is None:
+        return
+    from .capture.schema import Event  # noqa: PLC0415
+    _capture_recorder.record_event(Event(
+        t=msg.t, mission_id=getattr(_capture_recorder, "_mission_id", "mission"),
+        kind=msg.kind, source=msg.source, label=msg.label,
+        corrected_label=msg.corrected_label, box=msg.box, note=msg.note,
+    ))
+
+
 def _apply_device_location(msg: DeviceLocation) -> None:
     """Phone GPS-less device_location → soldier entity.
 
@@ -1065,6 +1079,8 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 global _follow_state, _follow_rx_t
                 _follow_state = msg.model_copy(update={"source": "phone"})
                 _follow_rx_t = clock.now()
+            elif isinstance(msg, LabelEvent):
+                _record_label_event(msg)
     except WebSocketDisconnect:
         pass
     finally:

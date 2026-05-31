@@ -202,7 +202,21 @@ class DeviceLocation(BaseModel):
     t: float
 
 
-ClientMessage = Union[IntentMessage, DeviceLocation, FollowState]
+class LabelEvent(BaseModel):
+    """Operator label decision on a detection / follow target, recorded for the
+    data flywheel (confirm a true positive, reject a false positive, or correct
+    the class). Box (if given) is [cx, cy, w, h] normalized 0..1."""
+    type: Literal["label_event"] = "label_event"
+    kind: Literal["confirm", "reject", "correct"]
+    source: str
+    label: Optional[str] = None
+    corrected_label: Optional[str] = None
+    box: Optional[list[float]] = None
+    note: Optional[str] = None
+    t: float
+
+
+ClientMessage = Union[IntentMessage, DeviceLocation, FollowState, LabelEvent]
 
 
 def parse_client_message(raw: dict) -> ClientMessage:
@@ -216,4 +230,6 @@ def parse_client_message(raw: dict) -> ClientMessage:
         return DeviceLocation.model_validate(raw)
     if kind == "follow_state":
         return FollowState.model_validate(raw)
+    if kind == "label_event":
+        return LabelEvent.model_validate(raw)
     raise ValueError(f"unknown client message type: {kind!r}")
