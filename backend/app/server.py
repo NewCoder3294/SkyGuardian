@@ -346,6 +346,41 @@ _YOLO_SPECIALTY_CONF: float | None = (
     float(os.environ["YOLO_SPECIALTY_CONF"]) if os.environ.get("YOLO_SPECIALTY_CONF") else None
 )
 
+# --- Drone detector (4th slot) ---
+# Drone supervised model (e.g. Javvanny/yolov8m_flying_objects_detection). When
+# the underlying model emits a class set in another language (the Javvanny
+# model is Cyrillic) the operator passes `YOLO_DRONE_RELABEL="0:drone,4:drone"`
+# to map class indices → english labels the dashboard already speaks. The
+# keep-filter then matches on the relabelled names.
+_YOLO_DRONE_WEIGHTS = os.environ.get("YOLO_DRONE_WEIGHTS") or None
+_yolo_drone_keep_env = os.environ.get("YOLO_DRONE_KEEP")
+_YOLO_DRONE_KEEP: list[str] = (
+    [c.strip().lower() for c in _yolo_drone_keep_env.split(",") if c.strip()]
+    if _yolo_drone_keep_env
+    else []
+)
+_YOLO_DRONE_CONF: float | None = (
+    float(os.environ["YOLO_DRONE_CONF"]) if os.environ.get("YOLO_DRONE_CONF") else None
+)
+def _parse_label_overrides(env_value: str | None) -> dict[int, str] | None:
+    """Parse "0:drone,4:drone" into {0: "drone", 4: "drone"}. Tolerant of
+    whitespace and bad entries — silently drops malformed pairs rather than
+    failing the whole boot."""
+    if not env_value:
+        return None
+    out: dict[int, str] = {}
+    for pair in env_value.split(","):
+        pair = pair.strip()
+        if not pair or ":" not in pair:
+            continue
+        idx_s, label = pair.split(":", 1)
+        try:
+            out[int(idx_s.strip())] = label.strip()
+        except ValueError:
+            continue
+    return out or None
+_YOLO_DRONE_LABEL_OVERRIDES = _parse_label_overrides(os.environ.get("YOLO_DRONE_RELABEL"))
+
 # --- Upload-only overrides ---
 # When the operator uploads a recorded clip via the dashboard, they're not
 # bound by the realtime budget the live RTMP pipeline is. Any `UPLOAD_*`
@@ -406,6 +441,22 @@ _UPLOAD_ANCHOR_TAG_SIZE_M = float(
     os.environ.get("UPLOAD_ANCHOR_TAG_SIZE_M")
     or os.environ.get("ANCHOR_TAG_SIZE_M", "0.20")
 )
+_UPLOAD_YOLO_DRONE_WEIGHTS = _u("UPLOAD_YOLO_DRONE_WEIGHTS", _YOLO_DRONE_WEIGHTS)
+_upload_yolo_drone_keep_env = os.environ.get("UPLOAD_YOLO_DRONE_KEEP")
+_UPLOAD_YOLO_DRONE_KEEP: list[str] = (
+    [c.strip().lower() for c in _upload_yolo_drone_keep_env.split(",") if c.strip()]
+    if _upload_yolo_drone_keep_env
+    else _YOLO_DRONE_KEEP
+)
+_UPLOAD_YOLO_DRONE_CONF: float | None = (
+    float(os.environ["UPLOAD_YOLO_DRONE_CONF"])
+    if os.environ.get("UPLOAD_YOLO_DRONE_CONF")
+    else _YOLO_DRONE_CONF
+)
+_UPLOAD_YOLO_DRONE_LABEL_OVERRIDES = (
+    _parse_label_overrides(os.environ.get("UPLOAD_YOLO_DRONE_RELABEL"))
+    or _YOLO_DRONE_LABEL_OVERRIDES
+)
 
 # Monocular depth model — unlocks true 3D positions for YOLO entities.
 # Disable with DEPTH_MODEL="off". Calibration: DEPTH_SCALE tunes the
@@ -439,6 +490,10 @@ perception = PerceptionPipeline(
     yolo_specialty_weights=_YOLO_SPECIALTY_WEIGHTS,
     yolo_specialty_keep=_YOLO_SPECIALTY_KEEP,
     yolo_specialty_conf=_YOLO_SPECIALTY_CONF,
+    yolo_drone_weights=_YOLO_DRONE_WEIGHTS,
+    yolo_drone_keep=_YOLO_DRONE_KEEP,
+    yolo_drone_conf=_YOLO_DRONE_CONF,
+    yolo_drone_label_overrides=_YOLO_DRONE_LABEL_OVERRIDES,
     depth_model=_DEPTH_MODEL,
     depth_scale=_DEPTH_SCALE,
     tag_size_m=float(os.environ.get("ANCHOR_TAG_SIZE_M", "0.20")),
@@ -889,6 +944,19 @@ async def get_glyphs(fontstack: str, rng: str) -> Response:
     return FileResponse(safe, media_type="application/x-protobuf")
 
 
+@app.post("/world/clear")
+async def post_world_clear(
+    _: None = Depends(_require_operator),
+) -> dict:
+    """Wipe every entity from the world model and the perception detection
+    buffer. Operator's reset-the-map button between demo takes. Producers
+    (perception, follow loop, device_location) keep running and will refill
+    on their next tick — this is not a teardown, just a clean slate."""
+    world.clear()
+    perception.reset()
+    return {"ok": True}
+
+
 @app.post("/map/area")
 async def post_map_area(
     req: MapAreaRequest,
@@ -1207,6 +1275,10 @@ async def _process_uploaded_file(safe_name: str, dest: Path) -> None:
             yolo_specialty_weights=_UPLOAD_YOLO_SPECIALTY_WEIGHTS,
             yolo_specialty_keep=_UPLOAD_YOLO_SPECIALTY_KEEP,
             yolo_specialty_conf=_UPLOAD_YOLO_SPECIALTY_CONF,
+            yolo_drone_weights=_UPLOAD_YOLO_DRONE_WEIGHTS,
+            yolo_drone_keep=_UPLOAD_YOLO_DRONE_KEEP,
+            yolo_drone_conf=_UPLOAD_YOLO_DRONE_CONF,
+            yolo_drone_label_overrides=_UPLOAD_YOLO_DRONE_LABEL_OVERRIDES,
             depth_model=_DEPTH_MODEL,
             depth_scale=_DEPTH_SCALE,
             sample_fps=float(os.environ.get("PERCEPTION_FPS", "5")),

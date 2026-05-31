@@ -64,6 +64,12 @@ class YoloDetector:
         conf_threshold: float = 0.25,
         classes: list[str] | None = None,
         imgsz: int = 640,
+        # Optional remap from the model's raw class index → a clean label the
+        # rest of the stack can match against. The Javvanny flying-objects
+        # model, for example, emits Cyrillic class names ("БПЛА коптер"); the
+        # downstream keep-filter expects English. Anything not in the map
+        # keeps the model's native class name unchanged.
+        class_label_overrides: dict[int, str] | None = None,
     ) -> None:
         path = Path(weights_path)
         if not path.is_file():
@@ -87,6 +93,7 @@ class YoloDetector:
         self._conf = conf_threshold
         self._imgsz = int(imgsz)
         self._device = _autodetect_device()
+        self._label_overrides: dict[int, str] = dict(class_label_overrides or {})
         if self._device:
             print(f"[yolo] {path.name} → device={self._device}")
 
@@ -108,7 +115,13 @@ class YoloDetector:
                 x1, y1, x2, y2 = box.xyxy[0].tolist()
                 conf = float(box.conf[0])
                 cls_idx = int(box.cls[0])
-                label = result.names.get(cls_idx, str(cls_idx))
+                # Normalise to lowercase — the COCO model emits "person", the
+                # threat model emits "Gun", the flying-objects model emits
+                # Cyrillic. Downstream keep-filters and entity IDs need one
+                # consistent casing convention; pick the simplest.
+                label = self._label_overrides.get(
+                    cls_idx, result.names.get(cls_idx, str(cls_idx))
+                ).lower()
                 detections.append(YoloDetection(
                     label=label,
                     confidence=conf,

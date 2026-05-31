@@ -271,8 +271,8 @@ export function SourceSelector({ apiBase, onState }: Props) {
         <label
           className={`inline-flex select-none items-center gap-2 border px-5 py-2 font-mono text-[12px] font-bold uppercase tracking-[0.18em] transition-colors duration-100 ${
             busy !== "" || showProcessing
-              ? "cursor-not-allowed border-cta-active bg-cta/50 text-text/70"
-              : "cursor-pointer border-cta-hover bg-cta text-text hover:bg-cta-hover active:bg-cta-active"
+              ? "cursor-not-allowed border-cta-active bg-cta/50 text-bg/70"
+              : "cursor-pointer border-cta-hover bg-cta text-bg hover:bg-cta-hover active:bg-cta-active"
           }`}
         >
           <UploadIcon className="h-3.5 w-3.5" />

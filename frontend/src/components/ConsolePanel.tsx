@@ -12,7 +12,15 @@ import { SectionHeader, StandbyState, StatusTag } from "@/components/tactical";
  * and normalised image-plane centre — what the brain is currently labelling
  * in the live feed.
  */
-export function ConsolePanel({ log }: { log: DetectionEvent[] }) {
+export function ConsolePanel({
+  log,
+  onClear,
+}: {
+  log: DetectionEvent[];
+  /** Optional operator hook to wipe the rolling log. When omitted, no
+   *  clear button is rendered — useful for read-only / playback views. */
+  onClear?: () => void;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Pin scroll to top whenever a new event lands (most recent first).
@@ -33,13 +41,25 @@ export function ConsolePanel({ log }: { log: DetectionEvent[] }) {
         as="h2"
         className="border-b border-border bg-surface"
         aside={
-          log.length === 0 ? (
-            <StatusTag state="idle" label="Standby" />
-          ) : (
-            <span className="border border-border-strong bg-surface-elevated px-2 py-0.5 font-mono text-[10px] tabular-nums text-text-muted">
-              {log.length.toString().padStart(2, "0")}
-            </span>
-          )
+          <div className="flex items-center gap-2">
+            {log.length === 0 ? (
+              <StatusTag state="idle" label="Standby" />
+            ) : (
+              <span className="border border-border-strong bg-surface-elevated px-2 py-0.5 font-mono text-[10px] tabular-nums text-text-muted">
+                {log.length.toString().padStart(2, "0")}
+              </span>
+            )}
+            {onClear && log.length > 0 && (
+              <button
+                type="button"
+                onClick={onClear}
+                aria-label="Clear detection log"
+                className="border border-border-strong bg-surface-elevated px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.3em] text-text-muted transition hover:border-accent/60 hover:text-accent"
+              >
+                Clear
+              </button>
+            )}
+          </div>
         }
       />
       {log.length === 0 ? (

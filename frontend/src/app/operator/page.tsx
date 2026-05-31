@@ -50,6 +50,20 @@ export default function Page() {
   const wsLive = useWorldClient(wsUrl);
   const { connection, lastError, health } = wsLive;
 
+  // Operator reset: wipe the backend world model + perception buffer (the
+  // entities and live-frame boxes producers will repopulate as soon as new
+  // perception ticks land) and the local rolling detection log for a clean
+  // slate between demo takes. Backend call is fire-and-forget; we don't
+  // block the UI on it, but we wipe the local state immediately so the map
+  // visibly clears even before the next WS snapshot arrives.
+  const onClearMap = useCallback(() => {
+    wsLive.clearEntities();
+    void fetch(`${apiBase}/world/clear`, { method: "POST" }).catch(() => {});
+  }, [apiBase, wsLive]);
+  const onClearLog = useCallback(() => {
+    wsLive.clearDetectionLog();
+  }, [wsLive]);
+
   // Persist the active tab so a Fast Refresh / hard reload doesn't snap the
   // operator back to Feed every time. Server and first client render both use
   // "feed" so the markup matches; the persisted tab is restored after mount to
@@ -299,14 +313,12 @@ export default function Page() {
         </div>
       </div>
 
-      <ThreatAlert detections={effectiveDetections} />
-
       <main className="flex min-h-0 flex-1">
         <section className="flex min-h-0 flex-1 flex-col">
           {tab === "feed" && (
             <div className="flex min-h-0 flex-1 flex-col">
               <div className="flex min-h-0 flex-1">
-                <div className="flex min-w-0 flex-1">
+                <div className="relative flex min-w-0 flex-1">
                   {/* `key` includes the source kind + (when in file mode) the
                       uploaded filename so React fully unmounts the prior
                       <video> / <img> when we swap modes or swap clips. Without
@@ -328,9 +340,17 @@ export default function Page() {
                       label="Leader · Recon"
                     />
                   )}
+                  {/* Threat alert anchored to the video pane's bottom-right,
+                      not the viewport. The viewport corner sits behind the
+                      ConsolePanel on this layout — putting the alert here
+                      means the operator always sees it on top of the feed. */}
+                  <ThreatAlert detections={effectiveDetections} />
                 </div>
                 <div className="hidden w-80 shrink-0 md:block">
-                  <ConsolePanel log={effectiveDetectionLog} />
+                  <ConsolePanel
+                    log={effectiveDetectionLog}
+                    onClear={isPlayback ? undefined : onClearLog}
+                  />
                 </div>
               </div>
             </div>
@@ -372,6 +392,14 @@ export default function Page() {
                 <BasemapToggle value={basemap} onChange={setBasemap} staged={bmStaged} />
               )}
               <EnvironmentToggle value={environment} onChange={setEnvironment} />
+              <button
+                type="button"
+                onClick={onClearMap}
+                aria-label="Clear all entities from the map"
+                className="pointer-events-auto absolute right-4 top-[7.25rem] z-10 border border-border-strong bg-surface/85 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.3em] text-text-muted backdrop-blur-sm transition hover:border-accent/60 hover:text-accent"
+              >
+                Clear Map
+              </button>
               {environment === "outdoor" && (
                 <div className="pointer-events-auto absolute left-3 top-3 z-10 max-w-sm">
                   <OperationalArea apiBase={apiBase} />

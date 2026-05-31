@@ -45,6 +45,13 @@ export interface WorldClientState {
    *  so map components can re-fetch /map/buildings. */
   buildingsVersion: number;
   send: (cmd: Command) => void;
+  /** Wipe the local rolling detection log. Frontend-only — the backend keeps
+   *  emitting new events and they'll start accumulating again from now. */
+  clearDetectionLog: () => void;
+  /** Wipe local entity state for instant UI feedback. The map and entity
+   *  list will repopulate on the next world_snapshot broadcast unless the
+   *  caller also clears the backend (POST /world/clear). */
+  clearEntities: () => void;
 }
 
 const RECONNECT_DELAY_MS = 1000;
@@ -181,5 +188,16 @@ export function useWorldClient(url: string): WorldClientState {
     };
   }, [open]);
 
-  return { connection, entities, stage, lastError, health, detections, detectionLog, followState, buildingsVersion, send };
+  const clearDetectionLog = useCallback(() => {
+    setDetectionLog([]);
+    lastLoggedT.current = {};
+  }, []);
+  const clearEntities = useCallback(() => {
+    setEntities([]);
+  }, []);
+
+  return {
+    connection, entities, stage, lastError, health, detections, detectionLog,
+    followState, buildingsVersion, send, clearDetectionLog, clearEntities,
+  };
 }
