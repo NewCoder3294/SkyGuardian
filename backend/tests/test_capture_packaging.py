@@ -144,3 +144,16 @@ def test_reject_drops_boxes_and_unlabeled_gemma(tmp_path: Path):
     assert label2.read_text().strip() == ""          # rejected box gone
     assert manifest2["yolo"]["classes"] == []
     assert manifest2["label_events"]["reject"] == 1
+
+
+def test_manifest_has_per_class_counts(tmp_path: Path):
+    mdir = _setup_cleaned(tmp_path)   # 4 frames: i%2 -> "car" (odd), else "person"->"soldier"
+    out = tmp_path / "datasets" / "dc"
+    manifest = package_dataset(mdir, out, val_frac=0.0, created_t=1.0)
+
+    cc = manifest["yolo"]["class_counts"]
+    assert set(cc.keys()) == set(manifest["yolo"]["classes"])
+    for label, c in cc.items():
+        assert c["count"] == c["train"] + c["val"]
+    total = sum(c["count"] for c in cc.values())
+    assert total >= 1
