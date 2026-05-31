@@ -48,11 +48,11 @@ final class FollowControllerTests: XCTestCase {
     }
 
     func testYawClampsToMax() {
-        XCTAssertEqual(fc.command(for: tag(bearingDeg: 90)).yaw, 45)
+        XCTAssertEqual(fc.command(for: tag(bearingDeg: 90)).yaw, 75)
     }
 
     func testForwardClampsToMax() {
-        XCTAssertEqual(fc.command(for: tag(distance: 50)).fb, 28)
+        XCTAssertEqual(fc.command(for: tag(distance: 50)).fb, 55)
     }
 
     func testSmallBearingInDeadbandYawsZero() {

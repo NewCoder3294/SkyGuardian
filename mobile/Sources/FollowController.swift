@@ -19,13 +19,16 @@ struct FollowConfig {
     var bearingDeadbandDeg: Double = 4.0   // no yaw inside this
     var elevationDeadbandDeg: Double = 6.0 // no up/down inside this
 
-    var kYawPerDeg: Double = 1.1           // % stick per degree of bearing
-    var kFwdPerMeter: Double = 22.0        // % stick per meter of distance error
-    var kUpPerDeg: Double = 1.2            // % stick per degree of elevation
+    // Snappier response: higher per-error gains so it reacts quickly, with raised
+    // caps so it can actually move fast. (Tuned up from the gentle defaults; dial
+    // back if it overshoots/oscillates on your unit.)
+    var kYawPerDeg: Double = 1.8           // % stick per degree of bearing
+    var kFwdPerMeter: Double = 36.0        // % stick per meter of distance error
+    var kUpPerDeg: Double = 1.8            // % stick per degree of elevation
 
-    var maxYaw: Int = 45
-    var maxFwd: Int = 28
-    var maxUp: Int = 22
+    var maxYaw: Int = 75
+    var maxFwd: Int = 55
+    var maxUp: Int = 35
 
     var minDecisionMargin: Float = 25.0    // reject weak/false detections
 }
