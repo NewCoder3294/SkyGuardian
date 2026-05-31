@@ -32,6 +32,8 @@ interface Props {
   buildingsRadiusM?: number;
   /** Optional single-line status (entity count, playback time, etc.). */
   statusLine?: string;
+  /** Increments each time the buildings cache is refreshed (from useWorldClient). */
+  buildingsVersion?: number;
 }
 
 export function LocalMap3D({
@@ -42,6 +44,7 @@ export function LocalMap3D({
   apiBase,
   buildingsRadiusM = 0,
   statusLine,
+  buildingsVersion,
 }: Props) {
   // When a buildings layer is configured we frame the camera against the
   // building radius (not the SLAM span) so the campus is visible on first
@@ -61,7 +64,7 @@ export function LocalMap3D({
         <SceneFloor span={cameraSpan} />
         <OriginMarker />
         {apiBase && (
-          <Buildings apiBase={apiBase} clipRadiusM={buildingsRadiusM} />
+          <Buildings apiBase={apiBase} clipRadiusM={buildingsRadiusM} buildingsVersion={buildingsVersion} />
         )}
 
         {entities.map((e) => (

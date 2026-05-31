@@ -38,6 +38,7 @@ interface Props {
   initialSpanM?: number;
   /** Optional single-line status (entity count, playback time, etc.). */
   statusLine?: string;
+  buildingsVersion?: number;
 }
 
 interface ViewState {
@@ -51,6 +52,7 @@ export function LocalMap2D({
   apiBase,
   initialSpanM = 0,
   statusLine,
+  buildingsVersion = 0,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -118,7 +120,7 @@ export function LocalMap2D({
     draw();
   }, [draw, initialSpanM]);
 
-  // Load buildings once.
+  // Load (or reload) buildings; re-fetches when buildingsVersion bumps.
   useEffect(() => {
     if (!apiBase) {
       setBuildingsState("missing");
@@ -147,7 +149,7 @@ export function LocalMap2D({
     return () => {
       stopped = true;
     };
-  }, [apiBase, fitToBuildings]);
+  }, [apiBase, fitToBuildings, buildingsVersion]);
 
   // Redraw whenever entities change.
   useEffect(() => {

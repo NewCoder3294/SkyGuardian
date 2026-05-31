@@ -41,6 +41,9 @@ export interface WorldClientState {
   detections: Record<string, DetectionLayer>;
   detectionLog: DetectionEvent[];
   followState: FollowState | null;
+  /** Increments each time the server signals the buildings layer changed,
+   *  so map components can re-fetch /map/buildings. */
+  buildingsVersion: number;
   send: (cmd: Command) => void;
 }
 
@@ -59,6 +62,7 @@ export function useWorldClient(url: string): WorldClientState {
   const [detections, setDetections] = useState<Record<string, DetectionLayer>>({});
   const [detectionLog, setDetectionLog] = useState<DetectionEvent[]>([]);
   const [followState, setFollowState] = useState<FollowState | null>(null);
+  const [buildingsVersion, setBuildingsVersion] = useState(0);
   const lastLoggedT = useRef<Record<string, number>>({});
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -121,6 +125,9 @@ export function useWorldClient(url: string): WorldClientState {
       case "follow_state":
         setFollowState(msg);
         break;
+      case "buildings_updated":
+        setBuildingsVersion((v) => v + 1);
+        break;
       case "detections":
         setDetections((prev) => ({
           ...prev,
@@ -174,5 +181,5 @@ export function useWorldClient(url: string): WorldClientState {
     };
   }, [open]);
 
-  return { connection, entities, stage, lastError, health, detections, detectionLog, followState, send };
+  return { connection, entities, stage, lastError, health, detections, detectionLog, followState, buildingsVersion, send };
 }

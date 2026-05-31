@@ -43,7 +43,9 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from .clock import RealClock
+from . import map_area
 from .contracts import (
+    BuildingsUpdated,
     Command,
     Detections,
     DeviceLocation,
@@ -54,6 +56,7 @@ from .contracts import (
     FollowState,
     Health,
     IntentMessage,
+    MapAreaRequest,
     MissionState,
     WorldSnapshot,
     parse_client_message,
@@ -655,6 +658,37 @@ async def get_buildings() -> Response:
             ),
         )
     return FileResponse(_BUILDINGS_PATH, media_type="application/json")
+
+
+@app.post("/map/area")
+async def post_map_area(
+    req: MapAreaRequest,
+    _: None = Depends(_require_operator),
+) -> dict:
+    """Re-fetch OSM buildings for a new operational area, overwrite the served
+    cache, and broadcast a buildings_updated signal. REQUIRES internet at call
+    time (pre-mission staging); on failure the cached layer is left untouched."""
+    try:
+        # Offload the blocking Overpass fetch (urllib, up to 3 mirror timeouts)
+        # to a thread so a slow/failed fetch can't stall the WS hub event loop.
+        payload = await asyncio.to_thread(
+            map_area.fetch_and_project, req.lat, req.lng, req.radius_m
+        )
+    except Exception as exc:  # noqa: BLE001 - any fetch failure → 503, cache intact
+        raise HTTPException(
+            status_code=503,
+            detail=f"Could not fetch buildings (requires internet); cached area unchanged: {exc}",
+        )
+    map_area.write_buildings(payload, _BUILDINGS_PATH, backup=True)
+    await hub.broadcast(
+        BuildingsUpdated(
+            origin=payload["origin"],
+            radius_m=payload["radius_m"],
+            count=payload["count"],
+            t=clock.now(),
+        )
+    )
+    return {"origin": payload["origin"], "radius_m": payload["radius_m"], "count": payload["count"]}
 
 
 @app.get("/intel/summary")

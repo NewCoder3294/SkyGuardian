@@ -86,3 +86,24 @@ def test_entity_report_rejects_too_many_entities():
     }
     with pytest.raises((ValidationError, ValueError)):
         parse_client_message(raw)
+
+
+def test_buildings_updated_serializes():
+    from app.contracts import BuildingsUpdated, GeoPoint
+
+    msg = BuildingsUpdated(origin=GeoPoint(lat=32.0, lng=-117.0), radius_m=400, count=12, t=3.5)
+    dumped = msg.model_dump(mode="json")
+    assert dumped["type"] == "buildings_updated"
+    assert dumped["origin"] == {"lat": 32.0, "lng": -117.0}
+    assert dumped["radius_m"] == 400
+    assert dumped["count"] == 12
+    assert dumped["t"] == 3.5
+
+
+def test_geopoint_rejects_out_of_range():
+    from app.contracts import GeoPoint
+
+    with pytest.raises(ValidationError):
+        GeoPoint(lat=91.0, lng=0.0)
+    with pytest.raises(ValidationError):
+        GeoPoint(lat=0.0, lng=-181.0)

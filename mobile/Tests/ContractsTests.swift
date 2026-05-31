@@ -76,4 +76,11 @@ final class ContractsTests: XCTestCase {
         // Entity encodes ttl_s via CodingKeys (not ttlS).
         XCTAssertEqual(ents.first?["ttl_s"] as? Double, 4)
     }
+
+    func testBuildingsUpdatedDecodesAsUnknown() throws {
+        let json = #"{"type":"buildings_updated","origin":{"lat":32.0,"lng":-117.0},"radius_m":400,"count":12,"t":3.5}"#
+        let message = try JSONDecoder().decode(ServerMessage.self, from: Data(json.utf8))
+        guard case .unknown(let t) = message else { return XCTFail("should be unknown (mobile does not consume buildings)") }
+        XCTAssertEqual(t, "buildings_updated")
+    }
 }

@@ -89,12 +89,31 @@ export interface FollowState {
   t: number;
 }
 
+/** A WGS84 lat/lng — geo-reference for the local map frame origin. */
+export interface GeoPoint {
+  lat: number;
+  lng: number;
+}
+
+/**
+ * Signal that the served OSM buildings layer changed (operator set a new
+ * operational area). Clients re-GET /map/buildings on receipt.
+ */
+export interface BuildingsUpdated {
+  type: "buildings_updated";
+  origin: GeoPoint;
+  radius_m: number;
+  count: number;
+  t: number;
+}
+
 export type ServerMessage =
   | WorldSnapshot
   | MissionState
   | Health
   | Detections
-  | FollowState;
+  | FollowState
+  | BuildingsUpdated;
 
 // --- clients -> server ---
 export interface IntentMessage {
