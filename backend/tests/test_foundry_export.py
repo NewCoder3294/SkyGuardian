@@ -278,3 +278,15 @@ def test_export_records_partial_failure_on_upload_error(tmp_path):
     report = json.loads((d / "export_report.json").read_text())
     assert "partial_failure" in report
     assert report["mission"]["status"] == "created"   # objects were upserted first
+
+
+def test_cli_module_imports_and_has_main():
+    import importlib.util
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parents[2] / "scripts" / "export_to_foundry.py"
+    assert script.exists()
+    src = script.read_text()
+    assert "from app.capture.foundry_export import" in src
+    assert "--dry-run" in src
+    assert "def main(" in src
