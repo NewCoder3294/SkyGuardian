@@ -71,3 +71,78 @@ def test_config_from_env_requires_fields(monkeypatch):
     assert cfg.mission_edit_action == "edit-capture-mission"
     assert cfg.class_edit_action == "edit-detection-class"
     assert cfg.timeout_s == 30.0 and cfg.max_retries == 3
+
+
+import httpx
+
+from app.capture.foundry_export import FoundryApiError, FoundryClient
+
+
+def _cfg():
+    return FoundryConfig(host="https://x.pf.com", token="tok",
+                         ontology_rid="ri.ont.1", dataset_rid="ri.ds.1", max_retries=3)
+
+
+def _client(handler):
+    transport = httpx.MockTransport(handler)
+    http = httpx.Client(transport=transport, base_url="https://x.pf.com")
+    # sleep is injected as a no-op so backoff doesn't slow tests.
+    return FoundryClient(_cfg(), http=http, sleep=lambda _s: None)
+
+
+def test_apply_action_builds_request():
+    seen = {}
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["auth"] = request.headers.get("authorization")
+        seen["body"] = request.read().decode()
+        return httpx.Response(200, json={"validation": {"result": "VALID"}})
+    c = _client(handler)
+    c.apply_action("create-detection-class", {"classKey": "m1:car"})
+    assert seen["url"] == "https://x.pf.com/api/v2/ontologies/ri.ont.1/actions/create-detection-class/apply"
+    assert seen["auth"] == "Bearer tok"
+    assert '"parameters"' in seen["body"] and "m1:car" in seen["body"]
+
+
+def test_retry_on_503_then_success():
+    calls = {"n": 0}
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] < 3:
+            return httpx.Response(503, json={"errorCode": "INTERNAL"})
+        return httpx.Response(200, json={"ok": True})
+    c = _client(handler)
+    c.apply_action("create-capture-mission", {"missionId": "m1"})
+    assert calls["n"] == 3   # retried twice, succeeded on the 3rd
+
+
+def test_no_retry_on_401():
+    calls = {"n": 0}
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(401, json={"errorCode": "UNAUTHORIZED"})
+    c = _client(handler)
+    with pytest.raises(FoundryApiError) as ei:
+        c.apply_action("create-capture-mission", {"missionId": "m1"})
+    assert ei.value.status == 401
+    assert calls["n"] == 1   # auth error not retried
+
+
+def test_upload_transaction_flow():
+    seen = []
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path, str(request.url.query)))
+        if request.url.path.endswith("/transactions"):
+            return httpx.Response(200, json={"rid": "ri.tx.1"})
+        if request.url.path.endswith("/commit"):
+            return httpx.Response(200, json={})
+        return httpx.Response(200, json={"path": "x"})  # upload
+    c = _client(handler)
+    tx = c.create_transaction("ri.ds.1")
+    assert tx == "ri.tx.1"
+    c.upload_file("ri.ds.1", tx, "manifest.json", b"{}")
+    c.commit_transaction("ri.ds.1", tx)
+    paths = [p for _, p, _ in seen]
+    assert "/api/v2/datasets/ri.ds.1/transactions" in paths
+    assert "/api/v2/datasets/ri.ds.1/files/manifest.json/upload" in paths
+    assert "/api/v2/datasets/ri.ds.1/transactions/ri.tx.1/commit" in paths

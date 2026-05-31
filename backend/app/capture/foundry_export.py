@@ -7,6 +7,8 @@ objects (Actions API) and the dataset files into a backing Foundry Dataset.
 from __future__ import annotations
 
 import os
+import time
+import httpx
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
@@ -93,3 +95,89 @@ def build_class_params(manifest: dict) -> list[dict]:
             "val": c.get("val", 0),
         })
     return out
+
+
+_RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+
+
+class FoundryApiError(RuntimeError):
+    def __init__(self, status: int, body: str):
+        super().__init__(f"Foundry API error {status}: {body[:500]}")
+        self.status = status
+        self.body = body
+
+
+class FoundryClient:
+    """Thin httpx wrapper for the Foundry v2 API. Injectable `http` (an
+    httpx.Client) and `sleep` for tests. Retries transient failures with
+    exponential backoff; never retries non-transient 4xx."""
+
+    def __init__(self, config: FoundryConfig, *, http: Optional[httpx.Client] = None,
+                 sleep: Callable[[float], None] = time.sleep) -> None:
+        self._cfg = config
+        self._sleep = sleep
+        self._http = http or httpx.Client(
+            base_url=config.host, timeout=config.timeout_s,
+            headers={"Authorization": f"Bearer {config.token}"},
+        )
+
+    def _request(self, method: str, path: str, *, json=None, content=None,
+                 headers=None, params=None) -> httpx.Response:
+        hdrs = {"Authorization": f"Bearer {self._cfg.token}"}
+        if headers:
+            hdrs.update(headers)
+        last_exc: Optional[Exception] = None
+        for attempt in range(self._cfg.max_retries + 1):
+            try:
+                resp = self._http.request(method, path, json=json, content=content,
+                                          headers=hdrs, params=params)
+            except (httpx.TimeoutException, httpx.TransportError) as exc:
+                last_exc = exc
+                if attempt >= self._cfg.max_retries:
+                    raise FoundryApiError(0, f"transport error after retries: {exc!r}")
+                self._sleep(min(8.0, 0.5 * (2 ** attempt)))
+                continue
+            if resp.status_code in _RETRYABLE_STATUS and attempt < self._cfg.max_retries:
+                self._sleep(min(8.0, 0.5 * (2 ** attempt)))
+                continue
+            if resp.status_code >= 400:
+                raise FoundryApiError(resp.status_code, resp.text)
+            return resp
+        # Exhausted retries on a retryable status.
+        raise FoundryApiError(0, f"exhausted retries: {last_exc!r}")
+
+    def preflight(self) -> None:
+        self._request("GET", f"/api/v2/ontologies/{self._cfg.ontology_rid}")
+
+    def apply_action(self, action_api_name: str, params: dict) -> dict:
+        resp = self._request(
+            "POST",
+            f"/api/v2/ontologies/{self._cfg.ontology_rid}/actions/{action_api_name}/apply",
+            json={"parameters": params},
+            headers={"Content-Type": "application/json"},
+        )
+        return resp.json() if resp.content else {}
+
+    def create_transaction(self, dataset_rid: str, transaction_type: str = "SNAPSHOT") -> str:
+        resp = self._request(
+            "POST", f"/api/v2/datasets/{dataset_rid}/transactions",
+            json={"transactionType": transaction_type},
+            params={"branchName": "master"},
+            headers={"Content-Type": "application/json"},
+        )
+        data = resp.json()
+        return data.get("rid") or data["transactionRid"]
+
+    def upload_file(self, dataset_rid: str, transaction_rid: str, logical_path: str,
+                    data: bytes) -> None:
+        self._request(
+            "POST", f"/api/v2/datasets/{dataset_rid}/files/{logical_path}/upload",
+            content=data, params={"transactionRid": transaction_rid},
+            headers={"Content-Type": "application/octet-stream"},
+        )
+
+    def commit_transaction(self, dataset_rid: str, transaction_rid: str) -> None:
+        self._request(
+            "POST",
+            f"/api/v2/datasets/{dataset_rid}/transactions/{transaction_rid}/commit",
+        )
