@@ -120,6 +120,30 @@ but the first real run is the first time it hits a live tenant. So:
 4. If a call fails after objects were upserted, `export_report.json` records
    `partial_failure` so you know to reconcile.
 
+## 7. Dashboard "Data" view + AIP Ask (back-at-base only)
+
+The Next.js dashboard surfaces the exported ontology in its **Data** tab. It is a
+back-at-base view (the offline mission runtime never touches Foundry); the token
+is read server-side in the `/api/foundry` routes and never reaches the client.
+
+```bash
+# In frontend/.env.local (or the dev-server env):
+FOUNDRY_HOST=https://<tenant>.palantirfoundry.com
+FOUNDRY_TOKEN=...                                    # server-side only
+FOUNDRY_ONTOLOGY_RID=ri.ontology.main.ontology....
+# Optional — enables the "Ask the Data" box to use a live AIP Logic function.
+# Set to the apiName of a published query function that takes two String inputs,
+# `question` and `context`. When unset, Ask falls back to a local responder.
+FOUNDRY_AIP_FUNCTION=askMissionData
+```
+
+The Ask route does the RAG grounding server-side: it pulls the live
+`CaptureMission` + `DetectionClass` objects, builds a compact data context, and
+passes `{question, context}` to the function. This sidesteps in-AIP semantic
+search, which cannot work on "configure without datasource" objects (no
+embeddings). The published function only needs a single LLM block whose prompt
+references both the `question` and `context` inputs.
+
 ## Boundary note
 
 This exporter and `scripts/export_to_foundry.py` are **never imported by the live

@@ -1,16 +1,25 @@
 /**
  * Server-side bridge to a published Palantir Foundry AIP Logic / query
- * function. Takes a natural-language question and executes the configured
- * ontology query, returning a coerced string answer.
+ * function. Takes a natural-language question, fetches the live mission +
+ * detection-class objects, builds a compact data context, and executes the
+ * configured ontology query with BOTH the question and that context so the
+ * AIP language model has real data to ground its answer on.
  *
  * SECURITY: FOUNDRY_TOKEN is read here (server only) and used only as a Bearer
  * header. It never leaves this module and never reaches the client bundle.
  *
  * Activation: set FOUNDRY_AIP_FUNCTION (plus FOUNDRY_HOST / FOUNDRY_TOKEN /
  * FOUNDRY_ONTOLOGY_RID) to the apiName of the published AIP query function.
- * When unset, the route reports { configured: false } so the client falls back
- * to its local responder.
+ * The function must accept two string inputs: `question` and `context`. When
+ * FOUNDRY_AIP_FUNCTION is unset, the route reports { configured: false } so the
+ * client falls back to its local responder.
  */
+
+import {
+  buildMissionContext,
+  fetchObjects,
+  readFoundryEnv,
+} from "@/lib/foundryServer";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -41,26 +50,36 @@ export async function POST(req: Request): Promise<Response> {
     // Malformed body -> treat as empty question below.
   }
 
-  const host = process.env.FOUNDRY_HOST;
-  const token = process.env.FOUNDRY_TOKEN;
-  const ontology = process.env.FOUNDRY_ONTOLOGY_RID;
+  const env = readFoundryEnv();
   const fn = process.env.FOUNDRY_AIP_FUNCTION;
 
-  if (!host || !token || !ontology || !fn) {
+  if (!env || !fn) {
     return Response.json({ configured: false });
   }
 
-  const trimmedHost = host.replace(/\/+$/, "");
-  const url = `${trimmedHost}/api/v2/ontologies/${ontology}/queries/${fn}/execute`;
+  // Ground the model with the live ontology data. If the object fetch fails we
+  // still call the function (with empty context) and let it degrade.
+  let context = "";
+  try {
+    const [missions, classes] = await Promise.all([
+      fetchObjects(env, "CaptureMission", 100),
+      fetchObjects(env, "DetectionClass", 200),
+    ]);
+    context = buildMissionContext(missions, classes);
+  } catch {
+    context = "";
+  }
+
+  const url = `${env.host}/api/v2/ontologies/${env.ontology}/queries/${fn}/execute`;
 
   try {
     const res = await fetch(url, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${env.token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ parameters: { question } }),
+      body: JSON.stringify({ parameters: { question, context } }),
       cache: "no-store",
     });
 
