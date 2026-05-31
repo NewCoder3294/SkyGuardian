@@ -67,15 +67,10 @@
 
 /* Recolor the hardcoded-amber tactical utilities to ink WITHIN the operator
  * subtree only (landing versions stay amber). */
-.operator-theme .hud-grid {
-  background-image:
-    linear-gradient(oklch(0.20 0 0 / 0.06) 1px, transparent 1px),
-    linear-gradient(90deg, oklch(0.20 0 0 / 0.06) 1px, transparent 1px);
-}
+/* No graticule lines in the operator console — clean paper surface. */
+.operator-theme .hud-grid,
 .operator-theme .hud-grid-drift {
-  background-image:
-    linear-gradient(oklch(0.20 0 0 / 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, oklch(0.20 0 0 / 0.05) 1px, transparent 1px);
+  background-image: none;
 }
 .operator-theme .scan-beam {
   background: linear-gradient(
