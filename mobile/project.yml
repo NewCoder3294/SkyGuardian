@@ -85,6 +85,14 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nicolasdossantos.skyguardian.tests
         GENERATE_INFOPLIST_FILE: "YES"
+        # `@testable import ReconCompanion` makes the test target process the app's
+        # bridging header, whose quoted sub-path imports (e.g. "common/image_u8.h")
+        # the explicit-module scanner can't resolve. Mirror the app target's AprilTag
+        # include flags so `xcodebuild test` from the CLI builds the test bundle.
+        HEADER_SEARCH_PATHS:
+          - $(SRCROOT)/Vendor/apriltag
+        OTHER_SWIFT_FLAGS: -Xcc -I$(SRCROOT)/Vendor/apriltag
+        SWIFT_ENABLE_EXPLICIT_MODULES: "NO"
 
 schemes:
   ReconCompanion:
