@@ -316,12 +316,12 @@ export default function LandingPage() {
                 { label: "Index", desc: "Structured into a queryable Foundry ontology" },
                 { label: "Query", desc: "Ask questions in plain English across all missions" },
               ].map((step, index) => (
-                <div key={step.label} className="flex items-start gap-5 border-b border-border px-5 py-4 last:border-b-0">
-                  <span className="mt-0.5 font-mono text-[11px] uppercase tracking-[0.28em] text-accent">
+                <div key={step.label} className="group flex items-start gap-5 border-b border-border px-5 py-4 transition-all duration-200 last:border-b-0 hover:bg-surface hover:pl-7 hover:shadow-[inset_3px_0_0_var(--accent)]">
+                  <span className="mt-0.5 font-mono text-[11px] uppercase tracking-[0.28em] text-accent transition-transform duration-200 group-hover:scale-110">
                     {String(index + 1).padStart(2, "0")}
                   </span>
                   <div>
-                    <span className="text-xl font-semibold leading-none">{step.label}</span>
+                    <span className="text-xl font-semibold leading-none transition-colors duration-200 group-hover:text-accent">{step.label}</span>
                     <p className="mt-1.5 text-sm leading-snug text-text-muted">{step.desc}</p>
                   </div>
                 </div>
