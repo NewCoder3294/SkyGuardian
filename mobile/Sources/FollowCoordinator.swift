@@ -59,6 +59,7 @@ final class FollowCoordinator: ObservableObject {
     private var landing = false        // lost-land in progress (fire once)
     private var manualHover = false    // manual takeover: stream a steady hover (not dead air)
     private var scripted = false       // a scripted maneuver (e.g. scout) owns the channel; loop yields
+    private var confirmTimeoutLands = true   // true on initial arm; false on mid-flight re-lock
     private let takeoffSettle: CFTimeInterval = 4.0   // let the takeoff climb finish before follow rc
     private let confirmTimeout: CFTimeInterval = 30.0 // auto-land if the operator never confirms
 
@@ -97,76 +98,38 @@ final class FollowCoordinator: ObservableObject {
 
     // MARK: arm / disarm
 
-    /// Take off and begin following. The caller is responsible for confirming intent
-    /// (this launches a real drone).
-    func arm(stream: TelloDirectStream) {
-        guard phase == .disarmed else { return }
-        self.stream = stream
-        stream.start()   // make sure video/detection is flowing (idempotent)
-        controller.config = config
-        let size = tagSizeMeters
-        detectQueue.async { self.detector.tagSizeMeters = size }   // mutate detector only on its queue
-        stream.onPixelBuffer = { [weak self] pb in self?.ingest(pb) }
-
-        commands.send("takeoff")
-        rcQueue.async {
-            self.mode = .tag         // AprilTag follow; reset so we don't inherit a prior .track arm
-            self.armed = true
-            self.followActive = true
-            self.tookOff = false
-            self.confirmed = false   // operator must confirm the locked target before follow rc
-            self.landing = false
-            self.latest = nil
-            self.latestTime = self.now()   // grace period before lost-land
-            // Hold off follow rc until the multi-second takeoff climb settles, so
-            // autonomous sticks never fight the takeoff.
-            self.rcQueue.asyncAfter(deadline: .now() + self.takeoffSettle) {
-                self.tookOff = true
-                self.tookOffAt = self.now()
-                self.latest = nil   // re-acquire fresh at hover; don't confirm on a climb-stale lock
-                self.latestTime = self.now()
-                if self.mode == .visualMe {
-                    // Re-lock the visual tracker on the hover-height view — the
-                    // ground-level lock taken at arm time may not survive the climb.
-                    self.detectQueue.async { self.tracker.reset() }
-                }
-            }
-        }
-        setPhase(.searching)
-        startRCLoop()
-    }
-
-    /// Take off and visually track whatever the operator has centered ("track that
-    /// boat") — no AprilTag. Same loop/arbiter; the on-device tracker replaces the tag
-    /// detector as the source of the target.
-    func armTrack(stream: TelloDirectStream) {
+    /// Take off and begin acquiring a lock of the given kind. Caller confirms intent
+    /// (launches a real drone). The lock still passes the confirm gate before follow rc.
+    func arm(stream: TelloDirectStream, mode: TargetMode = .visualMe) {
         guard phase == .disarmed else { return }
         self.stream = stream
         stream.start()
         controller.config = config
-        detectQueue.async { self.tracker.reset() }
+        if mode == .tag {
+            let size = tagSizeMeters
+            detectQueue.async { self.detector.tagSizeMeters = size }
+        } else {
+            detectQueue.async { self.tracker.reset() }
+        }
         stream.onPixelBuffer = { [weak self] pb in self?.ingest(pb) }
 
         commands.send("takeoff")
+        confirmTimeoutLands = true   // initial arm: a never-confirmed takeoff lands
         rcQueue.async {
-            self.mode = .visualMe    // visual tracker is the target source (set on rcQueue, the owner)
+            self.mode = mode
             self.armed = true
             self.followActive = true
             self.tookOff = false
-            self.confirmed = false   // operator must confirm the locked target before track rc
+            self.confirmed = false
             self.landing = false
             self.latest = nil
             self.latestTime = self.now()
             self.rcQueue.asyncAfter(deadline: .now() + self.takeoffSettle) {
                 self.tookOff = true
                 self.tookOffAt = self.now()
-                self.latest = nil   // re-acquire fresh at hover; don't confirm on a climb-stale lock
+                self.latest = nil
                 self.latestTime = self.now()
-                if self.mode == .visualMe {
-                    // Re-lock the visual tracker on the hover-height view — the
-                    // ground-level lock taken at arm time may not survive the climb.
-                    self.detectQueue.async { self.tracker.reset() }
-                }
+                if self.mode == .visualMe { self.detectQueue.async { self.tracker.reset() } }
             }
         }
         setPhase(.searching)

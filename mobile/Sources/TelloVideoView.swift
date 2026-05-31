@@ -113,13 +113,13 @@ struct TelloDirectView: View {
         // operator may watch the map while the drone follows). Only stop when idle.
         .onDisappear { if !follow.isArmed { stream.stop() } }
         .confirmationDialog("Take off and follow the AprilTag?", isPresented: $confirmArm, titleVisibility: .visible) {
-            Button("TAKE OFF & FOLLOW", role: .destructive) { follow.arm(stream: stream) }
+            Button("TAKE OFF & FOLLOW", role: .destructive) { follow.arm(stream: stream, mode: .tag) }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("The Tello will launch and station-keep on the tag. Keep clear; STOP lands it.")
         }
         .confirmationDialog("Take off and track the centered object?", isPresented: $confirmTrack, titleVisibility: .visible) {
-            Button("TAKE OFF & TRACK", role: .destructive) { follow.armTrack(stream: stream) }
+            Button("TAKE OFF & TRACK", role: .destructive) { follow.arm(stream: stream, mode: .visualMe) }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Center the object first. The Tello will launch and visually track it. Keep clear; STOP lands it.")

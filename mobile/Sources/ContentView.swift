@@ -23,7 +23,7 @@ struct ContentView: View {
     @State private var pendingApproach = false
     @State private var pendingScout = false
 
-    enum PendingArm { case follow, track }
+    enum PendingArm { case visualMe, tag }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -74,13 +74,13 @@ struct ContentView: View {
         .confirmationDialog("Take off?", isPresented: Binding(get: { pendingArm != nil },
                                                               set: { if !$0 { pendingArm = nil } }),
                             titleVisibility: .visible) {
-            Button(pendingArm == .track ? "TAKE OFF & TRACK" : "TAKE OFF & FOLLOW", role: .destructive) {
-                if pendingArm == .track { startTrack() } else { startFollow() }
+            Button(pendingArm == .tag ? "TAKE OFF & TRACK TAG" : "TAKE OFF & FOLLOW ME", role: .destructive) {
+                if pendingArm == .tag { startTrack() } else { startFollow() }
                 pendingArm = nil
             }
             Button("Cancel", role: .cancel) { pendingArm = nil }
         } message: {
-            Text("The drone will launch and \(pendingArm == .track ? "track the centered object" : "follow the tag"). Keep clear; STOP lands it.")
+            Text("The drone will launch and \(pendingArm == .tag ? "track the AprilTag" : "follow you visually"). Keep clear; STOP lands it.")
         }
         .confirmationDialog("Begin autonomous approach?", isPresented: $pendingApproach, titleVisibility: .visible) {
             Button("Approach target", role: .destructive) { client.send(.approach) }
@@ -333,12 +333,12 @@ struct ContentView: View {
 
         if fn == .followMe {
             // Initial arm (takeoff) must be confirmed; resuming from manual does not.
-            if follow.phase == .disarmed { pendingArm = .follow } else { follow.resumeFollow() }
+            if follow.phase == .disarmed { pendingArm = .visualMe } else { follow.resumeFollow() }
             return
         }
 
         if fn == .track {   // "track that boat" — tag-free visual tracking
-            if follow.phase == .disarmed { pendingArm = .track } else { follow.relock() }
+            if follow.phase == .disarmed { pendingArm = .visualMe } else { follow.relock() }
             return
         }
 
@@ -376,12 +376,12 @@ struct ContentView: View {
     /// (takeoff + follow). The Tello must be on its WiFi and able to see the hat tag.
     private func startFollow() {
         stream.start()
-        follow.arm(stream: stream)
+        follow.arm(stream: stream, mode: .visualMe)
     }
 
     private func startTrack() {
         stream.start()
-        follow.armTrack(stream: stream)
+        follow.arm(stream: stream, mode: .tag)
     }
 
     /// Hard safety control — not voice-only (per spec): land the drone now and signal
