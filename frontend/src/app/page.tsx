@@ -35,8 +35,8 @@ const domains = [
     label: "Land",
     mission: "Perimeter security and force protection",
     value: "Route observation, missing person search, disaster response, and small unit overwatch.",
-    image: "https://images.unsplash.com/photo-1542621334-a254cf47733d?w=1200&q=85",
-    alt: "Aerial drone view of arid terrain and perimeter road",
+    image: "https://images.unsplash.com/photo-1534643960519-11ad79bc19df?w=1200&q=85",
+    alt: "Military Humvee convoy in desert landscape",
   },
   {
     label: "Air",
