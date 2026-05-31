@@ -29,6 +29,16 @@ class FoundryConfig:
     class_action: str = "create-detection-class"
     mission_edit_action: str = "edit-capture-mission"
     class_edit_action: str = "edit-detection-class"
+    # Foundry input ids that receive the primary key. The auto-generated "create"
+    # action exposes the PK under a manually-added string param (this tenant left it
+    # at Foundry's default id `new_parameter`); the auto-generated "edit" action
+    # locates the object via an object-reference param whose id is the object type's
+    # API name. Our builders emit the logical keys `missionId`/`classKey`; these map
+    # them onto each action's real input id. All env-overridable.
+    mission_pk_param: str = "new_parameter"
+    class_pk_param: str = "new_parameter"
+    mission_edit_locator: str = "CaptureMission"
+    class_edit_locator: str = "DetectionClass"
     timeout_s: float = 30.0
     max_retries: int = 3
 
@@ -48,6 +58,10 @@ class FoundryConfig:
             class_action=os.environ.get("FOUNDRY_ACTION_CLASS", "create-detection-class"),
             mission_edit_action=os.environ.get("FOUNDRY_ACTION_MISSION_EDIT", "edit-capture-mission"),
             class_edit_action=os.environ.get("FOUNDRY_ACTION_CLASS_EDIT", "edit-detection-class"),
+            mission_pk_param=os.environ.get("FOUNDRY_MISSION_PK_PARAM", "new_parameter"),
+            class_pk_param=os.environ.get("FOUNDRY_CLASS_PK_PARAM", "new_parameter"),
+            mission_edit_locator=os.environ.get("FOUNDRY_MISSION_EDIT_LOCATOR", "CaptureMission"),
+            class_edit_locator=os.environ.get("FOUNDRY_CLASS_EDIT_LOCATOR", "DetectionClass"),
             timeout_s=float(os.environ.get("FOUNDRY_TIMEOUT_S", "30")),
             max_retries=int(os.environ.get("FOUNDRY_MAX_RETRIES", "3")),
         )
@@ -191,18 +205,33 @@ class FoundryClient:
         )
 
 
-def upsert_action(client, create_action: str, edit_action: str, params: dict) -> str:
+def upsert_action(client, create_action: str, edit_action: str, params: dict, *,
+                  pk_field: Optional[str] = None, create_pk_param: Optional[str] = None,
+                  edit_locator: Optional[str] = None) -> str:
     """Idempotent: apply the create action; on a 4xx conflict (object exists),
-    apply the edit action instead. Returns 'created' or 'edited'."""
+    apply the edit action instead. Returns 'created' or 'edited'.
+
+    `params` carries the primary key under the logical `pk_field` key. Foundry's
+    create and edit actions reference the PK under DIFFERENT input ids (the create
+    action via a string param, the edit action via an object-reference locator), so
+    the PK value is rebound onto `create_pk_param` for create and `edit_locator` for
+    edit. When these are unset the params pass through unchanged (used in tests)."""
+    create_params = dict(params)
+    if pk_field and create_pk_param and create_pk_param != pk_field and pk_field in create_params:
+        create_params[create_pk_param] = create_params.pop(pk_field)
     try:
-        client.apply_action(create_action, params)
+        client.apply_action(create_action, create_params)
         return "created"
     except FoundryApiError as exc:
         if 400 <= exc.status < 500:
-            # Object likely already exists -> update it. Chain the original create
-            # error so a failing edit still shows the create context.
+            # Object likely already exists -> update it. The edit action locates the
+            # object by its PK under the object-reference locator id. Chain the
+            # original create error so a failing edit still shows the create context.
+            edit_params = dict(params)
+            if pk_field and edit_locator and pk_field in edit_params:
+                edit_params[edit_locator] = edit_params.pop(pk_field)
             try:
-                client.apply_action(edit_action, params)
+                client.apply_action(edit_action, edit_params)
             except FoundryApiError as edit_exc:
                 raise edit_exc from exc
             return "edited"
@@ -245,11 +274,15 @@ def export_dataset(dataset_dir, client, config: FoundryConfig, *,
     client.preflight()
 
     for p in class_param_rows:
-        status = upsert_action(client, config.class_action, config.class_edit_action, p)
+        status = upsert_action(client, config.class_action, config.class_edit_action, p,
+                               pk_field="classKey", create_pk_param=config.class_pk_param,
+                               edit_locator=config.class_edit_locator)
         report["classes"].append({"classKey": p["classKey"], "status": status})
 
     m_status = upsert_action(client, config.mission_action, config.mission_edit_action,
-                             mission_params)
+                             mission_params, pk_field="missionId",
+                             create_pk_param=config.mission_pk_param,
+                             edit_locator=config.mission_edit_locator)
     report["mission"] = {"missionId": mission_params["missionId"], "status": m_status}
 
     # Objects are already upserted at this point. If the file upload fails, record

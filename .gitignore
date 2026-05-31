@@ -13,6 +13,11 @@ dist/
 build/
 *.log
 
+# Packaged datasets + per-mission capture data — local generated artifacts
+# (keep captures/README.md tracked; ignore the mission subdirectories under it)
+datasets/
+captures/*/
+
 # Large binaries — distribute out-of-band
 models/**/*.pt
 models/**/*.pth

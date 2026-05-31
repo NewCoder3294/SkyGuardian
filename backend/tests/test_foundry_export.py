@@ -208,6 +208,26 @@ def test_upsert_action_create_then_edit_on_conflict():
     assert upsert_action(c2, "create-x", "edit-x", {"a": 1}) == "created"
 
 
+def test_upsert_action_rebinds_pk_to_create_param_and_edit_locator():
+    # create gets the PK under create_pk_param; on conflict, edit gets it under
+    # edit_locator. The logical pk_field is never sent verbatim.
+    c = _MockClient(conflict_on={"create-detection-class"})
+    status = upsert_action(
+        c, "create-detection-class", "edit-detection-class",
+        {"classKey": "m1:car", "label": "car", "count": 2},
+        pk_field="classKey", create_pk_param="new_parameter",
+        edit_locator="DetectionClass")
+    assert status == "edited"
+    create_action, create_params = c.applied[0]
+    assert create_action == "create-detection-class"
+    assert create_params == {"new_parameter": "m1:car", "label": "car", "count": 2}
+    assert "classKey" not in create_params
+    edit_action, edit_params = c.applied[1]
+    assert edit_action == "edit-detection-class"
+    assert edit_params == {"DetectionClass": "m1:car", "label": "car", "count": 2}
+    assert "classKey" not in edit_params
+
+
 def test_export_dataset_full(tmp_path: Path):
     d = _dataset_dir(tmp_path)
     cfg = _cfg()
