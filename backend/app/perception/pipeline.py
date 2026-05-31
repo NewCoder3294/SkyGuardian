@@ -73,6 +73,11 @@ class PerceptionPipeline:
         # model trained on them.
         yolo_specialty_weights: str | Path | None = None,
         yolo_specialty_keep: list[str] | None = None,
+        # When set, the specialty detector uses its own confidence threshold
+        # instead of `yolo_conf`. Lets a noisy fine-tuned model run strict
+        # (e.g. 0.40) while the open-vocab + COCO detectors stay relaxed
+        # (e.g. 0.15) for recall on weak-prompt classes.
+        yolo_specialty_conf: float | None = None,
         depth_model: str | None = None,
         depth_scale: float = 5.0,
         tag_size_m: float = 0.20,
@@ -151,15 +156,16 @@ class PerceptionPipeline:
         if yolo_specialty_weights is not None:
             try:
                 from .yolo import YoloDetector  # noqa: PLC0415
+                _spec_conf = yolo_specialty_conf if yolo_specialty_conf is not None else yolo_conf
                 self._specialty_detector = YoloDetector(
                     yolo_specialty_weights,
-                    conf_threshold=yolo_conf,
+                    conf_threshold=_spec_conf,
                     classes=None,
                     imgsz=yolo_imgsz,
                 )
                 print(
                     f"[perception] specialty ensemble loaded from {yolo_specialty_weights} "
-                    f"(keep={sorted(self._specialty_keep) or 'ALL'}, imgsz={yolo_imgsz})"
+                    f"(keep={sorted(self._specialty_keep) or 'ALL'}, conf={_spec_conf}, imgsz={yolo_imgsz})"
                 )
             except FileNotFoundError as exc:
                 print(f"[perception] specialty ensemble disabled: {exc}")

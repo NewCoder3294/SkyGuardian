@@ -270,7 +270,14 @@ def _default_yolo_weights() -> str | None:
         if p.exists():
             return str(p)
     return None
-_YOLO_WEIGHTS = os.environ.get("YOLO_WEIGHTS") or _default_yolo_weights()
+# `YOLO_WEIGHTS=off` is an explicit disable — runs perception with COCO and/or
+# specialty detectors only. Useful when the open-vocab detector is the slowest
+# of the three and not earning its keep for the configured class set.
+_yolo_weights_env = os.environ.get("YOLO_WEIGHTS")
+if _yolo_weights_env and _yolo_weights_env.strip().lower() == "off":
+    _YOLO_WEIGHTS = None
+else:
+    _YOLO_WEIGHTS = _yolo_weights_env or _default_yolo_weights()
 
 # YOLO-World custom vocabulary. If unset and we're loading a -world checkpoint,
 # we default to a defense-relevant prompt set so the detector is useful out of
@@ -322,6 +329,13 @@ _YOLO_SPECIALTY_KEEP: list[str] = (
     if _yolo_specialty_keep_env
     else []
 )
+# Per-detector confidence threshold for the specialty model. Fine-tuned
+# weapon/threat detectors are noisy in real indoor scenes — running them at
+# the same low conf as YOLO-World means cables and electronics light up as
+# "GUN". 0.40+ gives the model card precision back.
+_YOLO_SPECIALTY_CONF: float | None = (
+    float(os.environ["YOLO_SPECIALTY_CONF"]) if os.environ.get("YOLO_SPECIALTY_CONF") else None
+)
 
 # Monocular depth model — unlocks true 3D positions for YOLO entities.
 # Disable with DEPTH_MODEL="off". Calibration: DEPTH_SCALE tunes the
@@ -354,6 +368,7 @@ perception = PerceptionPipeline(
     yolo_coco_keep=_YOLO_COCO_KEEP,
     yolo_specialty_weights=_YOLO_SPECIALTY_WEIGHTS,
     yolo_specialty_keep=_YOLO_SPECIALTY_KEEP,
+    yolo_specialty_conf=_YOLO_SPECIALTY_CONF,
     depth_model=_DEPTH_MODEL,
     depth_scale=_DEPTH_SCALE,
     tag_size_m=float(os.environ.get("ANCHOR_TAG_SIZE_M", "0.20")),

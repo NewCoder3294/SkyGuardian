@@ -97,12 +97,6 @@ def detection_to_entity(
     """
     entity_type = _LABEL_TO_TYPE.get(det.label.lower(), EntityType.OBJECT)
 
-    # Stable ID: hash label + rough pixel position so the same detection in
-    # subsequent frames re-uses the same entity slot (world model deduplicates by id).
-    bucket_x = int(det.cx_px / 32)
-    bucket_y = int(det.cy_px / 32)
-    entity_id = f"{entity_id_prefix}_{det.label}_{bucket_x}_{bucket_y}"
-
     if slam_pose is None:
         # No SLAM pose at all: we have no basis for a world-frame position.
         # Place at origin with halved confidence so the operator sees the
@@ -149,6 +143,20 @@ def detection_to_entity(
                     z=float(fallback[2]),
                 )
                 confidence = det.confidence * 0.5
+
+    # Stable ID derived from WORLD position, not pixel position. The previous
+    # pixel-bucket scheme created a new entity any time the camera or object
+    # jittered by a few pixels — same physical person became dozens of dots on
+    # the map. World-space buckets (~2 m grid) dedupe a stationary object
+    # across frames and let a person walking re-enter the map only when they
+    # actually move >1 m. When unanchored (origin fallback), `position` is
+    # always (0,0,0), so the label alone keys the entity — one slot per class.
+    if slam_pose is None:
+        entity_id = f"{entity_id_prefix}_{det.label}"
+    else:
+        bx = int(round(position.x / 2.0))
+        by = int(round(position.y / 2.0))
+        entity_id = f"{entity_id_prefix}_{det.label}_{bx}_{by}"
 
     return Entity(
         id=entity_id,
