@@ -89,4 +89,14 @@ final class FollowCoordinatorTests: XCTestCase {
         coord.tickForTest()
         XCTAssertEqual(sink.lastRC, .hover)
     }
+
+    func testTargetTypeReflectsModeWhileFollowing() {
+        coord.enterAirborneForTest(mode: .visualMe)   // sets phase = .following
+        XCTAssertEqual(coord.targetType, "visual_me")
+        coord.enterAirborneForTest(mode: .tag)
+        XCTAssertEqual(coord.targetType, "tag")
+    }
+    func testTargetTypeNilWhenDisarmed() {
+        XCTAssertNil(coord.targetType)   // phase == .disarmed by default
+    }
 }

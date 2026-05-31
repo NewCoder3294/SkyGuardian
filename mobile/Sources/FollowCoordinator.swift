@@ -96,6 +96,18 @@ final class FollowCoordinator: ObservableObject {
 
     var isArmed: Bool { phase != .disarmed }
 
+    /// Wire target_type — only meaningful while actually locked onto a target.
+    /// Reads `mode` (rcQueue-owned) cross-thread, but it's a trivial enum and this
+    /// is advisory dashboard telemetry sampled at a few Hz; a one-tick-stale value on
+    /// a mode switch is harmless (benign read, same class as `currentPhase`).
+    var targetType: String? {
+        guard phase == .following || phase == .confirming else { return nil }
+        return mode == .visualMe ? "visual_me" : "tag"
+    }
+    /// Raw id hint for the dashboard (tag id); nil for visual_me. The visual tracker
+    /// carries no id and the tag id isn't surfaced yet, so nil for now (reserved).
+    var targetLabel: String? { nil }
+
     // MARK: arm / disarm
 
     /// Take off and begin acquiring a lock of the given kind. Caller confirms intent

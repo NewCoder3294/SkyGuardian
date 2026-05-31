@@ -134,7 +134,9 @@ struct ContentView: View {
         client.sendFollowState(active: follow.phase != .disarmed,
                                phase: follow.phase.label,
                                distanceM: follow.distance,
-                               bearingDeg: follow.bearingDeg)
+                               bearingDeg: follow.bearingDeg,
+                               targetType: follow.targetType,
+                               targetLabel: follow.targetLabel)
     }
 
     private var alignLabel: String {

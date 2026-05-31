@@ -124,8 +124,21 @@ struct FollowStateMessage: Encodable, Sendable {
     let bearing_deg: Double
     let source: String
     let t: Double
-    let target_type: String? = nil   // "visual_me" | "tag" | nil; set explicitly when following
-    let target_label: String? = nil  // raw id hint; nil for visual_me
+    let target_type: String?   // "visual_me" | "tag" | nil; set explicitly when following
+    let target_label: String?  // raw id hint; nil for visual_me
+
+    init(active: Bool, phase: String, distance_m: Double, bearing_deg: Double,
+         source: String, t: Double,
+         target_type: String? = nil, target_label: String? = nil) {
+        self.active = active
+        self.phase = phase
+        self.distance_m = distance_m
+        self.bearing_deg = bearing_deg
+        self.source = source
+        self.t = t
+        self.target_type = target_type
+        self.target_label = target_label
+    }
 }
 
 /// Phone-localized entities (operator + drone) expressed in the shared WORLD
