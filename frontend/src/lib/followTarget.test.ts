@@ -17,8 +17,10 @@ describe("followTargetLabel", () => {
   it("labels a tag lock with no id", () => {
     expect(followTargetLabel({ ...base, target_type: "tag" })).toBe("TAG");
   });
-  it("returns null when there is no target", () => {
+  it("returns null for a null target_type", () => {
     expect(followTargetLabel({ ...base, target_type: null })).toBeNull();
+  });
+  it("returns null for a null state", () => {
     expect(followTargetLabel(null)).toBeNull();
   });
 });
