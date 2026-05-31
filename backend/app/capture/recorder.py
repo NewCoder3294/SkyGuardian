@@ -39,6 +39,12 @@ class CaptureRecorder:
         self._last_save_t: Optional[float] = None
         self._seen_classes: set[str] = set()
         self._budget_warned = False
+        self._dir_ready = False
+
+    def _ensure_dir(self) -> None:
+        if not self._dir_ready:
+            self._dir.mkdir(parents=True, exist_ok=True)
+            self._dir_ready = True
 
     def _reason(self, boxes: list[DetectionBox], t: float) -> Optional[str]:
         """Sampling policy -> why we'd save this frame, or None to skip."""
@@ -64,13 +70,16 @@ class CaptureRecorder:
                     self._budget_warned = True
                 return False
 
-            frames_dir = self._dir / "frames"
-            frames_dir.mkdir(parents=True, exist_ok=True)
+            self._ensure_dir()
+            (self._dir / "frames").mkdir(parents=True, exist_ok=True)
             rel = f"frames/{self._seq:06d}.jpg"
             ok, buf = cv2.imencode(".jpg", frame_bgr)
             if not ok:
                 return False
             (self._dir / rel).write_bytes(buf.tobytes())
+            # Advance seq right after the frame lands so a later failure can never
+            # reuse this filename and silently overwrite the frame on disk.
+            self._seq += 1
             self._bytes += len(buf)
 
             obs = Observation(
@@ -85,7 +94,6 @@ class CaptureRecorder:
             with (self._dir / "observations.jsonl").open("a") as fh:
                 fh.write(json.dumps(obs.model_dump(mode="json")) + "\n")
 
-            self._seq += 1
             self._last_save_t = t
             for b in boxes:
                 self._seen_classes.add(b.label)
@@ -98,7 +106,7 @@ class CaptureRecorder:
         if not self._enabled:
             return
         try:
-            self._dir.mkdir(parents=True, exist_ok=True)
+            self._ensure_dir()
             with (self._dir / "events.jsonl").open("a") as fh:
                 fh.write(json.dumps(event.model_dump(mode="json")) + "\n")
         except Exception as exc:  # noqa: BLE001
