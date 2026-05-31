@@ -75,7 +75,17 @@ final class VoiceController: ObservableObject {
                 request = req
 
                 let input = engine.inputNode
+                input.removeTap(onBus: 0)
                 let format = input.outputFormat(forBus: 0)
+                // AVAudioEngine throws a hard, Swift-uncatchable NSException from
+                // installTap/start when the input format is invalid (0 Hz / 0 channels),
+                // which happens when the mic/route isn't ready. Validate first and bail
+                // to an error state instead of aborting the whole app.
+                guard format.sampleRate > 0, format.channelCount > 0 else {
+                    cleanup()
+                    state = .error("MIC UNAVAILABLE")
+                    return
+                }
                 input.installTap(onBus: 0, bufferSize: 2048, format: format) { [weak self] buffer, _ in
                     self?.request?.append(buffer)
                 }

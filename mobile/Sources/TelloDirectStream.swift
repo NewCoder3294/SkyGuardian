@@ -34,6 +34,11 @@ final class TelloDirectStream: ObservableObject {
     private var sps: Data?
     private var pps: Data?
     private var assembly = Data()
+    /// Hard cap on the in-flight frame buffer. A real H.264 frame is well under
+    /// this; if we blow past it, a terminating short packet was lost (or the stream
+    /// started mid-frame) and `assembly` would otherwise grow until the app aborts
+    /// on an allocation failure (observed in a Network-framework crash). Drop + resync.
+    private let maxAssemblyBytes = 4 * 1024 * 1024   // 4 MB
     private var started = false
 
     func start() {
@@ -102,6 +107,10 @@ final class TelloDirectStream: ObservableObject {
     /// than 1460 bytes ends the current frame buffer.
     private func ingest(packet: Data) {
         assembly.append(packet)
+        if assembly.count > maxAssemblyBytes {
+            assembly = Data()   // lost the frame boundary — resync on the next short packet
+            return
+        }
         if packet.count < 1460 {
             let frame = assembly
             assembly = Data()
