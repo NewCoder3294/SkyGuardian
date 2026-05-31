@@ -39,4 +39,30 @@ describe("OperationalArea", () => {
     fireEvent.click(screen.getByRole("button", { name: /set area/i }));
     await waitFor(() => expect(screen.getByText(/no internet/i)).toBeTruthy());
   });
+
+  it("disables the button while the request is in flight", async () => {
+    let release: (v: unknown) => void = () => {};
+    const pending = new Promise((r) => {
+      release = r;
+    });
+    vi.stubGlobal("fetch", vi.fn().mockReturnValue(pending));
+
+    render(<OperationalArea apiBase="http://api" />);
+    setFields();
+    const button = screen.getByRole("button", { name: /set area/i });
+    fireEvent.click(button);
+
+    await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(true));
+    release({ ok: true, json: async () => ({ count: 1 }) });
+  });
+
+  it("rejects blank/invalid coordinates without fetching", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<OperationalArea apiBase="http://api" />);
+    // No lat/lng entered.
+    fireEvent.click(screen.getByRole("button", { name: /set area/i }));
+    expect(screen.getByText(/valid lat/i)).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

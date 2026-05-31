@@ -297,7 +297,7 @@ export default function Page() {
                 />
               )}
               <MapViewToggle value={mapView} onChange={setMapView} />
-              <div className="pointer-events-auto absolute right-3 top-3 z-10 max-w-sm">
+              <div className="pointer-events-auto absolute left-3 top-3 z-10 max-w-sm">
                 <OperationalArea apiBase={apiBase} />
               </div>
               <div className="pointer-events-auto absolute left-3 bottom-3 right-3 md:right-auto md:max-w-md">

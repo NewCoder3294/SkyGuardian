@@ -12,12 +12,16 @@ interface Props {
   apiBase: string;
 }
 
-const OPERATOR_KEY = process.env.NEXT_PUBLIC_OPERATOR_KEY || "";
-
 /**
  * Operator control to re-anchor the map's buildings layer on a new lat/long.
  * This is a PRE-MISSION staging action: it hits the internet at the moment of
  * fetch (OSM Overpass) and then the system runs fully offline on the result.
+ *
+ * No auth header is sent: this matches the dashboard's other control-plane
+ * POSTs (SourceSelector). The backend gate (`OPERATOR_KEY`) protects non-
+ * dashboard clients; on the dashboard, the CORS allowlist + localhost binding
+ * are the boundary. A NEXT_PUBLIC_ env var would be bundled into client JS and
+ * provide no confidentiality, so we deliberately do not carry one here.
  */
 export function OperationalArea({ apiBase }: Props) {
   const [lat, setLat] = useState("");
@@ -26,20 +30,22 @@ export function OperationalArea({ apiBase }: Props) {
   const [status, setStatus] = useState<Status>({ kind: "idle" });
 
   const submit = async () => {
+    if (!lat.trim() || !lng.trim() || Number.isNaN(Number(lat)) || Number.isNaN(Number(lng))) {
+      setStatus({ kind: "error", message: "Enter valid lat / lng" });
+      return;
+    }
     const body = { lat: Number(lat), lng: Number(lng), radius_m: Number(radius) };
     setStatus({ kind: "fetching" });
     try {
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (OPERATOR_KEY) headers["X-Operator-Key"] = OPERATOR_KEY;
       const res = await fetch(`${apiBase}/map/area`, {
         method: "POST",
-        headers,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
         cache: "no-store",
       });
       if (!res.ok) {
         const msg = res.status === 503
-          ? "No internet — pre-mission only"
+          ? "No internet: pre-mission only"
           : `Failed (HTTP ${res.status})`;
         setStatus({ kind: "error", message: msg });
         return;
@@ -47,7 +53,7 @@ export function OperationalArea({ apiBase }: Props) {
       const data = (await res.json()) as { count: number };
       setStatus({ kind: "success", count: data.count });
     } catch {
-      setStatus({ kind: "error", message: "No internet — pre-mission only" });
+      setStatus({ kind: "error", message: "No internet: pre-mission only" });
     }
   };
 
@@ -101,7 +107,7 @@ export function OperationalArea({ apiBase }: Props) {
         )}
         {status.kind === "error" && <span className="text-fail">{status.message}</span>}
         {status.kind === "idle" && (
-          <span className="text-text-dim">Requires internet — pre-mission staging only</span>
+          <span className="text-text-dim">Requires internet (pre-mission staging only)</span>
         )}
       </div>
     </div>
