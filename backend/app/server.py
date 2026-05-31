@@ -1029,7 +1029,7 @@ def _record_label_event(msg: LabelEvent) -> None:
         return
     from .capture.schema import Event  # noqa: PLC0415
     _capture_recorder.record_event(Event(
-        t=msg.t, mission_id=getattr(_capture_recorder, "_mission_id", "mission"),
+        t=msg.t, mission_id=_capture_recorder.mission_id,
         kind=msg.kind, source=msg.source, label=msg.label,
         corrected_label=msg.corrected_label, box=msg.box, note=msg.note,
     ))

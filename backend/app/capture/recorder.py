@@ -41,6 +41,10 @@ class CaptureRecorder:
         self._budget_warned = False
         self._dir_ready = False
 
+    @property
+    def mission_id(self) -> str:
+        return self._mission_id
+
     def _ensure_dir(self) -> None:
         if not self._dir_ready:
             (self._dir / "frames").mkdir(parents=True, exist_ok=True)

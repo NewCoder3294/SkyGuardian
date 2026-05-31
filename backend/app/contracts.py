@@ -211,7 +211,7 @@ class LabelEvent(BaseModel):
     source: str
     label: Optional[str] = None
     corrected_label: Optional[str] = None
-    box: Optional[list[float]] = None
+    box: Optional[list[float]] = Field(default=None, min_length=4, max_length=4)
     note: Optional[str] = None
     t: float
 
