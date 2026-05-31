@@ -294,6 +294,43 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* Data integration */}
+      <section className="border-b border-border">
+        <div className="mx-auto grid max-w-7xl gap-12 px-5 py-20 md:grid-cols-[1.1fr_0.9fr] md:px-8">
+          <div>
+            <p className="font-mono text-[11px] uppercase tracking-[0.42em] text-accent">
+              Mission data
+            </p>
+            <h2 className="mt-5 max-w-4xl text-4xl font-semibold leading-none md:text-6xl">
+              Every mission makes the next one smarter.
+            </h2>
+            <p className="mt-8 max-w-2xl text-lg leading-8 text-text-muted">
+              When the team returns to base, every frame, detection, and operator decision flows into Palantir Foundry. Query any mission in plain English. The data compounds across deployments.
+            </p>
+          </div>
+          <div className="self-end">
+            <div className="border border-border-strong bg-bg">
+              {[
+                { label: "Capture", desc: "Frames and detections recorded during every mission" },
+                { label: "Clean", desc: "Duplicates and corrupt data removed automatically" },
+                { label: "Index", desc: "Structured into a queryable Foundry ontology" },
+                { label: "Query", desc: "Ask questions in plain English across all missions" },
+              ].map((step, index) => (
+                <div key={step.label} className="flex items-start gap-5 border-b border-border px-5 py-4 last:border-b-0">
+                  <span className="mt-0.5 font-mono text-[11px] uppercase tracking-[0.28em] text-accent">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <div>
+                    <span className="text-xl font-semibold leading-none">{step.label}</span>
+                    <p className="mt-1.5 text-sm leading-snug text-text-muted">{step.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Mission domains — image cards */}
       <section id="missions" className="border-b border-border">
         <div className="mx-auto max-w-7xl px-5 py-20 md:px-8">
