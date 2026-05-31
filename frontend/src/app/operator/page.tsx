@@ -13,6 +13,7 @@ import { LocalMap3D } from "@/components/LocalMap3D";
 import { OperationalArea } from "@/components/OperationalArea";
 import { SourceSelector, type SourceState } from "@/components/SourceSelector";
 import { StatusBar } from "@/components/StatusBar";
+import { ClassificationBanner, CoordReadout } from "@/components/tactical";
 import { ThreatAlert } from "@/components/ThreatAlert";
 import { VideoFeed } from "@/components/VideoFeed";
 import { VideoPlayer } from "@/components/VideoPlayer";
@@ -215,6 +216,7 @@ export default function Page() {
           <span className="hidden border-l border-border-strong pl-4 font-mono text-[10px] uppercase tracking-[0.45em] text-text-muted sm:inline">
             Operator
           </span>
+          <ClassificationBanner caveat="DEMO" className="hidden md:inline-flex" />
         </div>
         <div className="flex items-center gap-5">
           <div className="hidden lg:block">
@@ -226,6 +228,12 @@ export default function Page() {
             />
           </div>
           <span className="hidden h-5 w-px bg-border lg:block" aria-hidden />
+          <CoordReadout
+            lat={49.2827}
+            lng={-123.1207}
+            label="POS"
+            className="hidden xl:inline-flex text-text-muted"
+          />
           <div className="flex items-center gap-3 border border-border-strong bg-surface-elevated px-4 py-1.5">
             <span className="h-1.5 w-1.5 rounded-full bg-ok shadow-glow-cyan" aria-hidden />
             <span className="font-mono text-[9px] uppercase tracking-[0.3em] text-text-dim">Z</span>
@@ -235,7 +243,7 @@ export default function Page() {
       </header>
 
       {lastError && (
-        <div className="flex items-center gap-2 border-b border-fail/40 bg-fail/10 px-6 py-1 font-mono text-[10px] uppercase tracking-[0.2em] text-fail">
+        <div className="flex items-center gap-2 border-b border-border-strong bg-surface-elevated px-6 py-1 font-mono text-[10px] uppercase tracking-[0.2em] text-text">
           ▲ Fault: {lastError}
         </div>
       )}
@@ -250,12 +258,12 @@ export default function Page() {
                 onClick={() => setTab(t.id)}
                 className={`relative -mb-px border-b-2 px-5 py-2.5 font-sans text-[12px] font-semibold uppercase tracking-[0.25em] transition-colors ${
                   tab === t.id
-                    ? "border-accent text-accent"
+                    ? "border-text text-text"
                     : "border-transparent text-text-dim hover:text-text-muted"
                 }`}
               >
                 {tab === t.id && (
-                  <span aria-hidden className="mr-2 text-text-dim">▸</span>
+                  <span aria-hidden className="mr-2 text-text">▸</span>
                 )}
                 {t.label}
               </button>
