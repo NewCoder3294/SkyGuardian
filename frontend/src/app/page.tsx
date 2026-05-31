@@ -35,8 +35,8 @@ const domains = [
     label: "Land",
     mission: "Perimeter security and force protection",
     value: "Route observation, missing person search, disaster response, and small unit overwatch.",
-    image: "https://images.unsplash.com/photo-1562408590-e32931084e23?w=1200&q=85",
-    alt: "Soldiers on patrol in field terrain",
+    image: "https://images.unsplash.com/photo-1689251713718-b7383ffa100c?w=1200&q=85",
+    alt: "Tactical soldiers on patrol through forest terrain",
   },
   {
     label: "Air",
@@ -152,6 +152,34 @@ export default function LandingPage() {
                 <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-text">{item}</p>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Demo Video */}
+      <section id="demo-video" className="border-b border-border">
+        <div className="mx-auto max-w-7xl px-5 py-20 md:px-8">
+          <div className="flex flex-col items-center text-center">
+            <p className="font-mono text-[11px] uppercase tracking-[0.42em] text-accent">
+              See it in action
+            </p>
+            <h2 className="mt-5 max-w-2xl text-3xl font-semibold leading-tight md:text-5xl">
+              Watch the demo
+            </h2>
+          </div>
+          <div className="mx-auto mt-12 max-w-4xl">
+            <div className="tac-corners border border-border-strong bg-bg p-2 shadow-[0_26px_90px_oklch(0.12_0.03_130_/_0.12)]">
+              <div className="relative aspect-video overflow-hidden border border-border bg-surface">
+                {/* Replace YOUTUBE_VIDEO_ID with your actual video ID */}
+                <iframe
+                  src="https://www.youtube.com/embed/YOUTUBE_VIDEO_ID"
+                  title="SkyGuardian Demo"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                  className="absolute inset-0 h-full w-full"
+                />
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -381,6 +409,7 @@ export default function LandingPage() {
                 name: "Alex Battikha",
                 role: "Co-Founder & CEO",
                 image: "/headshot-alex.png",
+                imageStyle: "object-cover object-top scale-[0.85]",
                 points: [
                   "10+ yrs robotics; world champion (1st of 7,100+ teams)",
                   "1 of 9 globally selected as an Irwin Jacobs full-ride scholar",
@@ -390,7 +419,8 @@ export default function LandingPage() {
               {
                 name: "Nicolas Dos Santos",
                 role: "Co-Founder & CEO",
-                image: "/headshot-nick.png",
+                image: "/headshot-nick.jpg",
+                imageStyle: "object-cover object-top",
                 points: [
                   "TS clearance — access to top-tier government contracts",
                   "Incoming at Amazon",
@@ -401,7 +431,7 @@ export default function LandingPage() {
               <article key={person.name} className="tac-corners border border-border-strong bg-bg p-6">
                 <div className="flex items-center gap-5">
                   <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-full border border-border-strong bg-surface">
-                    <Image src={person.image} alt={person.name} fill sizes="80px" className="object-cover scale-[0.7] object-top" />
+                    <Image src={person.image} alt={person.name} fill sizes="80px" className={person.imageStyle} />
                   </div>
                   <div>
                     <h3 className="text-xl font-semibold leading-tight">{person.name}</h3>
@@ -420,66 +450,6 @@ export default function LandingPage() {
             ))}
           </div>
 
-          {/* Advisors & Legal */}
-          <div className="mt-4 grid gap-4 md:grid-cols-3">
-            {[
-              {
-                name: "David Resilien",
-                role: "Advisor · Defense",
-                image: null,
-                initials: "DR",
-                points: [
-                  "Ex-Marine, 20+ yrs",
-                  "Deep Marines & DoD connections",
-                  "Multi-time startup founder",
-                ],
-              },
-              {
-                name: "CJ Mavor",
-                role: "Advisor · Business",
-                image: null,
-                initials: "CJ",
-                points: [
-                  "Ex-founder, multiple successful startups",
-                  "15+ yrs at Berkshire Hathaway",
-                ],
-              },
-              {
-                name: "Andre Jun Kim",
-                role: "Legal · Gov & Defense",
-                image: null,
-                initials: "AK",
-                points: [
-                  "Retired Marine, 20+ yrs",
-                  "Extensive DoD & government-contract experience",
-                ],
-              },
-            ].map((person) => (
-              <article key={person.name} className="tac-corners border border-border-strong bg-bg p-6">
-                <div className="flex items-center gap-4">
-                  <div className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border-strong bg-surface">
-                    {person.image ? (
-                      <Image src={person.image} alt={person.name} fill sizes="64px" className="object-cover" />
-                    ) : (
-                      <span className="font-mono text-sm font-semibold text-text-dim">{person.initials}</span>
-                    )}
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-semibold leading-tight">{person.name}</h3>
-                    <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.28em] text-accent">{person.role}</p>
-                  </div>
-                </div>
-                <ul className="mt-4 space-y-2">
-                  {person.points.map((point) => (
-                    <li key={point} className="flex items-start gap-2 text-sm leading-snug text-text-muted">
-                      <span className="mt-1.5 block h-1 w-1 shrink-0 bg-accent" />
-                      {point}
-                    </li>
-                  ))}
-                </ul>
-              </article>
-            ))}
-          </div>
         </div>
       </section>
 

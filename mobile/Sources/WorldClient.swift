@@ -93,6 +93,21 @@ final class WorldClient: ObservableObject {
         task.send(.string(json)) { _ in }
     }
 
+    /// Record an operator label decision for the data flywheel. Best-effort,
+    /// fire-and-forget — drops silently if the socket isn't up.
+    func sendLabelEvent(kind: String, source: String, label: String? = nil,
+                        correctedLabel: String? = nil, box: [Double]? = nil,
+                        note: String? = nil) {
+        guard let task else { return }
+        let msg = LabelEventMessage(kind: kind, source: source, label: label,
+                                   correctedLabel: correctedLabel, box: box, note: note,
+                                   t: Date().timeIntervalSince1970)
+        guard let data = try? encoder.encode(msg), let json = String(data: data, encoding: .utf8) else {
+            return
+        }
+        task.send(.string(json)) { _ in }
+    }
+
     private func receiveLoop() async {
         guard let task else { return }
         while connection == .connected {

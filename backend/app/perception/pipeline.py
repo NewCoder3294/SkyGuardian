@@ -28,7 +28,7 @@ import cv2
 import numpy as np
 
 from ..clock import Clock, RealClock
-from ..contracts import DetectionBox
+from ..contracts import DetectionBox, Vec3
 from ..world_model import WorldModel
 from ..perception.slam import (
     CameraModel, Frame, LocalMap, MonocularVO,
@@ -72,8 +72,10 @@ class PerceptionPipeline:
         perception_fps: float = 5.0,
         img_width: int = 640,
         img_height: int = 480,
+        recorder=None,
     ) -> None:
         self._source = video_source
+        self._recorder = recorder
         self._world = world
         self._clock = clock or RealClock()
         self._tag_size = tag_size_m
@@ -165,6 +167,16 @@ class PerceptionPipeline:
             except Exception as exc:
                 print(f"[perception] COCO YOLO error: {exc}")
         return results
+
+    @staticmethod
+    def _emit_capture(recorder, frame_bgr, boxes, pose, t, source):
+        """Forward the latest frame + normalized boxes to the capture recorder
+        (best-effort; no-op when capture is disabled / recorder is None)."""
+        if recorder is None or frame_bgr is None:
+            return
+        h, w = frame_bgr.shape[:2]
+        recorder.observe(frame_bgr, boxes, pose, t, source=source,
+                         image_w=int(w), image_h=int(h))
 
     @property
     def health_str(self) -> str:
@@ -345,6 +357,18 @@ class PerceptionPipeline:
                             ]
                             self._latest_dims = (w, h)
                             self._latest_boxes_t = now
+                            cap_pose = None
+                            if current_pose is not None:
+                                p = current_pose.position
+                                cap_pose = Vec3(x=float(p[0]), y=float(p[1]), z=float(p[2]))
+                            # Offload the capture write (JPEG encode + disk) to a
+                            # thread, like the detectors/depth above, so it never
+                            # stalls the perception/WS event loop.
+                            await asyncio.to_thread(
+                                self._emit_capture,
+                                self._recorder, frame_bgr, self._latest_boxes,
+                                cap_pose, now, "leader",
+                            )
 
             # --- pace the loop ---
             elapsed = time.monotonic() - t_start

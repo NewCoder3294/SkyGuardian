@@ -54,7 +54,13 @@ struct ContentView: View {
         }
         .background(Theme.paper)
         .preferredColorScheme(.light)   // forced light mode
-        .onAppear { applyDebugLaunchArgs(); location.start() }
+        .onAppear {
+            applyDebugLaunchArgs()
+            location.start()
+            follow.onLabel = { [weak client] kind, label in
+                client?.sendLabelEvent(kind: kind, source: "follower", label: label)
+            }
+        }
         .overlay { if needsSetup { setupOverlay } }
         .task { await startModelIfNeeded() }
         .onReceive(location.$coordinate) { _ in updateLocalizer() }

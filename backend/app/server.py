@@ -56,6 +56,7 @@ from .contracts import (
     FollowState,
     Health,
     IntentMessage,
+    LabelEvent,
     MapAreaRequest,
     MissionState,
     WorldSnapshot,
@@ -299,6 +300,18 @@ _DEPTH_MODEL_ENV = os.environ.get("DEPTH_MODEL", "depth-anything/Depth-Anything-
 _DEPTH_MODEL: str | None = None if _DEPTH_MODEL_ENV.lower() == "off" else _DEPTH_MODEL_ENV
 _DEPTH_SCALE = float(os.environ.get("DEPTH_SCALE", "5.0"))
 
+_capture_recorder = None
+if os.environ.get("CAPTURE_ENABLED") == "1":
+    from .capture.recorder import CaptureRecorder  # noqa: PLC0415
+    _capture_recorder = CaptureRecorder(
+        root=Path(__file__).resolve().parent.parent.parent / "captures",
+        mission_id=os.environ.get("CAPTURE_MISSION_ID", "mission"),
+        max_mb=float(os.environ.get("CAPTURE_MAX_MB", "2000")),
+        cadence_s=float(os.environ.get("CAPTURE_CADENCE_S", "2.0")),
+        low_conf=float(os.environ.get("CAPTURE_LOW_CONF", "0.4")),
+        enabled=True,
+    )
+
 perception = PerceptionPipeline(
     video_source=mavic_camera,
     world=world,
@@ -313,6 +326,7 @@ perception = PerceptionPipeline(
     depth_scale=_DEPTH_SCALE,
     tag_size_m=float(os.environ.get("ANCHOR_TAG_SIZE_M", "0.20")),
     perception_fps=float(os.environ.get("PERCEPTION_FPS", "5")),
+    recorder=_capture_recorder,
 )
 
 # Tello — single owner. The supervisor thread auto-reconnects; we never fail to
@@ -1047,6 +1061,19 @@ async def serve_detections_json(name: str) -> Response:
     return FileResponse(src, media_type="application/json")
 
 
+def _record_label_event(msg: LabelEvent) -> None:
+    """Persist an operator label decision for the data flywheel (no-op when
+    capture is disabled)."""
+    if _capture_recorder is None:
+        return
+    from .capture.schema import Event  # noqa: PLC0415
+    _capture_recorder.record_event(Event(
+        t=msg.t, mission_id=_capture_recorder.mission_id,
+        kind=msg.kind, source=msg.source, label=msg.label,
+        corrected_label=msg.corrected_label, box=msg.box, note=msg.note,
+    ))
+
+
 def _apply_device_location(msg: DeviceLocation) -> None:
     """Phone GPS-less device_location → soldier entity.
 
@@ -1110,6 +1137,8 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 _follow_rx_t = clock.now()
             elif isinstance(msg, EntityReport):
                 _apply_entity_report(msg)
+            elif isinstance(msg, LabelEvent):
+                _record_label_event(msg)
     except WebSocketDisconnect:
         pass
     finally:
