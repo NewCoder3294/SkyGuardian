@@ -33,6 +33,7 @@ import asyncio
 from app.clock import FakeClock
 from app.contracts import Entity, EntitySource, EntityType, Vec3, WorldSnapshot
 from app.perception.pipeline import PerceptionPipeline
+from app.perception.slam.vo import MonocularVO
 from app.world_model import WorldModel
 
 from tests.fakes import RecordingHub, SyntheticVideoSource
@@ -120,10 +121,26 @@ def _consume_pipeline(source: SyntheticVideoSource, world: WorldModel) -> None:
     asyncio.run(runner())
 
 
-def test_pipeline_consumes_source_and_world_broadcasts_snapshot():
+def test_pipeline_consumes_source_and_world_broadcasts_snapshot(monkeypatch):
     clock = FakeClock(1000.0)
     world = WorldModel(clock=clock)
     source = SyntheticVideoSource(num_frames=5, width=320, height=240)
+
+    # Spy on ORB feature detection so we can prove the VO genuinely processed all
+    # five DISTINCT frames. The FakeClock is never advanced, so every frame in
+    # this loop carries the same timestamp (t=1000.0). VO's caches must key on
+    # frame CONTENT, not timestamp: if they keyed on the timestamp, all five
+    # frames would collapse to one cache entry, VO would match each frame against
+    # itself (zero-motion hold => near-zero work), and the loop would only LOOK
+    # fast. The assertion below makes that false-green impossible to reintroduce.
+    detected_frames: list[bytes] = []
+    real_detect = MonocularVO._detect
+
+    def spy_detect(self, img):
+        detected_frames.append(img.tobytes())
+        return real_detect(self, img)
+
+    monkeypatch.setattr(MonocularVO, "_detect", spy_detect)
 
     # HALF 1: source -> perception. Run the real loop over synthetic frames.
     # This exercises read_jpeg -> JPEG decode -> sliding-window VO/SLAM ->
@@ -136,6 +153,11 @@ def test_pipeline_consumes_source_and_world_broadcasts_snapshot():
     assert source.frames_read == source._num_frames
     # ...and the source is now exhausted (matches a real EOF file source).
     assert source.read_jpeg() is None
+
+    # ...and the VO detected features for all five DISTINCT frames (proving no
+    # cache-key collapse), each exactly once (proving the cache still memoises).
+    assert len(set(detected_frames)) == source._num_frames
+    assert len(detected_frames) == source._num_frames
 
     # HALF 2: world -> broadcast. Stand in for a detector firing (no weights in
     # CI): upsert a representative YOLO entity, then broadcast the snapshot the
