@@ -139,6 +139,29 @@ final class FollowCoordinator: ObservableObject {
     /// Re-acquire the centered object (operator re-frames and says "track" again).
     func relock() { detectQueue.async { self.tracker.reset() } }
 
+    /// Acquire / switch to / re-acquire a lock of the given kind WITHOUT taking off
+    /// (drone already airborne). Always routes through the confirm gate: re-inits the
+    /// detector, drops any prior reading, hovers in `searching` until confirmTarget().
+    /// The single entry for mid-flight switch and for "lock back onto me" after manual.
+    func requestLock(_ mode: TargetMode) {
+        guard isArmed else { return }
+        if mode == .visualMe { detectQueue.async { self.tracker.reset() } }
+        confirmTimeoutLands = false   // mid-flight: never-confirmed re-lock falls back to manual, not land
+        rcQueue.async {
+            self.mode = mode
+            self.followActive = true
+            self.manualHover = false
+            self.scripted = false
+            self.landing = false
+            self.tookOff = true
+            self.confirmed = false
+            self.latest = nil
+            self.latestTime = self.now()
+        }
+        setPhase(.searching)
+        startRCLoop()
+    }
+
     /// Operator took manual control by voice — pause the follow loop and hover. The
     /// drone stays airborne; "follow me" resumes. (Pause-and-hold model.)
     func pauseToManual() {
@@ -389,6 +412,14 @@ final class FollowCoordinator: ObservableObject {
         latestTime = now() - age
     }
 
+    /// Flush all pending rcQueue work synchronously and stop the real rc timer, so a
+    /// single-threaded test observes a settled state and the timer never fires `tick()`
+    /// behind its back. Test-only: production never calls this. Use after any public
+    /// API that schedules rcQueue.async work + startRCLoop() (arm/requestLock/…).
+    func drainForTest() {
+        rcQueue.sync { self.rcTimer?.cancel(); self.rcTimer = nil }
+    }
+
     /// Place the coordinator directly into an airborne, confirmed, following-ready
     /// state without takeoff — the precondition for re-lock / manual tests. Test-only
     /// (sets rcQueue-owned state synchronously; safe because tests don't run the timer).
@@ -396,6 +427,11 @@ final class FollowCoordinator: ObservableObject {
         self.mode = mode
         armed = true; followActive = true; tookOff = true; confirmed = true
         landing = false; manualHover = false; scripted = false
+        // Set the @Published `phase` synchronously too (not just the currentPhase
+        // mirror): public API like requestLock() guards on `isArmed`, which reads
+        // `phase`. Production updates `phase` via main.async, which never lands in a
+        // synchronous single-threaded test, so without this the guard would early-out.
+        phase = .following
         setPhase(.following)
     }
 }

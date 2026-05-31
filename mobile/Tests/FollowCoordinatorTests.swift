@@ -33,4 +33,29 @@ final class FollowCoordinatorTests: XCTestCase {
         coord.tickForTest()
         XCTAssertNil(sink.lastRC)
     }
+
+    func testRequestLockFromAirborneEntersSearchingNotFollowing() {
+        coord.enterAirborneForTest(mode: .visualMe)
+        coord.requestLock(.visualMe)
+        coord.drainForTest()   // settle rcQueue work + stop the real timer
+        XCTAssertEqual(coord.currentPhase, .searching)
+    }
+    func testRequestLockClearsConfirmationSoTickHovers() {
+        coord.enterAirborneForTest(mode: .visualMe)
+        coord.requestLock(.tag)
+        coord.drainForTest()   // apply confirmed=false/latest=nil before injecting
+        coord.injectDetectionForTest(tag(), age: 0)
+        coord.tickForTest()
+        XCTAssertEqual(sink.lastRC, .hover)
+    }
+    func testRequestLockThenConfirmThenTickFollows() {
+        coord.enterAirborneForTest(mode: .visualMe)
+        coord.requestLock(.visualMe)
+        coord.drainForTest()   // apply confirmed=false/latest=nil before injecting
+        coord.injectDetectionForTest(tag(bearingDeg: 20), age: 0)
+        coord.confirmTarget()
+        coord.drainForTest()   // apply confirmed=true from confirmTarget()'s rcQueue body
+        coord.tickForTest()
+        XCTAssertGreaterThan(sink.lastRC?.yaw ?? 0, 0)
+    }
 }
