@@ -245,14 +245,18 @@ _upload_status: dict = {
 }
 
 # YOLO weights — optional. Without weights, perception runs SLAM-only. If
-# YOLO_WEIGHTS is unset, fall back to a bundled COCO model (models/yolov8n.pt)
-# when present, so recon detection + target designation work out of the box. The
-# file is gitignored (fetch once with ultralytics); absence degrades gracefully
-# to SLAM-only.
-_DEFAULT_YOLO_PATH = Path(__file__).resolve().parent.parent.parent / "models" / "yolov8n.pt"
-_YOLO_WEIGHTS = os.environ.get("YOLO_WEIGHTS") or (
-    str(_DEFAULT_YOLO_PATH) if _DEFAULT_YOLO_PATH.exists() else None
-)
+# YOLO_WEIGHTS is unset, fall back to the best bundled COCO model present
+# (prefer the more accurate yolov8s over yolov8n), so recon detection + target
+# designation work well out of the box. Files are gitignored (fetch once with
+# ultralytics); absence degrades gracefully to SLAM-only.
+_MODELS_DIR = Path(__file__).resolve().parent.parent.parent / "models"
+def _default_yolo_weights() -> str | None:
+    for name in ("yolov8s.pt", "yolov8n.pt"):   # most accurate first
+        p = _MODELS_DIR / name
+        if p.exists():
+            return str(p)
+    return None
+_YOLO_WEIGHTS = os.environ.get("YOLO_WEIGHTS") or _default_yolo_weights()
 
 # YOLO-World custom vocabulary. If unset and we're loading a -world checkpoint,
 # we default to a defense-relevant prompt set so the detector is useful out of
