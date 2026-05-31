@@ -26,6 +26,12 @@ class WorldModel:
     def remove(self, entity_id: str) -> None:
         self._entities.pop(entity_id, None)
 
+    def clear(self) -> None:
+        """Drop every entity in one go. Producers will refill on the next
+        perception tick / device_location upsert / follow loop iteration —
+        this is for the operator's reset-the-map button, not a teardown."""
+        self._entities.clear()
+
     def _age(self, entity: Entity, now: float) -> float:
         return now - entity.timestamp
 

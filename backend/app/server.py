@@ -944,6 +944,19 @@ async def get_glyphs(fontstack: str, rng: str) -> Response:
     return FileResponse(safe, media_type="application/x-protobuf")
 
 
+@app.post("/world/clear")
+async def post_world_clear(
+    _: None = Depends(_require_operator),
+) -> dict:
+    """Wipe every entity from the world model and the perception detection
+    buffer. Operator's reset-the-map button between demo takes. Producers
+    (perception, follow loop, device_location) keep running and will refill
+    on their next tick — this is not a teardown, just a clean slate."""
+    world.clear()
+    perception.reset()
+    return {"ok": True}
+
+
 @app.post("/map/area")
 async def post_map_area(
     req: MapAreaRequest,
