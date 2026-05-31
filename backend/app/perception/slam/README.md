@@ -80,8 +80,9 @@ pose (`scale_known=True`); `LocalMap` itself converts on read rather than callin
   (`ORB_SLAM3_ROOT`, checks `Vocabulary/ORBvoc.txt` + `Examples/Monocular/mono_tum_vi`);
   falls back loudly otherwise. Reimplemented clean from the prior rig — no hardcoded
   paths, no lat/lng projection.
-- Tests: `backend/tests/slam/` — anchor, VO geometry, VO pipeline smoke, local map
-  (13 tests; synthetic fixtures in `synth.py`, deterministic, no images required).
+- Tests: `backend/tests/slam/` — anchor, VO geometry, VO pipeline smoke, VO
+  feature/pair caching, local map (16 tests; synthetic fixtures in `synth.py`,
+  deterministic, no images required).
 
 ## Modules
 - `types.py` ✅ — `CameraModel` (`from_resolution`, `K`), `Frame`, `Pose` (`scaled`),
@@ -89,7 +90,10 @@ pose (`scale_known=True`); `LocalMap` itself converts on read rather than callin
 - `backend.py` ✅ — abstract `SlamBackend` seam (`name`, `process_sequence`).
 - `vo.py` ✅ — `MonocularVO` (`name="python-vo"`) + the testable geometry core
   (`estimate_relative_pose`, `triangulate`, `relative_scale`, `integrate_step`,
-  `R_wc_prev_dot`). Module-level gates `_MIN_MATCHES`/`_ZERO_MOTION_PX`.
+  `R_wc_prev_dot`). Module-level gates `_MIN_MATCHES`/`_ZERO_MOTION_PX`. Caches
+  per-frame ORB features and per-pair relative poses (content-keyed) so the
+  sliding window isn't re-detected/re-solved each call; the caches are bounded to
+  the current window every call so memory stays flat.
 - `anchor.py` ✅ — `TagObservation`, `tag_object_points`, `tag_camera_pose` (PnP,
   `SOLVEPNP_IPPE_SQUARE`), `metric_scale_from_tag`, lazy `detect_tags`
   (`tag36h11`, reorders pupil corners to TL,TR,BR,BL).
@@ -101,11 +105,13 @@ pose (`scale_known=True`); `LocalMap` itself converts on read rather than callin
   (`name="orbslam3"`) + `orbslam_available`; needs external C++ build.
 
 ## Planned
-- ⬜ Live anchor resolution loop (auto-detect tag from the stream, call `set_anchor`).
 - ⬜ Bundle adjustment / loop closure (today's two-view VO drifts — swap in ORB-SLAM3
   for accuracy behind the same seam).
 
 ## Done since first draft
+- ✅ Live anchor resolution loop: [`../pipeline.py`](../pipeline.py) auto-detects the
+  tag from the stream (buffers two observations with camera motion between them) and
+  calls `metric_scale_from_tag` → `LocalMap.set_anchor` to make the map metric.
 - ✅ Wired into `../fusion.py`: `detection_to_entity` / `fuse_detections` take a `Pose`
   and place YOLO boxes in the local frame — unproject the box centre to a camera ray,
   rotate by `Pose.R_wc`, intersect the ground plane (or scale by a depth map). Falls back

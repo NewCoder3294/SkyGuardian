@@ -6,15 +6,21 @@ with a PD regulator, and command the Tello. See
 [`../../../docs/VIDEO.md`](../../../docs/VIDEO.md).
 
 > **Controller role: backend / alternate.** In the current build the **phone is the
-> primary Tello controller** — it runs its own on-device AprilTag follow loop and
-> voice control and commands the Tello directly over the Tello AP
-> (`192.168.10.1:8889`). This module is the laptop-side `FollowController`, an
-> **alternate** flight path wired into `server.py` (constructed at module load,
-> `follow.start()` from the startup hook). Per CLAUDE.md only **one controller may be
-> armed at a time**; there is **no code interlock yet**, so keeping the backend
-> controller disarmed while the phone is flying is an operating rule, not an enforced
-> guard. "Armed" here means the Tello link is up and the mission stage permits RC —
-> see the no-op behaviour below for how this loop stays inert when the link is down.
+> primary Tello controller** — it runs its own on-device follow loop (visual-"me"
+> lock by default; an AprilTag designates other targets) and voice control, and
+> commands the Tello directly over the Tello AP (`192.168.10.1:8889`). This module
+> is the laptop-side `FollowController` (plus the alternate `ApproachController`),
+> wired into `server.py` (constructed at module load, `follow.start()` from the
+> startup hook). Per CLAUDE.md only **one controller may be armed at a time**, now
+> enforced by a **code interlock** — [`arming.py`](./arming.py) `ArmingLock`: every
+> laptop controller must hold the exclusive lock before it drives the Tello, and
+> arming owner `"phone"` disarms every laptop controller. The lock starts UNHELD
+> (laptop disarmed by default); `_route_arming_for_command` in `server.py` transfers
+> it to follow/approach based on the resulting mission stage. It backstops — but
+> does not replace — the operating rule, since the phone talks to the Tello over its
+> own AP outside the lock. "Armed" here means the controller holds the lock and the
+> mission stage permits RC — see the no-op behaviour below for how this loop stays
+> inert when the link is down or the lock is unheld.
 
 ## Responsibility
 Detect the soldier-worn AprilTag from the Tello forward camera → bearing + distance →
@@ -22,14 +28,17 @@ station-keep with a PD regulator → send RC commands to the Tello. Handle tag l
 (hover/coast) and the `holding` / `recall` / `stopped` mission stages.
 
 ## Owns
-The follow loop on the **laptop**. The only Tello connection on the backend lives in
-[`../tello/`](../tello/); `FollowController` is the only backend caller of
-`TelloClient.send_rc`. (The phone has its own independent Tello link via
-`TelloCommander` — that is a separate controller, not this one.)
+The follow + approach loops on the **laptop**. The only Tello connection on the
+backend lives in [`../tello/`](../tello/); `FollowController` and
+`ApproachController` are the backend callers of `TelloClient.send_rc`, and each is
+gated by the shared `ArmingLock` (only the lock holder may drive). (The phone has
+its own independent Tello link via `TelloCommander` — that is a separate
+controller, not this one.)
 
 ## Interfaces
 - **Reads:** mission stage from [`../state_machine.py`](../state_machine.py)
-  (`Stage.IDLE` / `FOLLOWING` / `HOLDING` / `RECALL` / `STOPPED`).
+  (`Stage.IDLE` / `FOLLOWING` / `HOLDING` / `APPROACH` / `RECALL` / `STOPPED`) and
+  the shared `ArmingLock` (drives only while it holds the lock).
 - **Reads:** Tello frames via a `TelloVideoSource` ([`../tello/video.py`](../tello/video.py)),
   consumed as JPEG bytes through `read_jpeg()` — the same FrameSource protocol the
   Mavic source uses.
@@ -45,7 +54,15 @@ The follow loop on the **laptop**. The only Tello connection on the backend live
   SLAM primitives in [`../perception/slam/anchor.py`](../perception/slam/anchor.py)
   (`detect_tags` via pupil-apriltags `tag36h11`, `tag_camera_pose` via PnP) so the
   follow geometry and the Mavic metric-scale anchor stay consistent.
+- `arming.py` — `ArmingLock`: the thread-safe single-owner interlock. `acquire`/
+  `release`/`can_command(owner)` + a read-only `holder`. Exclusive: a second owner's
+  `acquire` returns `False` while another holds it.
 - `controller.py` — `FollowController`: the async station-keep loop + loss handling.
+- `approach.py` — `ApproachController`: the alternate autonomous approach-and-standoff
+  controller (PD over a YOLO target box rather than an AprilTag), phases
+  SEEKING → APPROACHING → STANDOFF → ABORT (terminal on `_LOSS_TIMEOUT_S`).
+- `target.py` — `TargetReading` + `BoxTargetDetector` (pinhole range from box height)
+  + `SyntheticTargetDetector` (scripted readings for tests) feeding the approach loop.
 
 ## `apriltag.py` — detection
 - `detect_soldier_tag(frame_bgr, camera, tag_size_m, expected_tag_id, timestamp)`.
@@ -64,10 +81,12 @@ The follow loop on the **laptop**. The only Tello connection on the backend live
 ## `controller.py` — `FollowController`
 Construct once at startup; call `start()` from the server's startup hook (it schedules
 `_run()` as an asyncio task). Constructor wiring:
-`FollowController(tello, video, world, mission, clock=None, img_width=960, img_height=720, tag_size_m=0.18, soldier_tag_id=None)`.
+`FollowController(tello, video, world, mission, arming, clock=None, owner="follow", img_width=960, img_height=720, tag_size_m=0.18, soldier_tag_id=None)`.
 
-`server.py` builds it with the shared `TelloClient` / `TelloVideoSource` / `WorldModel`
-/ `MissionStateMachine` and two env knobs:
+`arming` is the shared `ArmingLock`; the loop fail-closes (returns without driving)
+on any tick where it does not hold the lock for `owner`. `server.py` builds it with
+the shared `TelloClient` / `TelloVideoSource` / `WorldModel` / `MissionStateMachine`
+/ `ArmingLock`, `owner="follow"`, and two env knobs:
 - `FOLLOW_TAG_SIZE_M` — physical tag edge length in metres (default `0.18`); must match
   the printed soldier badge for distance to be metric.
 - `FOLLOW_TAG_ID` — integer `tag36h11` id of the soldier badge; unset → `soldier_tag_id`
@@ -78,18 +97,25 @@ Construct once at startup; call `start()` from the server's startup hook (it sch
 
 Loop (`_run`, paced at `_LOOP_HZ = 15`):
 1. `video.read_jpeg()` → decode with cv2 (`cv2`/`numpy` imported lazily; the loop
-   returns early if cv2 is absent).
+   returns early if cv2 is absent). `read_jpeg()` is freshness-windowed in
+   `TelloVideoSource`, so a frozen/stale stream returns `None` (treated as tag loss).
 2. `detect_soldier_tag(...)` → optional `TagReading`.
 3. On a reading: cache it, clear the loss timer, and emit entities.
 4. On no reading: start the tag-loss timer if a prior reading existed.
 5. `_drive_tello(reading, now)` — stage-dependent flight commands.
 
 Stage handling (`_drive_tello`):
+- **Arming gate (first):** if `arming.can_command(owner)` is `False`, return
+  immediately — fail-closed, no None-guard. A missing/unheld lock means no driving.
 - `STOPPED` → `land()` if connected; no further commands.
 - `HOLDING` → `hover()` (zero RC) to hold position.
-- `RECALL` → drive back toward the launch area with a fixed reverse RC
-  (`send_rc(0, -_RC_LIMIT // 2, 0, 0)`). With only tag-relative sensing this is an
-  approximation; the operator initiates recall when near base.
+- `RECALL` → **bounded** open-loop recall. With no valid tag reading it `hover()`s
+  (mirrors the FOLLOWING tag-lost path — never blind-thrust). With a reading it yaws
+  to re-centre the tag and drives backward toward the operator
+  (`send_rc(0, -_RC_LIMIT // 2, 0, yaw)`). Total recall time is capped: once
+  `_RECALL_MAX_S = 8.0` elapses it calls `mission.fail("recall_timeout")` (→ STOPPED)
+  and hovers, so recall can never drive forever. The recall budget is reset whenever
+  the stage leaves RECALL.
 - `IDLE` → no commands (but detection keeps running so the dashboard still sees the
   soldier).
 - `FOLLOWING` with no reading → `hover()` and coast; the state machine trips a fault
@@ -107,10 +133,10 @@ PD regulator (FOLLOWING, tag visible):
   centred via yaw. Gains are conservative and meant to be tuned on hardware.
 
 Entity emission (`_emit_entities`): upserts `soldier` (`EntityType.SOLDIER`,
-`confidence 0.9`, `ttl_s 2.0`) placed forward/lateral/vertical of the Tello from the
-tag bearing and distance, and `tello` (`EntityType.DRONE`, `confidence 1.0`,
-`ttl_s 2.0`) at `Vec3(0, 0, 1)` (the launch origin, ~1 m up) — only when
-`tello.state is TelloState.CONNECTED`.
+`label "operator"`, `confidence 0.9`, `ttl_s 2.0`) placed forward/lateral/vertical of
+the Tello from the tag bearing and distance, and `tello` (`EntityType.DRONE`,
+`label "companion"`, `confidence 1.0`, `ttl_s 2.0`) at `Vec3(0, 0, 1)` (the launch
+origin, ~1 m up) — only when `tello.state is TelloState.CONNECTED`.
 Both use `source = EntitySource.FOLLOW`. Coordinates are Tello-body-relative for now;
 they become globally consistent once Tello video is fed through the main SLAM stack.
 

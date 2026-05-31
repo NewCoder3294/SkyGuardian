@@ -5,12 +5,16 @@ WebSocket fan-out, the video relay, on-device reasoning, and a Tello controller.
 Both clients — the [iOS app](../mobile/README.md) and the web dashboard —
 subscribe here and never duplicate state.
 
-> Tello control note: the backend ships a `FollowController` + `TelloClient`, but
-> in the current build the **phone is the primary Tello controller** (on-device
-> AprilTag follow + voice, commanding the Tello directly over its AP at
-> `192.168.10.1:8889`). The laptop controller is an *alternate*. Exactly one
-> controller is armed at a time — there is no code interlock yet, so this is an
-> operating rule. See [`../CLAUDE.md`](../CLAUDE.md).
+> Tello control note: the backend ships a `FollowController` + `ApproachController`
+> + `TelloClient`, but in the current build the **phone is the primary Tello
+> controller** (on-device visual-"me" / AprilTag-designated follow + voice,
+> commanding the Tello directly over its AP at `192.168.10.1:8889`). The laptop
+> controllers are an *alternate*. Exactly one controller is armed at a time, now
+> enforced by a **code interlock** (`app/follow/arming.py` `ArmingLock`): a laptop
+> controller must hold the exclusive lock before driving the Tello, and arming
+> owner `"phone"` disarms every laptop controller. It backstops — but does not
+> replace — the operating rule, since the phone talks to the Tello over its own AP
+> outside the lock. See [`../CLAUDE.md`](../CLAUDE.md).
 
 Offline-first, no GPS, recon/situational-awareness only. See [`../CLAUDE.md`](../CLAUDE.md)
 for the hard constraints.
@@ -32,7 +36,7 @@ Tests run against the venv interpreter and are deterministic (inject `FakeClock`
 no wall-clock or RNG in assertions):
 
 ```bash
-cd backend && .venv/bin/python -m pytest -q   # 54 passing
+cd backend && .venv/bin/python -m pytest -q   # 187 passing
 ```
 
 Run the server (`run.sh` binds `0.0.0.0:8000` with `--reload`, so both clients
@@ -41,6 +45,18 @@ reach it):
 ```bash
 ./run.sh
 ```
+
+There are also two pre-wired demo profiles and an RTMP relay launcher:
+
+- `./run-indoor.sh` — live indoor demo: COCO `yolov8s` for person + backpack,
+  the specialty `threat-yolov8n` for `gun` at `YOLO_SPECIALTY_CONF=0.40`,
+  YOLO-World off, depth off, `imgsz=480`. Defaults `TELLO_DISABLE=1`.
+- `./run-outdoor.sh` — outdoor recon over a recorded clip: YOLO-World back on
+  with a defense vocab, COCO `yolov8l` + specialty detector, depth off,
+  `imgsz=640`. Defaults `TELLO_DISABLE=1`.
+- `./run-relay.sh` — starts the local MediaMTX RTMP relay
+  (`mediamtx backend/mediamtx.yml`); publishers push to
+  `rtmp://<laptop-lan-ip>:1935/live` and the brain reads the loopback side.
 
 Or invoke uvicorn directly with explicit config:
 
@@ -65,9 +81,13 @@ All routes live in [`server.py`](./app/server.py).
 
 **WebSocket / health**
 - `ws://<host>:8000/ws` — Contract B WebSocket (world/mission/health/detections/
-  follow_state out; intent/device_location/follow_state in). `follow_state` is the
-  phone's relative Tello range/bearing from the soldier; the laptop stores the
-  latest and rebroadcasts it, downgrading to `phase="stale"` after ~2 s of silence.
+  follow_state out; intent/device_location/follow_state/entity_report/label_event
+  in). `follow_state` is the phone's relative Tello range/bearing from the soldier
+  (plus `target_type`/`target_label` for the dashboard's ME/TAG badge); the laptop
+  stores the latest and rebroadcasts it, downgrading to `phase="stale"` after ~2 s
+  of silence. `entity_report` upserts the phone's world-frame entities (operator +
+  drone) directly into the world model; `label_event` records an operator
+  label decision for the data flywheel.
 - `GET /health` — JSON liveness + client count + stage + tello/mavic/perception
   health.
 
@@ -96,11 +116,16 @@ All routes live in [`server.py`](./app/server.py).
   level + labels). See [`reasoning/intel.py`](./app/reasoning/intel.py).
 - `POST /intel/chat` — operator Q&A over the same local model, grounded in the
   latest summary + most-recent detection labels.
+- `POST /intel/deep-look` — on-demand single vision pass through a separate
+  always-vision reasoner (regardless of `INTEL_VISION`).
 
 **Map**
 - `GET /map/buildings` — pre-cached OSM building polygons (projected to local
   metres), served read-only from `.context/buildings.json`. `404` until the
   operator runs `scripts/fetch_buildings.py` once with internet.
+- `POST /map/area` — operator request (`MapAreaRequest`: `lat`/`lng`/`radius_m`)
+  to re-fetch the OSM buildings layer for a new operational area; on success
+  broadcasts a `buildings_updated` signal so clients re-GET `/map/buildings`.
 
 ### Control-plane hardening
 
@@ -132,12 +157,16 @@ All optional. Read in [`server.py`](./app/server.py) / [`run.sh`](./run.sh).
 
 | Var | Default | Meaning |
 |---|---|---|
-| `YOLO_WEIGHTS` | _(unset)_ | Local YOLO / YOLO-World weights. Without weights, perception runs SLAM-only. |
+| `YOLO_WEIGHTS` | _(unset → best bundled COCO model)_ | Local YOLO / YOLO-World weights. Unset → falls back to the best bundled COCO model under `models/` (prefers `yolov8s.pt` over `yolov8n.pt`) so recon detection + designation work out of the box; absence of any weights degrades to SLAM-only. `off` explicitly disables the primary detector (COCO/specialty only). |
 | `YOLO_CLASSES` | defense vocab when a `-world` checkpoint is loaded, else _(unset)_ | Comma-separated open-vocab prompt set for YOLO-World (overrides the built-in `_DEFAULT_VOCAB`). |
 | `YOLO_IMGSZ` | `960` | YOLO inference image size. |
 | `YOLO_CONF` | `0.20` | YOLO confidence threshold. |
 | `YOLO_COCO_WEIGHTS` | _(unset)_ | Optional second detector (standard COCO YOLOv8) for high-precision person/vehicle/backpack. When set, its labels are pruned from the YOLO-World vocab so the same object isn't double-detected. |
 | `YOLO_COCO_KEEP` | `person,car,truck,motorcycle,bicycle,bus,backpack` (when COCO weights set) | COCO labels trusted over open-vocab. |
+| `YOLO_SPECIALTY_WEIGHTS` | _(unset)_ | Optional third detector (e.g. a weapons-finetuned YOLOv8). Runs alongside world + COCO; its raw classes are filtered to `YOLO_SPECIALTY_KEEP`. |
+| `YOLO_SPECIALTY_KEEP` | _(unset → all classes pass)_ | Comma-separated class allowlist for the specialty detector. |
+| `YOLO_SPECIALTY_CONF` | _(unset → uses `YOLO_CONF`)_ | Per-detector confidence threshold for the specialty model (run it strict, e.g. `0.40`, while the others stay relaxed). |
+| `YOLO_DEVICE` | _(unset → auto: MPS / CUDA / library default)_ | Inference device override (`cpu`, `mps`, `cuda:0`). |
 
 **Perception — depth / anchor / loop**
 
@@ -145,6 +174,7 @@ All optional. Read in [`server.py`](./app/server.py) / [`run.sh`](./run.sh).
 |---|---|---|
 | `DEPTH_MODEL` | `depth-anything/Depth-Anything-V2-Small-hf` | HF model id / local cache, or `off` to disable monocular depth. |
 | `DEPTH_SCALE` | `5.0` | Calibrates inverse-depth → metres. |
+| `DEPTH_DEVICE` | _(unset → auto: MPS / CUDA / library default)_ | Inference device override for the depth pipeline. |
 | `ANCHOR_TAG_SIZE_M` | `0.20` | AprilTag physical size for the perception metric-scale anchor. |
 | `PERCEPTION_FPS` | `5` | Perception loop rate (also the sample rate for offline file processing). |
 
@@ -162,7 +192,7 @@ All optional. Read in [`server.py`](./app/server.py) / [`run.sh`](./run.sh).
 | Var | Default | Meaning |
 |---|---|---|
 | `INTEL_MODEL` | `gemma3:4b` | Local Ollama model for intel summary + chat. `off` disables reasoning entirely. |
-| `INTEL_VISION` | `0` | `1` feeds the current JPEG to the model (image-aware, ~30× slower); default text-only over the YOLO label list. |
+| `INTEL_VISION` | `1` | `1` feeds the current JPEG to the model (image-aware, the demo default); set `0` for the ~30× faster text-only path over the YOLO label list. |
 | `INTEL_INTERVAL_S` | `5` | How often the intel loop runs. |
 
 Reasoning is fully local (Ollama at `127.0.0.1:11434`) and auto-disables if the
@@ -187,14 +217,17 @@ Defined in [`app/contracts.py`](./app/contracts.py) (Pydantic), mirrored in
   · `source` (`yolo`/`slam`/`follow`/`manual`) · `ttl_s` · `status`
   (`active`/`stale`/`lost`, owned by the world model, never the producer).
 - **Contract B — WebSocket protocol:** server→clients `world_snapshot` /
-  `mission_state` / `health` / `detections` / `follow_state`; clients→server
-  `intent` (closed command vocab) / `device_location` / `follow_state`. The
-  detections `source` is `"leader"` (recon Mavic) / `"follower"` (companion Tello),
-  abstracting the airframe make. `follow_state` carries the companion Tello's
-  range/bearing relative to the soldier (`distance_m` 0–200, `bearing_deg` ±360,
-  `allow_inf_nan=False`) and a `phase` (`disarmed`/`searching`/`confirming`/
-  `following`/`lost`/`manual`/`stale`) — deliberately *not* map coordinates,
-  since the phone's follow frame and the Mavic SLAM frame aren't co-registered.
+  `mission_state` / `health` / `detections` / `follow_state` (+ `buildings_updated`);
+  clients→server `intent` (closed command vocab) / `device_location` /
+  `follow_state` / `entity_report` / `label_event`. The detections `source` is
+  `"leader"` (recon Mavic) / `"follower"` (companion Tello), abstracting the
+  airframe make. `follow_state` carries the companion Tello's range/bearing
+  relative to the soldier (`distance_m` 0–200, `bearing_deg` ±360,
+  `allow_inf_nan=False`), a `phase` (`disarmed`/`searching`/`confirming`/
+  `following`/`lost`/`manual`/`stale`), and the lock's `target_type`
+  (`visual_me`/`tag`) + `target_label` for the dashboard's ME/TAG badge —
+  deliberately *not* map coordinates, since the phone's follow frame and the Mavic
+  SLAM frame aren't co-registered.
   The phone publishes it and the laptop rebroadcasts it (overwriting the advisory
   client `source`), downgrading to `phase="stale"` after ~2 s of silence so the
   dashboard never shows a confident-but-dead reading. `parse_client_message`
@@ -205,16 +238,17 @@ Defined in [`app/contracts.py`](./app/contracts.py) (Pydantic), mirrored in
 
 | Module | Role |
 |---|---|
-| [`contracts.py`](./app/contracts.py) | Contract A + B, Pydantic. |
+| [`contracts.py`](./app/contracts.py) | Contract A + B, Pydantic (incl. `FollowState` with `target_type`/`target_label`, `EntityReport`, `LabelEvent`, `MapAreaRequest`/`BuildingsUpdated`). |
 | [`world_model.py`](./app/world_model.py) | Single source of truth; entity upsert + TTL lifecycle (`active`→`stale`→`lost`). |
-| [`state_machine.py`](./app/state_machine.py) | Mission arbiter + event log. `recall`/`stopped` from anywhere. |
+| [`state_machine.py`](./app/state_machine.py) | Mission arbiter + event log. Stages `idle`/`following`/`holding`/`approach`; `recall`/`stopped` from anywhere; `fail(reason)` drops to `stopped`. |
+| [`designation.py`](./app/designation.py) | `Designator.select` ranks ACTIVE YOLO recon detections (high-value label, confidence then proximity) and the server publishes the pick as a synthetic `designated_target` entity. Read-only. |
 | [`ws_hub.py`](./app/ws_hub.py) | WebSocket client registry + broadcast fan-out (`Hub`). |
-| [`video.py`](./app/video.py) | Frame-source abstraction; `make_source` selects URL/file/device or `NullSource`; `SwitchableSource` allows runtime hot-swap. |
+| [`video.py`](./app/video.py) | Frame-source abstraction; `make_source` selects URL/file/device or `NullSource`; `SwitchableSource` allows runtime hot-swap; `StreamVideoSource` is freshness-windowed. |
 | [`clock.py`](./app/clock.py) | Injectable clock (`RealClock` / `FakeClock`) for deterministic tests. |
-| [`server.py`](./app/server.py) | FastAPI app: `/ws`, `/health`, video + upload + intel + buildings routes, broadcast + intel loops, producer wiring, CORS/operator-key hardening. |
+| [`server.py`](./app/server.py) | FastAPI app: `/ws`, `/health`, video + upload + intel + buildings + map routes, broadcast + intel + approach loops, producer wiring, `ArmingLock` routing, CORS/operator-key hardening. |
 | [`reasoning/`](./app/reasoning/) | On-device reasoning over the latest frame + detections via a **local** Ollama model (`IntelReasoner`, `IntelChat`, `IntelSummary`, `ollama_alive`). The offline equivalent of "Gemini Live". |
-| [`perception/`](./app/perception/README.md) | Mavic recon: SLAM, YOLO (+ optional COCO ensemble), depth, fusion pipeline (`PerceptionPipeline`), plus `file_processor.py` for offline clip processing. |
-| [`follow/`](./app/follow/README.md) | Tello soldier-follow controller (`FollowController`, AprilTag station-keep). |
+| [`perception/`](./app/perception/README.md) | Mavic recon: SLAM, YOLO (+ optional COCO + specialty ensemble), depth, fusion pipeline (`PerceptionPipeline`), plus `file_processor.py` for offline clip processing. |
+| [`follow/`](./app/follow/README.md) | Tello laptop-side flight path: `FollowController` (AprilTag station-keep) + `ApproachController`, gated behind the `ArmingLock` interlock. |
 | [`tello/`](./app/tello/README.md) | Tello transport: `TelloClient` (djitellopy wrapper) + `TelloVideoSource`. |
 
 ## Producers
@@ -226,13 +260,16 @@ hardware.
   `SwitchableSource` around `MAVIC_SOURCE`), runs SLAM + YOLO (+ optional COCO
   ensemble + optional depth), and upserts entities. Idle when the source is
   `NullSource`.
-- **`FollowController`** reads Tello frames, detects the soldier AprilTag,
-  upserts `soldier` + `drone` entities, and sends RC to the Tello when
-  stage=`following`. Idle when the Tello link is down (the supervisor thread
-  auto-reconnects every `TELLO_RETRY_S`). Keep this disarmed whenever the phone
-  is flying the Tello — or set `TELLO_DISABLE=1` to skip the Tello client,
-  camera, and this controller at startup entirely (health reports
-  `tello: "disabled"`).
+- **`FollowController`** (and the alternate **`ApproachController`**) read Tello
+  frames, detect the soldier AprilTag (or a YOLO target box for approach), upsert
+  `soldier`/`tello` entities, and send RC to the Tello — but only when they hold
+  the `ArmingLock` and the mission stage permits (`following`/`recall` for follow,
+  `approach` for approach). Both fail closed: no lock, no driving. RECALL is
+  bounded (hover on no tag, then fail to `stopped` after `_RECALL_MAX_S`). Idle
+  when the Tello link is down (the supervisor thread auto-reconnects every
+  `TELLO_RETRY_S`). Set `TELLO_DISABLE=1` to skip the Tello client, camera, and
+  these controllers at startup entirely (health reports `tello: "disabled"`) —
+  the supported demo topology where the phone owns the Tello.
 - **`follow_state`** from the phone (the relative Tello range/bearing/phase) is
   stored with a laptop receipt time and rebroadcast each tick; the broadcast loop
   downgrades it to `phase="stale"` after `_FOLLOW_STALE_S` (~2 s) of silence so a
@@ -267,7 +304,12 @@ writes a `<name>.detections.json` sidecar. The dashboard polls
 - `tests/` covers contracts, world model, state machine, video relay, upload
   guards (`test_upload_guards.py`), the `follow_state` contract + rebroadcast/
   fail-stale path (`test_follow_state.py`), the `TELLO_DISABLE` startup skip
-  (`test_tello_disable.py`), and SLAM (`tests/slam/`).
+  (`test_tello_disable.py`), the `ArmingLock` + bounded-RECALL + freshness-window
+  hardening (`test_arming.py`, `test_audit_fixes.py`), designation
+  (`test_designation*.py`), the approach controller (`test_approach*.py`),
+  perception integration (`test_pipeline_integration.py`), map-area + buildings
+  (`test_map_area*.py`), capture packaging/export (`test_capture_*`,
+  `test_foundry_*`), and SLAM (`tests/slam/`). See [`tests/README.md`](./tests/README.md).
 
 ## Docs
 

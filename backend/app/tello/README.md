@@ -11,8 +11,11 @@ current architecture (see [`../../../CLAUDE.md`](../../../CLAUDE.md)) — the
 **phone** is the primary Tello controller (on-device follow + voice, commanding
 the Tello directly over its AP). This `TelloClient` is an **alternate** backend
 controller and must stay disarmed while the phone is flying; only one controller
-is armed against the Tello at a time (an operating rule — there is no code
-interlock yet). Both control and video here are `djitellopy`-backed.
+is armed against the Tello at a time, now enforced by a **code interlock**
+([`../follow/arming.py`](../follow/README.md) `ArmingLock`) on the controllers that
+drive this client — though the operating rule still stands, since the phone talks
+to the Tello over its own AP outside the lock. Both control and video here are
+`djitellopy`-backed.
 
 ## Responsibility
 - Connect to the Tello AP and keep the SDK link alive across dropouts.
@@ -27,8 +30,9 @@ interlock yet). Both control and video here are `djitellopy`-backed.
 - **Writes:** RC/takeoff/land commands to the Tello; latest JPEG frame +
   connection state to its callers.
 - `TelloClient` is constructed once at startup and shared by reference; on the
-  backend the [`FollowController`](../follow/README.md) is the only legitimate
-  caller of `send_rc`, and mission/state transitions call `takeoff`/`land`.
+  backend the [`FollowController` and `ApproachController`](../follow/README.md)
+  are the legitimate callers of `send_rc` (each gated by the shared `ArmingLock`),
+  and mission/state transitions call `takeoff`/`land`.
 
 ## Modules
 
@@ -77,7 +81,11 @@ consumes Tello frames without knowing their origin.
 - `stop()` signals the thread, joins it (2s timeout), and clears the frame
   reader.
 - `read_jpeg()` is non-blocking — returns the latest decoded JPEG or `None` if
-  the link is down or no frame has arrived yet.
+  the link is down, no frame has arrived yet, or the last decode is stale.
+  **Freshness window** (`_FRESH_WINDOW_S = 3.0`): each decode stamps `_latest_t`,
+  and `read_jpeg()` returns `None` once that ages out, so a video-only freeze
+  (UDP stalls while the 1 Hz heartbeat still answers) makes the armed follow loop
+  treat it as "tag lost → hover" instead of station-keeping on a frozen frame.
 - Reader thread (`_reader`): waits until the client is connected, calls
   `enable_stream()` + `get_frame_read()`, then encodes each frame to JPEG
   (quality configurable via `jpeg_quality`, default 80) at a ~30 fps cap.

@@ -25,7 +25,10 @@ write detected entities (with local-frame position) into the `WorldModel`.
   control loop.
 
 ### Config (env, read by `server.py` when it constructs the pipeline)
-- `YOLO_WEIGHTS` — primary detector weights path (unset → SLAM-only/degraded).
+- `YOLO_WEIGHTS` — primary detector weights path. Unset → `server.py` falls back
+  to the best bundled COCO model under `models/` (prefers `yolov8s.pt` over
+  `yolov8n.pt`); with no weights at all, perception degrades to SLAM-only.
+  `off` explicitly disables the primary detector (COCO/specialty only).
 - `YOLO_CLASSES` — comma-separated open-vocab prompt list. Unset defaults to
   `server.py` `_DEFAULT_VOCAB` (defense-relevant prompts) **only** when the
   weights filename contains `world`; for a stock COCO model it stays `None`.
@@ -34,6 +37,13 @@ write detected entities (with local-frame position) into the `WorldModel`.
   detector and the class set it is filtered to (default keep set applied when
   COCO weights are set; classes in the keep set are stripped from the
   open-vocab prompt list so the two detectors don't overlap).
+- `YOLO_SPECIALTY_WEIGHTS` / `YOLO_SPECIALTY_KEEP` / `YOLO_SPECIALTY_CONF` —
+  optional third detector (e.g. a weapons-finetuned YOLOv8) with its own class
+  allowlist (unset → all classes pass) and its own confidence threshold (unset →
+  uses `YOLO_CONF`), so a noisy fine-tuned model can run strict while the others
+  stay relaxed for recall.
+- `YOLO_DEVICE` / `DEPTH_DEVICE` — inference device overrides (`cpu`/`mps`/
+  `cuda:0`); unset → auto-detect (MPS, then CUDA, then the library default).
 - `DEPTH_MODEL` (default `depth-anything/Depth-Anything-V2-Small-hf`, `off`
   disables), `DEPTH_SCALE` (default `5.0`).
 - `ANCHOR_TAG_SIZE_M` (default `0.20`) — physical AprilTag edge length used for
@@ -67,8 +77,9 @@ The live loop lives in `pipeline.py` (`PerceptionPipeline`), started once from
 
 The pipeline also caches the latest normalised YOLO boxes
 (`PerceptionPipeline.latest_boxes()`) so the server's broadcast loop can overlay
-them on the MJPEG stream. Boxes expire after `_STALENESS_WINDOW_S = 2.0` s so the
-dashboard goes clean the moment the feed drops.
+them on the MJPEG stream. Boxes expire after `_STALENESS_WINDOW_S = 6.0` s so the
+dashboard goes clean once the feed drops — sized to outlive one full ensemble YOLO
+(+ depth) tick (~2.6 s/frame on M-series), which a 2 s window would have starved.
 
 ### Health string (read by `server.py`)
 - `ok` — running, weights loaded, SLAM anchored (metric).
@@ -95,17 +106,21 @@ invalid in the new feed's coordinate frame.
   converted to approximate metres via a heuristic `scale` (default 5.0).
   Optional; absence falls fusion back to the ground-plane path.
 - `fusion.py` — `fuse_detections` / `detection_to_entity`: image-plane box +
-  SLAM pose → local-frame `Entity` (`source = yolo`). With a depth map, scales
-  the unprojected camera ray by per-pixel depth for a real 3D position;
-  otherwise intersects the ray with the ground plane (z=0). When the pose is
-  missing/unscaled (`slam_pose is None or not slam_pose.scale_known`), places the
-  entity at the origin with confidence ×0.4 rather than dropping it; when the
-  ground ray misses (parallel/behind camera) it falls 3 m down the ray at ×0.5.
-  Maps YOLO labels to `EntityType` via `_LABEL_TO_TYPE` (`person`/`soldier` →
-  `SOLDIER`; `hazard`/`debris`/`obstacle` → `HAZARD`; `door`/`doorway`/
-  `entrance`/`building` → `POI`; `car`/`truck`/`vehicle` and any unlisted label →
-  `OBJECT`). Entity IDs bucket the pixel centre to 32 px (`yolo_<label>_<bx>_<by>`)
-  so a detection re-uses its world-model slot across frames; entities carry a 3 s
+  SLAM pose → local-frame `Entity` (`source = yolo`). With a depth map **and** an
+  anchored pose (`slam_pose.scale_known`), scales the unprojected camera ray by
+  per-pixel depth for a real 3D position; otherwise intersects the ray with the
+  ground plane (z=0) at reduced confidence (×0.6 while pre-anchor). When the pose
+  is missing (`slam_pose is None`), places the entity at the origin with
+  confidence ×0.4 rather than dropping it; when the ground ray misses
+  (parallel/behind camera) it falls 3 m down the ray at ×0.5. Maps YOLO labels to
+  `EntityType` via `_LABEL_TO_TYPE` (`person`/`soldier` → `SOLDIER`; `hazard`/
+  `debris`/`obstacle` → `HAZARD`; `door`/`doorway`/`entrance`/`building` → `POI`;
+  `car`/`truck`/`vehicle` and any unlisted label → `OBJECT`). Entity IDs bucket
+  the **world** position to a ~2 m grid (`yolo_<label>_<bx>_<by>`) so a stationary
+  object re-uses its world-model slot across frames and a person only re-enters
+  the map when they actually move >1 m — the previous pixel-bucket scheme spawned
+  a new dot on every few-pixel jitter. When unanchored (origin fallback) the label
+  alone keys the entity (`yolo_<label>`, one slot per class). Entities carry a 3 s
   TTL (`source = yolo`).
 - `file_processor.py` — `process_video_file`: the VOD path. Reuses the same
   primitives (`YoloDetector` + the optional COCO ensemble, `DepthEstimator`,
@@ -114,16 +129,21 @@ invalid in the new feed's coordinate frame.
   writes a time-indexed `ProcessedVideo` JSON sidecar so the dashboard can scrub
   detections over an HTML5 `<video>` element. Each frame snapshot carries both
   normalised image-plane boxes and the merged YOLO + SLAM (`LocalMap.to_entities`)
-  3D entities for the Map tab. Defaults differ from the live loop: `yolo_imgsz`
-  960, `yolo_conf` 0.20. SLAM/AprilTag anchoring here is best-effort (logged
-  only on error); it never raises out of the per-frame tick.
+  3D entities for the Map tab. `process_video_file` defaults match the live loop
+  (`yolo_imgsz` 960, `yolo_conf` 0.20) and accept the optional COCO ensemble
+  (no specialty detector on this path). SLAM/AprilTag anchoring here is
+  best-effort (logged only on error); it never raises out of the per-frame tick.
 - `slam/` — **GPS-less monocular mapping.** Pure-Python `MonocularVO` default +
   optional ORB-SLAM3 backend (`ORBSLAM3Runner`), AprilTag metric-scale anchor,
   and `LocalMap` that bridges the trajectory + landmarks into the world model.
   Public API re-exported from `slam/__init__.py`. See [`slam/README.md`](./slam/README.md)
   and [`../../../docs/SLAM.md`](../../../docs/SLAM.md).
 
-Both detectors can run as an ensemble: an open-vocab YOLO-World detector plus a
-supervised COCO YOLOv8 detector filtered to an opt-in class set
-(`yolo_coco_keep`), partitioning the label space so the same object isn't
-double-counted. Same logic in both the live pipeline and `file_processor.py`.
+Up to three detectors can run as an ensemble: an open-vocab YOLO-World detector,
+a supervised COCO YOLOv8 detector filtered to an opt-in class set
+(`yolo_coco_keep`), and an optional specialty detector filtered to
+`yolo_specialty_keep` with its own confidence threshold (`yolo_specialty_conf`).
+`_run_detectors` merges them, partitioning the label space so the same object
+isn't double-counted. Same logic in both the live pipeline and
+`file_processor.py`. (The COCO + specialty ensemble is what `run-indoor.sh` /
+`run-outdoor.sh` configure.)
