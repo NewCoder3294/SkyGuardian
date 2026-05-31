@@ -450,66 +450,6 @@ export default function LandingPage() {
             ))}
           </div>
 
-          {/* Advisors & Legal */}
-          <div className="mt-4 grid gap-4 md:grid-cols-3">
-            {[
-              {
-                name: "David Resilien",
-                role: "Advisor · Defense",
-                image: null,
-                initials: "DR",
-                points: [
-                  "Ex-Marine, 20+ yrs",
-                  "Deep Marines & DoD connections",
-                  "Multi-time startup founder",
-                ],
-              },
-              {
-                name: "CJ Mavor",
-                role: "Advisor · Business",
-                image: null,
-                initials: "CJ",
-                points: [
-                  "Ex-founder, multiple successful startups",
-                  "15+ yrs at Berkshire Hathaway",
-                ],
-              },
-              {
-                name: "Andre Jun Kim",
-                role: "Legal · Gov & Defense",
-                image: null,
-                initials: "AK",
-                points: [
-                  "Retired Marine, 20+ yrs",
-                  "Extensive DoD & government-contract experience",
-                ],
-              },
-            ].map((person) => (
-              <article key={person.name} className="tac-corners border border-border-strong bg-bg p-6">
-                <div className="flex items-center gap-4">
-                  <div className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border-strong bg-surface">
-                    {person.image ? (
-                      <Image src={person.image} alt={person.name} fill sizes="64px" className="object-cover" />
-                    ) : (
-                      <span className="font-mono text-sm font-semibold text-text-dim">{person.initials}</span>
-                    )}
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-semibold leading-tight">{person.name}</h3>
-                    <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.28em] text-accent">{person.role}</p>
-                  </div>
-                </div>
-                <ul className="mt-4 space-y-2">
-                  {person.points.map((point) => (
-                    <li key={point} className="flex items-start gap-2 text-sm leading-snug text-text-muted">
-                      <span className="mt-1.5 block h-1 w-1 shrink-0 bg-accent" />
-                      {point}
-                    </li>
-                  ))}
-                </ul>
-              </article>
-            ))}
-          </div>
         </div>
       </section>
 
