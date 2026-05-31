@@ -14,6 +14,8 @@ enum DroneFunction: String, CaseIterable {
     case emergency
     case flip           // acrobatic forward flip
     case track          // tag-free visual object tracking ("track that boat")
+    case trackTag = "track_tag"   // lock an AprilTag designating another target
+    case confirm                   // approve the currently-locked target
     // mission intents (routed to the laptop when connected)
     case followMe = "follow_me", hold, recall, stop, approach
 
@@ -63,6 +65,8 @@ enum DroneFunction: String, CaseIterable {
         case .emergency: return "cut motors immediately (failsafe)"
         case .flip: return "perform a forward flip"
         case .track: return "visually track the object the operator has centered"
+        case .trackTag: return "lock onto the AprilTag to designate another target"
+        case .confirm: return "approve the currently shown target lock"
         case .followMe: return "follow the soldier"
         case .hold: return "hold position"
         case .recall: return "return to the soldier"
@@ -168,7 +172,12 @@ enum DroneIntent {
         // "track" (it shows up in incidental speech). The UI track button is gated
         // by an on-screen confirmation; the voice path should be confirmed too
         // (see ContentView.handle) — this just stops accidental triggers at parse.
-        if has(t, ["track that", "track the", "start tracking", "lock on", "lock onto", "follow that", "follow it", "follow him", "follow her"]) { return DroneAction(.track) }
+        // Designate an AprilTag target — before the generic track/follow phrases.
+        if has(t, ["track the tag", "follow the tag", "track that tag", "the apriltag",
+                   "track the apriltag", "designate", "mark that", "lock the tag"]) { return DroneAction(.trackTag) }
+        // Approve the shown lock. Bare "go" is intentionally NOT used (collides with "go up/down/back").
+        if has(t, ["confirm", "confirmed", "lock it in", "approve target", "yes follow"]) { return DroneAction(.confirm) }
+        if has(t, ["track me", "track that", "track the", "start tracking", "lock on", "lock onto", "follow that", "follow it", "follow him", "follow her"]) { return DroneAction(.track) }
         if has(t, ["investigate", "approach the target", "approach target", "investigate that", "go investigate", "move in on"]) { return DroneAction(.approach) }
         if has(t, ["follow", "on me", "come with"]) { return DroneAction(.followMe) }
 
