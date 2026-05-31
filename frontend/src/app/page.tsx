@@ -400,8 +400,8 @@ export default function LandingPage() {
             ].map((person) => (
               <article key={person.name} className="tac-corners border border-border-strong bg-bg p-6">
                 <div className="flex items-center gap-5">
-                  <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-full border border-border-strong bg-surface">
-                    <Image src={person.image} alt={person.name} fill sizes="80px" className="object-cover object-top" />
+                  <div className="relative h-28 w-28 shrink-0 overflow-hidden rounded-full border border-border-strong bg-surface">
+                    <Image src={person.image} alt={person.name} fill sizes="112px" className="object-cover object-top scale-75" />
                   </div>
                   <div>
                     <h3 className="text-xl font-semibold leading-tight">{person.name}</h3>
