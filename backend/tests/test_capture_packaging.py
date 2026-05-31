@@ -82,6 +82,34 @@ def test_package_missing_cleaned_raises(tmp_path: Path):
         package_dataset(tmp_path / "m2", tmp_path / "out", created_t=0.0)
 
 
+def test_gemma_gold_describes_all_entities_when_vouched(tmp_path: Path):
+    mdir = tmp_path / "mg"
+    (mdir / "frames").mkdir(parents=True)
+    cv2.imwrite(str(mdir / "frames/000000.jpg"),
+                np.full((48, 64, 3), 90, dtype=np.uint8))
+    cleaned = mdir / "cleaned"
+    cleaned.mkdir(parents=True)
+    (cleaned / "observations.jsonl").write_text(json.dumps({
+        "v": 1, "t": 0.0, "mission_id": "mg", "frame_path": "frames/000000.jpg",
+        "source": "leader", "image_w": 64, "image_h": 48, "pose": None,
+        "detections": [{"label": "person", "conf": 0.9, "box": [0.3, 0.3, 0.1, 0.1]},
+                       {"label": "vehicle", "conf": 0.9, "box": [0.6, 0.6, 0.2, 0.2]}],
+        "sampled_reason": "cadence",
+    }) + "\n")
+    (cleaned / "cleaning_report.json").write_text(json.dumps({"frames_out": 1}))
+    # Operator confirms a 'person' that is visible here -> frame is vouched.
+    (mdir / "events.jsonl").write_text(json.dumps({
+        "v": 1, "t": 0.0, "mission_id": "mg", "kind": "confirm", "source": "leader",
+        "label": "person",
+    }) + "\n")
+    out = tmp_path / "datasets" / "dg"
+    package_dataset(mdir, out, val_frac=0.0, created_t=1.0)
+    g = json.loads((out / "gemma" / "examples.jsonl").read_text().splitlines()[0])
+    assert g["labeled"] is True
+    # The gold answer lists BOTH entities present, not just the confirmed one.
+    assert "person" in g["gold_answer"] and "vehicle" in g["gold_answer"]
+
+
 def test_reject_drops_boxes_and_unlabeled_gemma(tmp_path: Path):
     mdir = tmp_path / "m3"
     (mdir / "frames").mkdir(parents=True)

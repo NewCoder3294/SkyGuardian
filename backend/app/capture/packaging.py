@@ -9,17 +9,40 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
+from .schema import Event
+
 
 def _is_val(frame_path: str, val_frac: float) -> bool:
     digest = hashlib.md5(frame_path.encode()).hexdigest()
     return (int(digest, 16) % 1000) < int(val_frac * 1000)
 
 
+def _load_events(ev_path: Path) -> list[dict]:
+    """Load events.jsonl, skipping malformed/partial lines (the recorder is
+    append-only and an unclean shutdown can truncate the last line). Mirrors the
+    schema-gate cleaning applies to observations, so packaging never KeyErrors."""
+    out: list[dict] = []
+    if not ev_path.exists():
+        return out
+    for line in ev_path.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+            Event.model_validate(rec)
+        except Exception:  # noqa: BLE001 - skip bad/partial event lines
+            continue
+        out.append(rec)
+    return out
+
+
 def _correction_for(events: list[dict], label: str) -> Optional[str]:
     """Resolve an operator decision for a detection CLASS (matching is class-wide,
     not per-box): the corrected label if a 'correct' event exists for this label,
-    '' if a 'reject' event exists (drop boxes of this class), else None."""
-    for ev in events:
+    '' if a 'reject' event exists (drop boxes of this class), else None. Events are
+    scanned latest-first so the most recent decision for a class wins."""
+    for ev in reversed(events):
         if ev.get("label") != label:
             continue
         if ev["kind"] == "correct" and ev.get("corrected_label"):
@@ -39,10 +62,7 @@ def package_dataset(mission_dir: Path, out_dir: Path, *, val_frac: float = 0.2,
             f"No cleaned data at {cleaned}. Run scripts/clean_captures.py first.")
 
     obs = [json.loads(l) for l in cleaned.read_text().splitlines() if l.strip()]
-    events = []
-    ev_path = mission_dir / "events.jsonl"
-    if ev_path.exists():
-        events = [json.loads(l) for l in ev_path.read_text().splitlines() if l.strip()]
+    events = _load_events(mission_dir / "events.jsonl")
 
     resolved: list[tuple[dict, list[tuple[str, list[float]]]]] = []
     classes: set[str] = set()
@@ -86,19 +106,20 @@ def package_dataset(mission_dir: Path, out_dir: Path, *, val_frac: float = 0.2,
         (out_dir / "yolo" / "labels" / split / f"{stem}.txt").write_text(
             label_txt + ("\n" if label_txt else ""))
 
-        # Gemma gold: scope to events whose label is actually visible in THIS
-        # frame, so a per-frame example isn't mislabeled with an unrelated answer.
-        kept_labels = {lbl for lbl, _ in kept}
+        # Gemma gold: a frame gets a gold answer only when an operator confirm/
+        # correct event vouches for a label visible in THIS frame. The answer then
+        # describes ALL entities present (the prompt asks for a description,
+        # plural) rather than a single class. Unvouched frames stay unlabeled.
+        kept_labels = sorted({lbl for lbl, _ in kept})
+        has_operator_signal = any(
+            ev["kind"] in ("correct", "confirm")
+            and ((ev.get("corrected_label") or ev.get("label")) in kept_labels
+                 or ev.get("label") in kept_labels)
+            for ev in events
+        )
         gold = None
-        for ev in events:
-            if ev["kind"] not in ("correct", "confirm"):
-                continue
-            ans = ev.get("corrected_label") or ev.get("label")
-            # Match either the original or the corrected label against what this
-            # frame actually contains (kept holds post-correction labels).
-            if ans in kept_labels or ev.get("label") in kept_labels:
-                gold = ans
-                break
+        if has_operator_signal and kept_labels:
+            gold = "Entities present: " + ", ".join(kept_labels) + "."
         labeled = gold is not None
         labeled_count += int(labeled)
         gemma_lines.append(json.dumps({

@@ -224,6 +224,23 @@ that the union compiles (no runtime UI in this spec).
 **Mobile (XCTest):** `LabelEvent` encodes to the exact wire shape the backend validates
 (`ContractsTests`).
 
+## Known limitation (operator-label loop is not fully closed in-app)
+
+The live in-app label producer is the phone's follow-target confirm
+(`FollowCoordinator.confirmTarget` → `LabelEvent{kind:"confirm", source:"follower",
+label:nil}`). Two things make it telemetry-only today rather than a closed
+training loop: (1) it carries no class label, and (2) capture records the
+**leader** (Mavic) feed, while the confirm is **follower** (Tello) sourced — so
+there is no captured frame for it to attach to. It is recorded (and counted in
+`manifest.label_events.confirm`) but does not relabel any YOLO box.
+
+The `correct`/`reject` → dataset path IS fully implemented and tested; it is just
+driven by `LabelEvent`s carrying a class label (e.g. a future dashboard
+detection-review UI on the leader feed, or a hand-authored `events.jsonl`). For
+the demo, the correct/reject flywheel is shown via supplied events; closing the
+in-app loop (a leader-feed detection-label affordance, or capturing the follower
+feed too) is the recommended next step and is intentionally out of this scope.
+
 ## Non-goals
 
 - No model training (`train_yolo.py`) — deferred.
