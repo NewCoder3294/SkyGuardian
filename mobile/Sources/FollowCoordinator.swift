@@ -68,6 +68,20 @@ final class FollowCoordinator: ObservableObject {
 
     private weak var stream: TelloDirectStream?
 
+    // Injected for testability; production defaults wire the real singletons/clock.
+    private let commands: DroneCommandSink
+    private let now: () -> CFTimeInterval
+
+    /// Synchronous mirror of `phase` (the @Published one updates on the main queue
+    /// asynchronously). Tests read this immediately after driving the loop.
+    private(set) var currentPhase: Phase = .disarmed
+
+    init(commands: DroneCommandSink = TelloCommander.shared,
+         now: @escaping () -> CFTimeInterval = { CACurrentMediaTime() }) {
+        self.commands = commands
+        self.now = now
+    }
+
     /// Optional sink for operator label decisions (data flywheel). Wired by the app
     /// to WorldClient.sendLabelEvent; nil in tests.
     var onLabel: ((_ kind: String, _ label: String?) -> Void)?
@@ -87,7 +101,7 @@ final class FollowCoordinator: ObservableObject {
         detectQueue.async { self.detector.tagSizeMeters = size }   // mutate detector only on its queue
         stream.onPixelBuffer = { [weak self] pb in self?.ingest(pb) }
 
-        TelloCommander.shared.send("takeoff")
+        commands.send("takeoff")
         rcQueue.async {
             self.mode = .tag         // AprilTag follow; reset so we don't inherit a prior .track arm
             self.armed = true
@@ -96,14 +110,14 @@ final class FollowCoordinator: ObservableObject {
             self.confirmed = false   // operator must confirm the locked target before follow rc
             self.landing = false
             self.latest = nil
-            self.latestTime = CACurrentMediaTime()   // grace period before lost-land
+            self.latestTime = self.now()   // grace period before lost-land
             // Hold off follow rc until the multi-second takeoff climb settles, so
             // autonomous sticks never fight the takeoff.
             self.rcQueue.asyncAfter(deadline: .now() + self.takeoffSettle) {
                 self.tookOff = true
-                self.tookOffAt = CACurrentMediaTime()
+                self.tookOffAt = self.now()
                 self.latest = nil   // re-acquire fresh at hover; don't confirm on a climb-stale lock
-                self.latestTime = CACurrentMediaTime()
+                self.latestTime = self.now()
                 if self.mode == .track {
                     // Re-lock the visual tracker on the hover-height view — the
                     // ground-level lock taken at arm time may not survive the climb.
@@ -126,7 +140,7 @@ final class FollowCoordinator: ObservableObject {
         detectQueue.async { self.tracker.reset() }
         stream.onPixelBuffer = { [weak self] pb in self?.ingest(pb) }
 
-        TelloCommander.shared.send("takeoff")
+        commands.send("takeoff")
         rcQueue.async {
             self.mode = .track       // visual tracker is the target source (set on rcQueue, the owner)
             self.armed = true
@@ -135,12 +149,12 @@ final class FollowCoordinator: ObservableObject {
             self.confirmed = false   // operator must confirm the locked target before track rc
             self.landing = false
             self.latest = nil
-            self.latestTime = CACurrentMediaTime()
+            self.latestTime = self.now()
             self.rcQueue.asyncAfter(deadline: .now() + self.takeoffSettle) {
                 self.tookOff = true
-                self.tookOffAt = CACurrentMediaTime()
+                self.tookOffAt = self.now()
                 self.latest = nil   // re-acquire fresh at hover; don't confirm on a climb-stale lock
-                self.latestTime = CACurrentMediaTime()
+                self.latestTime = self.now()
                 if self.mode == .track {
                     // Re-lock the visual tracker on the hover-height view — the
                     // ground-level lock taken at arm time may not survive the climb.
@@ -164,7 +178,7 @@ final class FollowCoordinator: ObservableObject {
         // coasted on its last command (drift) and felt unresponsive. A continuous
         // hover is the correct, stable manual hold.
         rcQueue.async { self.followActive = false; self.manualHover = true }
-        TelloCommander.shared.rc(.hover)            // immediate neutralize; loop sustains it
+        commands.rc(.hover)            // immediate neutralize; loop sustains it
         setPhase(.manual)
     }
 
@@ -189,7 +203,7 @@ final class FollowCoordinator: ObservableObject {
             self.tookOff = true            // already airborne — no settle delay needed
             self.confirmed = true          // target was confirmed before the takeover; don't re-confirm
             self.latest = nil
-            self.latestTime = CACurrentMediaTime()  // fresh grace before lost-land
+            self.latestTime = self.now()  // fresh grace before lost-land
         }
         setPhase(.searching)
         startRCLoop()                      // idempotent: restart the timer if it isn't running
@@ -199,8 +213,8 @@ final class FollowCoordinator: ObservableObject {
     func disarmAndLand() {
         // Neutralize + land immediately on the caller thread — the failsafe must not
         // wait on the rcQueue. The state teardown that follows is serialized on rcQueue.
-        TelloCommander.shared.rc(.hover)
-        TelloCommander.shared.send("land")
+        commands.rc(.hover)
+        commands.send("land")
         let s = stream
         rcQueue.async {                    // rcTimer + control state are rcQueue-owned
             self.rcTimer?.cancel(); self.rcTimer = nil
@@ -219,7 +233,7 @@ final class FollowCoordinator: ObservableObject {
     func emergencyCut() {
         // Cut motors immediately on the caller thread — the failsafe must not wait on
         // the rcQueue. The state teardown that follows is serialized on rcQueue.
-        TelloCommander.shared.send("emergency")
+        commands.send("emergency")
         let s = stream
         rcQueue.async {
             self.rcTimer?.cancel(); self.rcTimer = nil
@@ -235,11 +249,11 @@ final class FollowCoordinator: ObservableObject {
     // MARK: detection (backpressured — drop frames while busy)
 
     private func ingest(_ pixelBuffer: CVPixelBuffer) {
-        let now = CACurrentMediaTime()
+        let t = now()
         detLock.lock()
-        if busy || now - lastDetect < detectInterval { detLock.unlock(); return }
+        if busy || t - lastDetect < detectInterval { detLock.unlock(); return }
         busy = true
-        lastDetect = now
+        lastDetect = t
         detLock.unlock()
 
         // Snapshot `mode` on its owning queue (rcQueue) before doing detection work, so
@@ -260,7 +274,7 @@ final class FollowCoordinator: ObservableObject {
                 self.rcQueue.async {
                     if let synth {
                         self.latest = synth
-                        self.latestTime = CACurrentMediaTime()
+                        self.latestTime = self.now()
                     }
                 }
                 self.detLock.lock(); self.busy = false; self.detLock.unlock()
@@ -338,19 +352,19 @@ final class FollowCoordinator: ObservableObject {
         // takeoff climb and during a manual takeover we stream a true hover rather
         // than going silent.
         if !tookOff || manualHover {
-            TelloCommander.shared.rc(.hover)
+            commands.rc(.hover)
             return
         }
-        let now = CACurrentMediaTime()
-        let age = now - latestTime
+        let t = now()
+        let age = t - latestTime
         let fresh = age < staleTimeout && latest != nil
         let tag = fresh ? latest : nil
 
         // Target-confirmation gate: after takeoff the drone HOVERS and shows the lock
         // for the operator to approve. No follow/track rc is sent until confirmTarget().
         if !confirmed {
-            TelloCommander.shared.rc(.hover)
-            if now - tookOffAt > confirmTimeout {
+            commands.rc(.hover)
+            if t - tookOffAt > confirmTimeout {
                 // Operator never confirmed — land for safety rather than hover forever.
                 landing = true
                 rcTimer?.cancel(); rcTimer = nil
@@ -362,7 +376,7 @@ final class FollowCoordinator: ObservableObject {
         }
 
         if fresh {
-            TelloCommander.shared.rc(controller.command(for: tag))
+            commands.rc(controller.command(for: tag))
             setPhase(.following)
         } else if age > lostLandTimeout {
             // Lost too long — land once for safety (stop the loop on this very tick).
@@ -370,7 +384,7 @@ final class FollowCoordinator: ObservableObject {
             rcTimer?.cancel(); rcTimer = nil
             DispatchQueue.main.async { self.disarmAndLand() }
         } else {
-            TelloCommander.shared.rc(controller.command(for: nil))   // hover while searching
+            commands.rc(controller.command(for: nil))   // hover while searching
             setPhase(.lost)
         }
     }
@@ -381,7 +395,7 @@ final class FollowCoordinator: ObservableObject {
         rcQueue.async {
             guard self.armed, !self.confirmed else { return }
             self.confirmed = true
-            self.latestTime = CACurrentMediaTime()   // fresh grace as following begins
+            self.latestTime = self.now()   // fresh grace as following begins
             // Emit the label only on a genuine first confirm (inside the guard),
             // so re-tapping CONFIRM can't record a duplicate true-positive.
             DispatchQueue.main.async { self.onLabel?("confirm", nil) }
@@ -390,6 +404,18 @@ final class FollowCoordinator: ObservableObject {
     }
 
     private func setPhase(_ p: Phase) {
+        currentPhase = p
         DispatchQueue.main.async { if self.phase != p { self.phase = p } }
+    }
+
+    // MARK: test seams (internal — used by FollowCoordinatorTests via @testable)
+
+    /// Drive one rc-loop tick synchronously (the production timer calls `tick()`).
+    func tickForTest() { tick() }
+
+    /// Inject a detection as if the detector produced it, `age` seconds ago.
+    func injectDetectionForTest(_ d: TagDetection?, age: CFTimeInterval = 0) {
+        latest = d
+        latestTime = now() - age
     }
 }
