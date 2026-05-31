@@ -36,11 +36,25 @@ def test_map_area_success_writes_and_broadcasts(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(server, "_BUILDINGS_PATH", target)
     monkeypatch.setattr(server, "hub", fake_hub)
     monkeypatch.setattr(server.map_area, "fetch_and_project", lambda lat, lng, r: _payload())
+    # Deterministic non-fatal basemap path: force extraction to fail so the test
+    # never depends on network access.
+    import app.basemap as basemap
+
+    def _no_basemap(*a, **k):
+        raise RuntimeError("no network in test")
+
+    monkeypatch.setattr(basemap, "extract_basemap", _no_basemap)
 
     req = MapAreaRequest(lat=1.0, lng=2.0, radius_m=300)
     result = asyncio.run(server.post_map_area(req, None))
 
-    assert result == {"origin": {"lat": 1.0, "lng": 2.0}, "radius_m": 300, "count": 1}
+    assert result["origin"] == {"lat": 1.0, "lng": 2.0}
+    assert result["radius_m"] == 300 and result["count"] == 1
+    # Basemap staging is best-effort and folded into the response; with no
+    # network it fails non-fatally (None meta + an error string), and the
+    # buildings write/broadcast below still succeed.
+    assert "basemap" in result and result["basemap"] is None
+    assert result["basemap_error"]
     assert json.loads(target.read_text())["count"] == 1
     assert len(fake_hub.sent) == 1
     msg = fake_hub.sent[0]
