@@ -86,6 +86,11 @@ def process_video_file(
     yolo_specialty_weights: Optional[str] = None,
     yolo_specialty_keep: Optional[list[str]] = None,
     yolo_specialty_conf: Optional[float] = None,
+    # Optional fourth detector: UAV / drone supervised model.
+    yolo_drone_weights: Optional[str] = None,
+    yolo_drone_keep: Optional[list[str]] = None,
+    yolo_drone_conf: Optional[float] = None,
+    yolo_drone_label_overrides: Optional[dict[int, str]] = None,
     depth_model: Optional[str] = None,
     depth_scale: float = 5.0,
     sample_fps: float = 5.0,
@@ -155,6 +160,22 @@ def process_video_file(
             )
         except Exception as exc:
             print(f"[file_processor] specialty ensemble disabled: {exc}")
+
+    # Optional fourth detector: UAV/drone model.
+    drone_detector: YoloDetector | None = None
+    drone_keep_set: set[str] = {c.lower() for c in (yolo_drone_keep or [])}
+    if yolo_drone_weights:
+        _drone_conf = yolo_drone_conf if yolo_drone_conf is not None else yolo_conf
+        try:
+            drone_detector = YoloDetector(
+                yolo_drone_weights,
+                conf_threshold=_drone_conf,
+                classes=None,
+                imgsz=yolo_imgsz,
+                class_label_overrides=yolo_drone_label_overrides,
+            )
+        except Exception as exc:
+            print(f"[file_processor] drone ensemble disabled: {exc}")
 
     depth_est = None
     if depth_model:
@@ -256,6 +277,14 @@ def process_video_file(
                 yolo_dets.extend(spec_dets)
             except Exception as exc:
                 print(f"[file_processor] specialty YOLO error: {exc}")
+        if drone_detector is not None:
+            try:
+                drone_dets = drone_detector.detect(bgr)
+                if drone_keep_set:
+                    drone_dets = [d for d in drone_dets if d.label.lower() in drone_keep_set]
+                yolo_dets.extend(drone_dets)
+            except Exception as exc:
+                print(f"[file_processor] drone YOLO error: {exc}")
 
         # --- depth (only when YOLO produced something) --------------------
         depth_map = None
@@ -275,7 +304,11 @@ def process_video_file(
         inv_h = 1.0 / max(h, 1)
         boxes = [
             FrameBox(
-                label=d.label,
+                # Lowercase to match the live broadcast normalisation. Avoids
+                # the dashboard ending up with `yolo_Gun` and `yolo_gun` as
+                # two different world-model slots, and matches the casing the
+                # frontend threat-class check expects.
+                label=d.label.lower(),
                 confidence=d.confidence,
                 cx=float(d.cx_px * inv_w),
                 cy=float(d.cy_px * inv_h),

@@ -78,6 +78,15 @@ class PerceptionPipeline:
         # (e.g. 0.40) while the open-vocab + COCO detectors stay relaxed
         # (e.g. 0.15) for recall on weak-prompt classes.
         yolo_specialty_conf: float | None = None,
+        # Optional fourth detector — a supervised UAV / drone detector that
+        # runs alongside world + COCO + specialty. Mirror configuration.
+        # `yolo_drone_label_overrides` lets the operator remap a non-English
+        # class set (e.g. the Cyrillic Javvanny flying-objects model) to
+        # "drone" so the keep-filter and the dashboard label are uniform.
+        yolo_drone_weights: str | Path | None = None,
+        yolo_drone_keep: list[str] | None = None,
+        yolo_drone_conf: float | None = None,
+        yolo_drone_label_overrides: dict[int, str] | None = None,
         depth_model: str | None = None,
         depth_scale: float = 5.0,
         tag_size_m: float = 0.20,
@@ -99,6 +108,8 @@ class PerceptionPipeline:
         self._coco_keep: set[str] = {c.lower() for c in (yolo_coco_keep or [])}
         self._specialty_detector = None  # YoloDetector | None — specialty/weapons
         self._specialty_keep: set[str] = {c.lower() for c in (yolo_specialty_keep or [])}
+        self._drone_detector = None      # YoloDetector | None — UAV/drone
+        self._drone_keep: set[str] = {c.lower() for c in (yolo_drone_keep or [])}
         self._depth = None          # DepthEstimator | None
         self._health = "starting"
         self._task: asyncio.Task | None = None
@@ -172,6 +183,30 @@ class PerceptionPipeline:
             except ImportError:
                 print("[perception] specialty ensemble disabled: ultralytics missing")
 
+        # Optional fourth detector: supervised UAV / drone model. Mirrors the
+        # specialty detector; lives in its own slot so the operator can mix
+        # weapons + drones independently.
+        if yolo_drone_weights is not None:
+            try:
+                from .yolo import YoloDetector  # noqa: PLC0415
+                _drone_conf = yolo_drone_conf if yolo_drone_conf is not None else yolo_conf
+                self._drone_detector = YoloDetector(
+                    yolo_drone_weights,
+                    conf_threshold=_drone_conf,
+                    classes=None,
+                    imgsz=yolo_imgsz,
+                    class_label_overrides=yolo_drone_label_overrides,
+                )
+                print(
+                    f"[perception] drone ensemble loaded from {yolo_drone_weights} "
+                    f"(keep={sorted(self._drone_keep) or 'ALL'}, conf={_drone_conf}, "
+                    f"imgsz={yolo_imgsz}, remap={bool(yolo_drone_label_overrides)})"
+                )
+            except FileNotFoundError as exc:
+                print(f"[perception] drone ensemble disabled: {exc}")
+            except ImportError:
+                print("[perception] drone ensemble disabled: ultralytics missing")
+
         # Try to load monocular depth model. Failure -> SLAM + YOLO only,
         # entities will clamp to ground plane.
         if depth_model:
@@ -209,6 +244,14 @@ class PerceptionPipeline:
                 results.extend(spec)
             except Exception as exc:
                 print(f"[perception] specialty YOLO error: {exc}")
+        if self._drone_detector is not None:
+            try:
+                drone = self._drone_detector.detect(frame_bgr)
+                if self._drone_keep:
+                    drone = [d for d in drone if d.label.lower() in self._drone_keep]
+                results.extend(drone)
+            except Exception as exc:
+                print(f"[perception] drone YOLO error: {exc}")
         return results
 
     @staticmethod
@@ -375,6 +418,7 @@ class PerceptionPipeline:
                             self._detector is not None
                             or self._coco_detector is not None
                             or self._specialty_detector is not None
+                            or self._drone_detector is not None
                         )
                         if any_detector and frame_bgr is not None:
                             detections = await asyncio.to_thread(
