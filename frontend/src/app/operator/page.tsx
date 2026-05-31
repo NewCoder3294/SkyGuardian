@@ -299,14 +299,12 @@ export default function Page() {
         </div>
       </div>
 
-      <ThreatAlert detections={effectiveDetections} />
-
       <main className="flex min-h-0 flex-1">
         <section className="flex min-h-0 flex-1 flex-col">
           {tab === "feed" && (
             <div className="flex min-h-0 flex-1 flex-col">
               <div className="flex min-h-0 flex-1">
-                <div className="flex min-w-0 flex-1">
+                <div className="relative flex min-w-0 flex-1">
                   {/* `key` includes the source kind + (when in file mode) the
                       uploaded filename so React fully unmounts the prior
                       <video> / <img> when we swap modes or swap clips. Without
@@ -328,6 +326,11 @@ export default function Page() {
                       label="Leader · Recon"
                     />
                   )}
+                  {/* Threat alert anchored to the video pane's bottom-right,
+                      not the viewport. The viewport corner sits behind the
+                      ConsolePanel on this layout — putting the alert here
+                      means the operator always sees it on top of the feed. */}
+                  <ThreatAlert detections={effectiveDetections} />
                 </div>
                 <div className="hidden w-80 shrink-0 md:block">
                   <ConsolePanel log={effectiveDetectionLog} />

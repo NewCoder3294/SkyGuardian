@@ -10,14 +10,18 @@ interface Props {
 }
 
 /**
- * Bottom-right floating alert that fires whenever YOLO sees a weapon-class
- * object in the current frame. Visible on every tab. Auto-clears the moment
- * a clean frame arrives — no manual dismiss needed.
+ * Bottom-right alert that fires whenever YOLO sees a weapon-class object in
+ * the current frame. Positioned *inside the video container* (its parent must
+ * be `position: relative`) so it sits in the operator's video pane bottom-
+ * right rather than the viewport corner — the viewport corner sits behind
+ * the right-side ConsolePanel and is easy to miss.
  *
  * Visual: dark card with a thick signal-red border + a hatched red danger
  * stripe header (the kit's `DangerStripe tone="threat"`), monospaced threat
  * list. Pulse on the dot. Pure B&W elsewhere; red is reserved for exactly this
  * signal — an actual detected threat.
+ *
+ * Auto-clears the moment a clean frame arrives — no manual dismiss needed.
  */
 export function ThreatAlert({ detections }: Props) {
   const active = useMemo(() => {
@@ -41,7 +45,7 @@ export function ThreatAlert({ detections }: Props) {
   return (
     <div
       role="alert"
-      className="tac-corners pointer-events-none fixed bottom-5 right-5 z-50 w-80 overflow-hidden border border-fail/70 bg-surface/95 shadow-[0_0_0_1px_oklch(0.60_0.205_27_/_0.45),0_10px_30px_oklch(0.10_0.01_140_/_0.6)] backdrop-blur-md"
+      className="tac-corners pointer-events-none absolute bottom-5 right-5 z-50 w-80 overflow-hidden border border-fail/70 bg-surface/95 shadow-[0_0_0_1px_oklch(0.60_0.205_27_/_0.45),0_10px_30px_oklch(0.10_0.01_140_/_0.6)] backdrop-blur-md"
     >
       <DangerStripe tone="threat" className="bg-fail/15 py-2 pr-2">
         <span className="inline-flex items-center gap-2">
