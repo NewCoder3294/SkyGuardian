@@ -35,8 +35,8 @@ const domains = [
     label: "Land",
     mission: "Perimeter security and force protection",
     value: "Route observation, missing person search, disaster response, and small unit overwatch.",
-    image: "https://images.unsplash.com/photo-1562408590-e32931084e23?w=1200&q=85",
-    alt: "Soldiers on patrol in field terrain",
+    image: "https://images.unsplash.com/photo-1689251713718-b7383ffa100c?w=1200&q=85",
+    alt: "Tactical soldiers on patrol through forest terrain",
   },
   {
     label: "Air",
@@ -401,7 +401,7 @@ export default function LandingPage() {
               <article key={person.name} className="tac-corners border border-border-strong bg-bg p-6">
                 <div className="flex items-center gap-5">
                   <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-full border border-border-strong bg-surface">
-                    <Image src={person.image} alt={person.name} fill sizes="80px" className="object-cover scale-[0.7] object-top" />
+                    <Image src={person.image} alt={person.name} fill sizes="80px" className="object-cover object-top" />
                   </div>
                   <div>
                     <h3 className="text-xl font-semibold leading-tight">{person.name}</h3>
