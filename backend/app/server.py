@@ -198,9 +198,10 @@ _BUILDINGS_PATH = Path(__file__).resolve().parent.parent.parent / ".context" / "
 _INTEL_MODEL_ENV = os.environ.get("INTEL_MODEL", "gemma3:4b")
 _INTEL_ENABLED = _INTEL_MODEL_ENV.lower() != "off"
 _INTEL_INTERVAL_S = float(os.environ.get("INTEL_INTERVAL_S", "5"))
-# Vision pass is ~30× slower than text-only on M-series for Gemma 3. Default
-# off; set INTEL_VISION=1 to enable image-aware reasoning.
-_INTEL_VISION = os.environ.get("INTEL_VISION", "0") == "1"
+# Vision pass is ~30× slower than text-only on M-series for Gemma 3. Default ON
+# (image-aware reasoning) for the demo; set INTEL_VISION=0 to fall back to the
+# faster text-only path if the dashboard feels sluggish.
+_INTEL_VISION = os.environ.get("INTEL_VISION", "1") == "1"
 _intel_reasoner: IntelReasoner | None = (
     IntelReasoner(model=_INTEL_MODEL_ENV, with_vision=_INTEL_VISION) if _INTEL_ENABLED else None
 )
