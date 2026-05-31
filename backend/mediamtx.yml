@@ -1,0 +1,30 @@
+# SkyGuardian — local RTMP relay (MediaMTX). Offline / LAN-only, no cloud.
+#
+# Flow:  [ Mavic publisher: DJI HDMI capture / DJI app / ffmpeg ]
+#          --RTMP--> rtmp://<laptop-lan-ip>:1935/live
+#                    --> MediaMTX (this relay) --> backend reads loopback
+#                        rtmp://127.0.0.1:1935/live --> JPEG --> dashboard
+#
+# The backend (MAVIC_SOURCE / the dashboard "RTMP" button) reads the `live`
+# path by default, so that path is defined explicitly below. `all_others`
+# accepts any other publish path too (e.g. live/test) for flexibility.
+
+logLevel: info
+
+api: yes
+apiAddress: :9997
+
+rtsp: no
+hls: no
+webrtc: no
+srt: no
+
+rtmp: yes
+rtmpAddress: :1935
+
+paths:
+  # Default path the SkyGuardian backend reads (rtmp://127.0.0.1:1935/live).
+  live:
+    source: publisher
+  # Accept any other publish path as well.
+  all_others:

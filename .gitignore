@@ -26,6 +26,7 @@ captures/**/*.avi
 .DS_Store
 .idea/
 .vscode/
+.claude/
 
 # Conductor workspace scratch (attachments, pasted instructions, generated
 # AprilTags, MediaMTX config). Never commit — local-only working state.
