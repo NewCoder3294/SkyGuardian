@@ -146,3 +146,12 @@ def test_upload_transaction_flow():
     assert "/api/v2/datasets/ri.ds.1/transactions" in paths
     assert "/api/v2/datasets/ri.ds.1/files/manifest.json/upload" in paths
     assert "/api/v2/datasets/ri.ds.1/transactions/ri.tx.1/commit" in paths
+
+
+def test_exhausted_retries_surface_real_status():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, json={"errorCode": "UNAVAILABLE"})
+    c = _client(handler)
+    with pytest.raises(FoundryApiError) as ei:
+        c.apply_action("create-capture-mission", {})
+    assert ei.value.status == 503   # real status, never a confusing 0

@@ -104,7 +104,7 @@ class FoundryApiError(RuntimeError):
     def __init__(self, status: int, body: str):
         super().__init__(f"Foundry API error {status}: {body[:500]}")
         self.status = status
-        self.body = body
+        self.body = body[:500]   # bound to avoid bloating tracebacks/logs
 
 
 class FoundryClient:
@@ -116,10 +116,9 @@ class FoundryClient:
                  sleep: Callable[[float], None] = time.sleep) -> None:
         self._cfg = config
         self._sleep = sleep
-        self._http = http or httpx.Client(
-            base_url=config.host, timeout=config.timeout_s,
-            headers={"Authorization": f"Bearer {config.token}"},
-        )
+        # Auth is set per-request in _request (the single source of truth), so the
+        # default client does not also set it (avoids a redundant double header).
+        self._http = http or httpx.Client(base_url=config.host, timeout=config.timeout_s)
 
     def _request(self, method: str, path: str, *, json=None, content=None,
                  headers=None, params=None) -> httpx.Response:
@@ -127,6 +126,7 @@ class FoundryClient:
         if headers:
             hdrs.update(headers)
         last_exc: Optional[Exception] = None
+        last_resp: Optional[httpx.Response] = None
         for attempt in range(self._cfg.max_retries + 1):
             try:
                 resp = self._http.request(method, path, json=json, content=content,
@@ -138,12 +138,16 @@ class FoundryClient:
                 self._sleep(min(8.0, 0.5 * (2 ** attempt)))
                 continue
             if resp.status_code in _RETRYABLE_STATUS and attempt < self._cfg.max_retries:
+                last_resp = resp
                 self._sleep(min(8.0, 0.5 * (2 ** attempt)))
                 continue
             if resp.status_code >= 400:
                 raise FoundryApiError(resp.status_code, resp.text)
             return resp
-        # Exhausted retries on a retryable status.
+        # Only reached on a misconfigured non-positive max_retries; surface the
+        # real status if we have one rather than a confusing 0.
+        if last_resp is not None:
+            raise FoundryApiError(last_resp.status_code, last_resp.text)
         raise FoundryApiError(0, f"exhausted retries: {last_exc!r}")
 
     def preflight(self) -> None:
