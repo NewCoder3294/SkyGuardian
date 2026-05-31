@@ -98,6 +98,32 @@ filter to a tag id with `FOLLOW_TAG_ID`).
 
 ---
 
+## 4b. What to show — designation, scout, on-device detection
+
+- **Target designation (dashboard):** the laptop's `Designator` auto-picks the
+  top-priority recon detection each tick (ACTIVE YOLO, high-value label) and marks
+  it as a `designated_target` entity; **both** the 2D and 3D maps draw a matching
+  red targeting reticle on it (shared `isDesignatedTarget` helper), so the cue
+  survives a 2D/3D toggle. Read-only awareness, commands nothing.
+- **Scout (phone):** trigger the bounded scout and narrate the explore → scan →
+  **retrace home** legs — soldier-commanded, distance/rotation/time bounded, LAND/STOP
+  preempts. Not autonomous pursuit.
+- **On-device Tello detection (phone FEED tab):** `TelloObjectDetector` draws live
+  CoreML `yolov8n` (COCO) bounding boxes over the companion feed, fully on-device.
+  Point out it's COCO-class only (person/vehicle/etc.) — **not** weapon detection.
+
+## 4c. Playback / VOD timestamp behavior (parity with live)
+
+When you upload a clip and scrub it, playback now behaves the same as the live
+feed for alerts and age. The dashboard synthesizes each playback detection in the
+**wall-clock epoch** domain the live consumers assume (the current playhead frame
+is mapped to "now", earlier frames are aged behind it), instead of the raw
+video-relative `f.t`. So during VOD playback the ThreatAlert banner fires on the
+current frame's boxes, the IntelPanel "visible now" dot / `activeThreats` light up,
+and the "age"/timestamps read correctly — at parity with live RTMP. (Earlier the
+playback path leaked video-relative time, ~12.5 s, into these unix-epoch consumers,
+which nullified alerts and rendered 1970 timestamps; that is fixed.)
+
 ## 5. Pre-flight safety checklist
 
 - [ ] Laptop `/health` reports `"tello": "disabled"` — only the phone commands the Tello.

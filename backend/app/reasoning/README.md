@@ -94,8 +94,8 @@ Best-effort async liveness probe — `GET /api/tags` with a 2 s timeout, returns
   - `INTEL_MODEL` — Ollama model tag, default `gemma3:4b`. Set to `off` to
     disable reasoning entirely even when Ollama is up (`_INTEL_ENABLED` is
     `False`, so neither the loop, the reasoner, nor the chat client are created).
-  - `INTEL_VISION` — `1` enables the slower image-aware path; default `0`
-    (text-only).
+  - `INTEL_VISION` — `1` enables the image-aware path; **default now `1`** (the
+    demo runs vision); set `0` for the ~30× faster text-only path.
   - `INTEL_INTERVAL_S` — loop cadence in seconds, default `5`.
 - **Construction:** a single `IntelReasoner` and `IntelChat` are built at import
   time (both `None` when disabled), alongside an `_intel_state` dict
@@ -117,6 +117,18 @@ Best-effort async liveness probe — `GET /api/tags` with a 2 s timeout, returns
     + observed labels and calls `IntelChat.reply`. Returns
     `{reply, ok, model}` (or `ok: false` with a message when reasoning is
     disabled or the local LLM is offline).
+  - `POST /intel/deep-look` — on-demand vision pass through a separate
+    vision-on reasoner.
+
+> **One shared Ollama, serialized behind one lock.** The periodic loop,
+> `/intel/deep-look`, and `/intel/chat` all POST to the **same** local Ollama
+> (`127.0.0.1:11434`). They are serialized by a single process-wide
+> `asyncio.Lock` (`_get_ollama_lock()` in `server.py`, acquired around every
+> `summarise()`/chat call), so only one inference runs at a time — a deep-look
+> (~30–120 s vision pass) and the periodic loop can't double the load. The
+> periodic loop additionally sets `_intel_state["running"]` purely so
+> `/intel/summary` can show a "thinking" state. Consequence of the shared lock is
+> latency only — callers queue; the 180 s timeout gives headroom.
 
 The frontend renders these via `IntelSummaryCard` and `IntelChat`
 (see [`../../../frontend/src/components/`](../../../frontend/src/components/)).

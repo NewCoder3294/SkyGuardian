@@ -11,9 +11,12 @@ for the spec + hard constraints.
 Two control surfaces coexist here, by design:
 - **Direct phone↔Tello flight** over UDP via [`TelloCommander`](#direct-tello-flight-no-laptop)
   — the phone is the primary controller on the Tello AP (manual voice moves + the on-device
-  follow loop). Per the spec the Tello is only ever driven by one controller at a time, so
-  the laptop's `FollowController` stays disarmed while the phone is flying (no code interlock
-  yet — an operating rule).
+  follow loop). Per the spec the Tello is only ever driven by one controller at a time. A
+  **code interlock now exists** on the laptop (`backend/app/follow/arming.py` `ArmingLock`):
+  arming owner `"phone"` disarms every laptop controller, so the laptop's `FollowController` /
+  approach loop can't drive the Tello while the phone flies. It backstops — but does not
+  replace — the operating rule, since the phone talks to the Tello over its own AP outside
+  the laptop's lock.
 - **Mission intent over the WS** to the laptop (`follow_me`/`hold`/`recall`/`stop`)
   via [`WorldClient`](#contracts--networking) — the laptop owns SLAM + the shared world model.
 
@@ -113,6 +116,32 @@ by [`ModelDownloader`](#voice--intent) and the SETUP overlay blocks the UI until
   `disarmed`/`searching`/`confirming`/`following`/`lost`/`manual` (lowercase `label` mirrors
   the backend `FollowState.phase`). Publishes `phase`/`distance`/`bearingDeg`/normalized box
   corners.
+  - **Continuous rc stream:** the rc loop always streams at a fixed ~15 Hz cadence — when
+    following it sends `FollowController`'s sticks, and when paused/lost/manual it streams a
+    steady **hover** (zero sticks) rather than going dead-air, so the Tello never coasts on a
+    stale command and drifts. Manual voice takeover (`pauseToManual`/`resumeFollow`) keeps the
+    loop alive in this hover mode.
+  - **Control-state invariant:** all control state — including `mode` (`.tag`/`.track`),
+    `rcTimer`, `followActive`, `manualHover` — is touched **only on `rcQueue`** (the comment
+    at the field declarations states this). The detect tap snapshots what it needs via the
+    queue; teardown (`disarmAndLand`/`emergencyCut`) runs inside the single owning
+    `rcQueue.async` block ordered after timer cancellation, so the stop/failsafe path is
+    serialized with respect to in-flight detect/rc work. Keep new control state on `rcQueue`;
+    do not add cross-thread `var`s.
+  - **Arming-lock model (laptop side):** the phone is the armed Tello controller; the laptop's
+    `ArmingLock` represents this as owner `"phone"`, which disarms the laptop's
+    `FollowController`/approach loop so they can't contend for the link.
+
+### Soldier-commanded scout
+- [`ScoutController.swift`](./ScoutController.swift) — **NEW.** A bounded, soldier-COMMANDED
+  explore maneuver for the companion Tello. On command the pet leaves the follow, explores
+  ahead in a few short legs (each capped, demo-safe), rotates to scan at each, then
+  **retraces its exact path** (every recorded move reversed and inverted) back to the
+  soldier and resumes following. The `Scout.plan(...)` step builder is pure and deterministic
+  (unit-testable, no hardware); `ScoutStep` carries a raw Tello SDK command + wait + a
+  retracing flag. Soldier-directed and bounded in distance/rotation/time — **not** autonomous
+  pursuit. LAND/STOP (`FollowCoordinator.disarmAndLand`/`emergencyCut`) preempt at any time;
+  retrace drift is corrected when the follow loop re-acquires the soldier's tag.
 
 ### Video
 Two independent paths; the FEED tab shows the **direct** one (which also hosts the
@@ -133,6 +162,14 @@ follow/track loop). The MJPEG relay path is built but not currently in the FEED 
 - [`MJPEGView.swift`](./MJPEGView.swift) — **laptop-relay** path: `MJPEGStream` reads the
   backend's MJPEG (`multipart/x-mixed-replace`) feed, deriving the HTTP URL from the ws
   server URL (e.g. `/video/tello`). Built and usable; not currently wired into the FEED toggle.
+- [`TelloObjectDetector.swift`](./TelloObjectDetector.swift) — **NEW.** On-device object
+  detection over the companion Tello feed. Runs a bundled CoreML **`yolov8n`** (COCO classes,
+  NMS baked in) via Vision over the decoded frames (tapped via
+  `TelloDirectStream.onPixelBufferSecondary`) and publishes `DetectedObject` boxes (label +
+  confidence + normalized SwiftUI top-left rect) for the feed overlay. Throttled so it never
+  starves the follow loop or the video; Vision runs on a serial background queue, published
+  updates hop to main. Fully on-device. COCO-class only — **not** weapon detection (see
+  the Detection note in `../../CLAUDE.md`).
 
 ### Map
 - [`OSMMapView.swift`](./OSMMapView.swift) — MapKit-backed map on an **OpenStreetMap**
@@ -160,6 +197,19 @@ follow/track loop). The MJPEG relay path is built but not currently in the FEED 
   basemap and the `Localizer`/local-frame conversion. Coarse accuracy + distance filter to
   avoid re-anchoring on every fix. (The spec's "device location for follow-me context"; not
   yet pushed to the laptop — see Planned.)
+- [`AnchorCamera.swift`](./AnchorCamera.swift) — **NEW.** Phone back-camera capture that
+  detects the **launch anchor AprilTag** (the same tag the Mavic anchors on) and publishes
+  its latest range + bearing (`AnchorFix`). Frames feed the local `AprilTagDetector`
+  (tag36h11) on a dedicated `videoQueue` (the detector is touched exclusively there);
+  published updates hop to main. Fully offline / on-device; not `@MainActor`.
+- [`FrameAligner.swift`](./FrameAligner.swift) — **NEW.** `@MainActor ObservableObject` that
+  co-registers the phone's launch frame (operator at origin, north-up) with the shared
+  **WORLD** frame (launch anchor tag = origin, north-up). Both frames are north-up so the
+  alignment is a pure translation: observing the anchor tag at (distance, bearing) with the
+  compass heading places the operator at the negative tag offset in the tag-origin world
+  frame; re-observing the tag refreshes the translation (drift correction). This is what lets
+  the phone publish world-frame `EntityReport`s that upsert into the laptop world model and
+  render on the **shared** map (no longer just a relative inset).
 
 ### UI / theme
 - [`ControlBar.swift`](./ControlBar.swift) — FOLLOW/HOLD/RECALL + a dominant,

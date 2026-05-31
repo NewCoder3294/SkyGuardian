@@ -108,8 +108,20 @@ grep "WebSocket /ws" <backend-log> | grep -v 127.0.0.1 | tail   # phone IP appea
 - **Map sync proof:** phone's `device_location` (needs Location permission) appears
   as a **soldier dot on both** the phone and the dashboard simultaneously.
 - **Follow inset:** once the phone publishes `follow_state`, the dashboard radar
-  shows the Tello's relative range/bearing (not co-registered with the SLAM map —
-  it's a relative inset by design).
+  shows the Tello's relative range/bearing.
+- **Co-registered entities:** the phone also observes the launch anchor tag
+  (`AnchorCamera` + `FrameAligner`) and publishes world-frame `EntityReport`s, so
+  the operator + drone now place on the **shared map**, not only the relative inset.
+- **Target designation:** the laptop `Designator` marks the top-priority recon
+  detection as `designated_target`; the 2D map draws a red reticle on it.
+- **Scout maneuver (phone):** the bounded explore → scan → retrace-home loop.
+- **On-device Tello detection (phone FEED):** live CoreML `yolov8n` (COCO) boxes
+  over the companion feed — COCO-class only, **not** weapon detection.
+
+> **Playback/VOD note:** scrubbing an uploaded clip is now at **parity with live** for
+> alerts/age — the dashboard maps playback detections into the wall-clock epoch domain
+> (current playhead = "now"), so ThreatAlert fires and the "visible now"/age readouts are
+> correct on a scrubbed clip, not just the live RTMP feed.
 
 ---
 
