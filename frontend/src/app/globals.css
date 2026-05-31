@@ -72,15 +72,9 @@
 .operator-theme .hud-grid-drift {
   background-image: none;
 }
+/* No sweeping scan beam in the operator console. */
 .operator-theme .scan-beam {
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    oklch(0.20 0 0 / 0.08) 46%,
-    oklch(0.20 0 0 / 0.22) 50%,
-    oklch(0.20 0 0 / 0.08) 54%,
-    transparent 100%
-  );
+  display: none;
 }
 .operator-theme .glow-cyan { box-shadow: 0 0 0 1px oklch(0.20 0 0 / 0.45); }
 .operator-theme .glow-blue { box-shadow: 0 0 0 1px oklch(0.20 0 0 / 0.45); }
