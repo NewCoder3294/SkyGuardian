@@ -62,6 +62,7 @@ from .contracts import (
     parse_client_message,
 )
 from .follow.approach import ApproachController
+from .designation import Designator
 from .follow.arming import ArmingLock
 from .follow.controller import FollowController
 from .perception.file_processor import process_video_file
@@ -339,6 +340,11 @@ approach = ApproachController(
     owner="approach",
 )
 
+# Mission-consistent target designation: ranks recon (Mavic/YOLO) detections and
+# marks the top one for the operator. Read-only situational awareness — commands
+# nothing. Emits a `designated_target` world entity that rides the broadcast.
+_designator = Designator()
+
 
 def _route_arming_for_command(command: Command, lock: ArmingLock) -> None:
     """Transfer the Tello arming lock to match the commanded mode."""
@@ -392,6 +398,24 @@ async def _broadcast_loop() -> None:
         # single producer of world/mission/health for every client.
         try:
             now = clock.now()
+            # Target designation: rank current recon detections, mark the top one
+            # as `designated_target` so both maps can highlight it. No-op (TTL
+            # clears the prior mark) when there's no high-value candidate. The
+            # emitted entity is excluded from re-selection (its label isn't a
+            # high-value class), so there's no feedback loop.
+            _threat = _intel_summary.threat_level if _intel_summary is not None else "unknown"
+            _designation = _designator.select(world.snapshot(), _threat)
+            if _designation is not None:
+                world.upsert(Entity(
+                    id="designated_target",
+                    type=EntityType.POI,
+                    position=_designation.position,
+                    confidence=_designation.confidence,
+                    timestamp=now,
+                    source=EntitySource.YOLO,
+                    label=f"DESIGNATED: {_designation.label}",
+                    ttl_s=3.0,
+                ))
             await hub.broadcast(WorldSnapshot(entities=world.snapshot(), t=now))
             await hub.broadcast(MissionState(
                 stage=mission.stage.value,
