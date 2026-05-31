@@ -108,7 +108,7 @@ The state-mutating POSTs (`/video/source/rtmp`, `/video/source/upload`) are a
 drone control plane even on a closed LAN, so they get a CSRF/DoS floor:
 
 - **CORS** is an allowlist, not `*` — origins come from `DASHBOARD_ORIGINS`
-  (default `http://localhost:3001,http://127.0.0.1:3001`), methods `GET`/`POST`.
+  (default `http://localhost:3000,http://127.0.0.1:3000`), methods `GET`/`POST`.
 - **`OPERATOR_KEY`** (optional): when set, every mutating POST must supply a
   matching `X-Operator-Key` header or it's rejected `401`. No-op when unset
   (local demos stay frictionless).
@@ -173,7 +173,7 @@ server is unreachable — no cloud, ever.
 | Var | Default | Meaning |
 |---|---|---|
 | `BROADCAST_HZ` | `10` | world/mission/health/detections fan-out rate. |
-| `DASHBOARD_ORIGINS` | `http://localhost:3001,http://127.0.0.1:3001` | CORS allowlist (comma-separated). |
+| `DASHBOARD_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | CORS allowlist (comma-separated). |
 | `OPERATOR_KEY` | _(unset)_ | Shared secret gating mutating POSTs via `X-Operator-Key`. Unset → open. |
 | `MAX_UPLOAD_MB` | `500` | Upload size cap (MB). |
 

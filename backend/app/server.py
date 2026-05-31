@@ -160,7 +160,7 @@ _UPLOADS_DIR = Path(__file__).resolve().parent.parent.parent / ".context" / "upl
 _DASHBOARD_ORIGINS = [
     o.strip()
     for o in os.environ.get(
-        "DASHBOARD_ORIGINS", "http://localhost:3001,http://127.0.0.1:3001"
+        "DASHBOARD_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
     ).split(",")
     if o.strip()
 ]
@@ -400,7 +400,7 @@ def _route_arming_for_command(command: Command, lock: ArmingLock) -> None:
         lock.release("approach"); lock.acquire("follow")
 
 app = FastAPI(title="SkyGuardian — local brain")
-# Dashboard runs on a different port (3001) and pulls MJPEG/JPEG via <img src>.
+# Dashboard runs on a different port (3000) and pulls MJPEG/JPEG via <img src>.
 # Browsers enforce CORS even on streaming responses; restrict to the known
 # dashboard origin(s) rather than "*" so a random page can't read our feeds or
 # drive the state-mutating POSTs. See _DASHBOARD_ORIGINS above.

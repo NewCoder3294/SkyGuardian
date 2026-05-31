@@ -102,7 +102,7 @@ backend/                 # the brain (Python, FastAPI)
                          #   test_contracts test_state_machine test_video
                          #   test_world_model test_upload_guards slam/*
 
-frontend/                # web dashboard (Next.js + Tailwind, runs on port 3001)
+frontend/                # web dashboard (Next.js + Tailwind, runs on port 3000)
   src/app/               # layout.tsx globals.css
     page.tsx             #   marketing landing page (public-facing)
     operator/page.tsx    #   operator dashboard (Feed/Map/Intel tabs)
@@ -159,7 +159,7 @@ models/  captures/       # local data dirs (weights, recorded feeds)
 - Constrain output to a fixed command vocabulary (structured intent enum), not free text.
 
 **Web dashboard (laptop)**
-- Next.js 14 + Tailwind. Runs on port 3001; pulls MJPEG/JPEG video + the WS world model from the brain (default `ws://localhost:8000/ws`, via `src/lib/wsConfig.ts`; override with `NEXT_PUBLIC_WS_URL`).
+- Next.js 14 + Tailwind. Runs on port 3000; pulls MJPEG/JPEG video + the WS world model from the brain (default `ws://localhost:8000/ws`, via `src/lib/wsConfig.ts`; override with `NEXT_PUBLIC_WS_URL`).
 - `/` is a public-facing marketing landing page (`src/app/page.tsx`); the operator dashboard lives at `/operator` (`src/app/operator/page.tsx`) with Feed/Map/Intel tabs.
 - Renders the world model as a top-down 2D tactical map (`LocalMap2D`) and a `three.js` 3D scene (`LocalMap3D`/`Buildings`), both overlaying the pre-cached OSM footprints from `/map/buildings`. The intel reasoner surfaces as `IntelSummaryCard` (periodic assessment) and `IntelChat` (operator Q&A). `FollowInset` renders the rebroadcast `FollowState` (Tello follow phase + relative range/bearing).
 - Dark tactical aesthetic. Define design tokens first (layered near-black, one accent, hairline borders, mono numerals). Avoid generic defaults.

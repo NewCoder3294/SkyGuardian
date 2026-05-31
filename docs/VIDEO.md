@@ -85,7 +85,7 @@ The brain is a drone control plane, so even on a closed LAN the state-mutating
 video endpoints get a CSRF/DoS floor:
 
 - **CORS allowlist** — `CORSMiddleware` is restricted to `DASHBOARD_ORIGINS`
-  (default `http://localhost:3001,http://127.0.0.1:3001`, comma-split), not
+  (default `http://localhost:3000,http://127.0.0.1:3000`, comma-split), not
   `*`, with `allow_methods=["GET","POST"]`. Browsers enforce CORS even on
   streaming responses, so a random page can't read the feeds or drive the POSTs.
 - **Operator key** — `_require_operator` gates the POSTs (`/video/source/rtmp`,
@@ -196,7 +196,7 @@ MAVIC_SOURCE=url:rtmp://127.0.0.1:1935/live backend/run.sh
 When `OPERATOR_KEY` is set, the source-swap/upload POSTs require an
 `X-Operator-Key: <key>` header.
 
-The dashboard runs on a separate port (3001) and derives these HTTP URLs from
+The dashboard runs on a separate port (3000) and derives these HTTP URLs from
 its WebSocket URL via `httpFromWs` in `frontend/src/lib/feedUrl.ts`, so it works
 against any LAN host.
 

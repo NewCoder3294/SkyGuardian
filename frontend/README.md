@@ -19,7 +19,7 @@ Two routes in one Next.js app:
   observe-only. Offline-only; no external dependencies at runtime.
 
 **To reach the dashboard**, navigate to `/operator` (the root `/` is now the
-landing page) — e.g. `http://localhost:3001/operator`, or click "Operator" /
+landing page) — e.g. `http://localhost:3000/operator`, or click "Operator" /
 "Open operator UI" in the landing header/hero/CTA.
 
 Stack: Next.js 14 (App Router) + React 18 + Tailwind 3 + TypeScript. The 3D map
@@ -169,19 +169,19 @@ treats every channel as strictly binary — ONLINE or OFFLINE, no middle tier
 ```bash
 cd frontend
 npm install
-npm run dev                                  # landing: http://localhost:3001
-                                             # dashboard: http://localhost:3001/operator
+npm run dev                                  # landing: http://localhost:3000
+                                             # dashboard: http://localhost:3000/operator
 # remote/LAN brain:
 NEXT_PUBLIC_WS_URL=ws://192.168.10.1:8000/ws npm run dev
 ```
 
-`http://localhost:3001/` serves the marketing landing page; the operator
-dashboard is at **`/operator`**. Dev/start ports are pinned to **3001** in
+`http://localhost:3000/` serves the marketing landing page; the operator
+dashboard is at **`/operator`**. Dev/start ports are pinned to **3000** in
 `package.json` so the app doesn't collide with anything else on 3000. Scripts:
 
-- `npm run dev` — `next dev -p 3001`
+- `npm run dev` — `next dev -p 3000`
 - `npm run build` — `next build`
-- `npm start` — `next start -p 3001` (serves the production build)
+- `npm start` — `next start -p 3000` (serves the production build)
 - `npm run lint` — `next lint`
 - `npm test` — `vitest run` (one-shot); `npm run test:watch` for watch mode
 

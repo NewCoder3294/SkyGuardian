@@ -37,7 +37,7 @@ engagement, ever.** See [`CLAUDE.md`](./CLAUDE.md) for the hard constraints, and
                                    │   │                                   │
                                    │   ▼                                   │
                                    │ WorldModel ─ WS broadcast (BROADCAST_HZ) ──> Dashboard
-                                   │   ▲                                   │     (Next.js, :3001, /operator)
+                                   │   ▲                                   │     (Next.js, :3000, /operator)
                                    │ MissionStateMachine                   │      - Feed (polled JPEG + overlay)
                                    │   ▲                                   │      - Map (2D + 3D Three.js + OSM)
                                    │ IntelReasoner / IntelChat (Ollama)    │      - Intel summary + operator chat
@@ -128,7 +128,7 @@ honours them from any stage.
 │   ├── tests/                     # pytest, deterministic (FakeClock); + slam/
 │   ├── run.sh                     # uvicorn app.server:app on :8000
 │   └── requirements.txt           # incl. python-multipart for upload
-├── frontend/                      # operator dashboard (Next.js 14 + Tailwind, :3001)
+├── frontend/                      # operator dashboard (Next.js 14 + Tailwind, :3000)
 │   └── src/
 │       ├── app/                   # layout.tsx, globals.css
 │       │   ├── page.tsx           # marketing LANDING page (route /), links to /operator
@@ -221,7 +221,7 @@ Configure producers with env vars (or edit `run.sh`):
 | `INTEL_MODEL` | `gemma3:4b` | local Ollama model for reasoning + chat; `off` disables the intel layer |
 | `INTEL_VISION` | `0` | `1` enables image-aware reasoning (~30× slower than text-only) |
 | `INTEL_INTERVAL_S` | `5` | reasoning-loop interval |
-| `DASHBOARD_ORIGINS` | `http://localhost:3001,http://127.0.0.1:3001` | CORS allowlist for state-mutating POSTs |
+| `DASHBOARD_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | CORS allowlist for state-mutating POSTs |
 | `OPERATOR_KEY` | _(unset = no auth)_ | when set, gates POSTs behind an `X-Operator-Key` header |
 | `MAX_UPLOAD_MB` | `500` | per-file upload cap |
 
@@ -245,11 +245,11 @@ HTTP surface (read `server.py` for exact behaviour): `GET /health`,
 ```bash
 cd frontend
 npm install                            # one time
-npm run dev                            # http://localhost:3001
+npm run dev                            # http://localhost:3000
 ```
 
-`http://localhost:3001/` is a marketing **landing** page; the **operator dashboard**
-lives at **`http://localhost:3001/operator`** (the landing page's "Operator" links
+`http://localhost:3000/` is a marketing **landing** page; the **operator dashboard**
+lives at **`http://localhost:3000/operator`** (the landing page's "Operator" links
 point there). The dashboard pulls video via polled single-frame JPEG
 (`/video/leader.jpg`, `/video/follower.jpg`) and subscribes to the world model over
 WebSocket. Set `NEXT_PUBLIC_WS_URL=ws://<laptop-ip>:8000/ws` to reach the brain from

@@ -68,7 +68,7 @@ exposes:
 - `GET /intel/summary`, `POST /intel/chat` — on-device reasoning (below).
 
 State-mutating endpoints (RTMP swap, upload) are hardened for a closed LAN: CORS
-allowlist (`DASHBOARD_ORIGINS`, default `http://localhost:3001,http://127.0.0.1:3001`),
+allowlist (`DASHBOARD_ORIGINS`, default `http://localhost:3000,http://127.0.0.1:3000`),
 optional shared secret (`OPERATOR_KEY` → `X-Operator-Key` header), upload size
 cap (`MAX_UPLOAD_MB`, default 500), and a video-extension allowlist.
 
@@ -132,7 +132,7 @@ Tests: `cd backend && .venv/bin/python -m pytest -q` (`tests/`:
 
 ## Web dashboard (`frontend/`)
 
-Next.js 14 + Tailwind. Runs on its own port (3001) and pulls leader/follower
+Next.js 14 + Tailwind. Runs on its own port (3000) and pulls leader/follower
 video as JPEG/MJPEG from the brain; everything else arrives over the `/ws` stream
 (`src/lib/useWorldClient.ts`).
 

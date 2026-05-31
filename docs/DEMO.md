@@ -40,17 +40,17 @@ fly the Tello. So everything lives on **one network: the Tello's own AP**.
 cd backend
 TELLO_DISABLE=1 \              # laptop never commands the Tello (phone owns it)
 MAVIC_SOURCE=url:rtmp://127.0.0.1:1935/live \   # or omit and click "RTMP" in the dashboard
-DASHBOARD_ORIGINS=http://localhost:3001 \
+DASHBOARD_ORIGINS=http://localhost:3000 \
 ./run.sh                       # uvicorn app.server:app --host 0.0.0.0 --port 8000
 ```
 
 Then the dashboard (separate terminal):
 
 ```bash
-cd frontend && npm run dev     # http://localhost:3001 — operator dashboard at /operator
+cd frontend && npm run dev     # http://localhost:3000 — operator dashboard at /operator
 ```
 
-`/` is the marketing landing page; open **`http://localhost:3001/operator`** for the
+`/` is the marketing landing page; open **`http://localhost:3000/operator`** for the
 live operator dashboard (Feed/Map/Intel tabs, with the `FollowInset` radar).
 
 Optional env:
@@ -102,7 +102,7 @@ filter to a tag id with `FOLLOW_TAG_ID`).
 
 - [ ] Laptop `/health` reports `"tello": "disabled"` — only the phone commands the Tello.
 - [ ] Phone is on the Tello AP and its `serverURL` points at the laptop's AP IP.
-- [ ] Operator dashboard at `:3001/operator` shows the Mavic feed linking/streaming (and the `FollowInset` radar once the phone publishes follow state).
+- [ ] Operator dashboard at `:3000/operator` shows the Mavic feed linking/streaming (and the `FollowInset` radar once the phone publishes follow state).
 - [ ] Hard stop/recall button on the phone works (don't rely on voice alone).
 - [ ] Tello battery checked; clear follow area.
 

@@ -60,13 +60,13 @@ Two terminals.
 Python, e.g. Anaconda, and fails with `No module named 'cv2'`):
 ```bash
 cd backend
-TELLO_DISABLE=1 DASHBOARD_ORIGINS=http://localhost:3001 \
+TELLO_DISABLE=1 DASHBOARD_ORIGINS=http://localhost:3000 \
   .venv/bin/python -m uvicorn app.server:app --host 0.0.0.0 --port 8000
 ```
 
 **Dashboard:**
 ```bash
-cd frontend && npm run dev      # http://localhost:3001/operator
+cd frontend && npm run dev      # http://localhost:3000/operator
 ```
 
 **Verify:**
@@ -102,7 +102,7 @@ grep "WebSocket /ws" <backend-log> | grep -v 127.0.0.1 | tail   # phone IP appea
 
 | Surface | Shows |
 |---|---|
-| **Dashboard** `:3001/operator` | Recon map (buildings + SLAM + YOLO entities), Intel tabs, `FollowInset` radar (Tello range/bearing) |
+| **Dashboard** `:3000/operator` | Recon map (buildings + SLAM + YOLO entities), Intel tabs, `FollowInset` radar (Tello range/bearing) |
 | **Phone** | Same world model live + on-device follow track |
 
 - **Map sync proof:** phone's `device_location` (needs Location permission) appears
