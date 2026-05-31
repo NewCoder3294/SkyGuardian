@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { DangerStripe } from "@/components/tactical";
 import type { DetectionLayer } from "@/lib/useWorldClient";
 import { isThreat } from "@/lib/threats";
 
@@ -13,9 +14,10 @@ interface Props {
  * object in the current frame. Visible on every tab. Auto-clears the moment
  * a clean frame arrives — no manual dismiss needed.
  *
- * Visual: white card with a thick red border + red header bar, monospaced
- * threat list. Pulse on the dot. Pure B&W elsewhere; red is reserved for
- * exactly this signal.
+ * Visual: dark card with a thick signal-red border + a hatched red danger
+ * stripe header (the kit's `DangerStripe tone="threat"`), monospaced threat
+ * list. Pulse on the dot. Pure B&W elsewhere; red is reserved for exactly this
+ * signal — an actual detected threat.
  */
 export function ThreatAlert({ detections }: Props) {
   const active = useMemo(() => {
@@ -41,15 +43,17 @@ export function ThreatAlert({ detections }: Props) {
       role="alert"
       className="tac-corners pointer-events-none fixed bottom-5 right-5 z-50 w-80 overflow-hidden border border-fail/70 bg-surface/95 shadow-[0_0_0_1px_oklch(0.60_0.205_27_/_0.45),0_10px_30px_oklch(0.10_0.01_140_/_0.6)] backdrop-blur-md"
     >
-      <div className="flex items-center gap-2 bg-fail/15 px-4 py-2 text-fail">
-        <span className="relative inline-flex h-2.5 w-2.5">
-          <span className="absolute inset-0 animate-ping rounded-full bg-fail opacity-60" />
-          <span className="relative inline-block h-2.5 w-2.5 rounded-full bg-fail" />
+      <DangerStripe tone="threat" className="bg-fail/15 py-2 pr-2">
+        <span className="inline-flex items-center gap-2">
+          <span className="relative inline-flex h-2.5 w-2.5">
+            <span className="absolute inset-0 animate-ping rounded-full bg-fail opacity-60" />
+            <span className="relative inline-block h-2.5 w-2.5 rounded-full bg-fail" />
+          </span>
+          <span className="font-sans text-[11px] font-bold uppercase tracking-[0.35em]">
+            Threat detected
+          </span>
         </span>
-        <span className="font-sans text-[11px] font-bold uppercase tracking-[0.35em]">
-          Threat detected
-        </span>
-      </div>
+      </DangerStripe>
       <ul className="divide-y divide-border">
         {active.map((label) => (
           <li
