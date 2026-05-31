@@ -155,3 +155,101 @@ def test_exhausted_retries_surface_real_status():
     with pytest.raises(FoundryApiError) as ei:
         c.apply_action("create-capture-mission", {})
     assert ei.value.status == 503   # real status, never a confusing 0
+
+
+import json
+import zipfile
+from pathlib import Path
+
+from app.capture.foundry_export import export_dataset, upsert_action
+
+
+class _MockClient:
+    def __init__(self, conflict_on=None):
+        self.applied = []          # (action, params)
+        self.uploads = []          # logical paths
+        self.preflighted = False
+        self.committed = False
+        self._conflict_on = conflict_on or set()
+
+    def preflight(self):
+        self.preflighted = True
+
+    def apply_action(self, action, params):
+        self.applied.append((action, params))
+        if action in self._conflict_on:
+            raise FoundryApiError(400, "ObjectAlreadyExists")
+        return {"ok": True}
+
+    def create_transaction(self, rid, transaction_type="SNAPSHOT"):
+        return "ri.tx.1"
+
+    def upload_file(self, rid, tx, path, data):
+        self.uploads.append(path)
+
+    def commit_transaction(self, rid, tx):
+        self.committed = True
+
+
+def _dataset_dir(tmp_path: Path) -> Path:
+    d = tmp_path / "datasets" / "d1"
+    (d / "yolo").mkdir(parents=True)
+    (d / "gemma").mkdir(parents=True)
+    (d / "yolo" / "data.yaml").write_text("names: [person]\n")
+    (d / "gemma" / "examples.jsonl").write_text("{}\n")
+    (d / "manifest.json").write_text(json.dumps(_manifest()))
+    return d
+
+
+def test_upsert_action_create_then_edit_on_conflict():
+    c = _MockClient(conflict_on={"create-x"})
+    assert upsert_action(c, "create-x", "edit-x", {"a": 1}) == "edited"
+    c2 = _MockClient()
+    assert upsert_action(c2, "create-x", "edit-x", {"a": 1}) == "created"
+
+
+def test_export_dataset_full(tmp_path: Path):
+    d = _dataset_dir(tmp_path)
+    cfg = _cfg()
+    c = _MockClient()
+    report = export_dataset(d, c, cfg, report_t=9.0)
+
+    assert c.preflighted is True and c.committed is True
+    class_actions = [a for a, _ in c.applied if a == cfg.class_action]
+    mission_actions = [a for a, _ in c.applied if a == cfg.mission_action]
+    assert len(class_actions) == 2     # person, vehicle
+    assert len(mission_actions) == 1
+    assert set(c.uploads) == {"manifest.json", "dataset.zip"}
+    assert report["dry_run"] is False
+    assert report["mission"]["status"] == "created"
+    assert len(report["classes"]) == 2
+    assert (d / "export_report.json").exists()
+
+
+def test_export_dataset_dry_run_makes_no_calls(tmp_path: Path):
+    d = _dataset_dir(tmp_path)
+    c = _MockClient()
+    report = export_dataset(d, c, _cfg(), dry_run=True, report_t=9.0)
+    assert c.preflighted is False and c.applied == [] and c.uploads == [] and c.committed is False
+    assert report["dry_run"] is True
+    assert len(report["classes"]) == 2          # intended actions recorded
+    assert report["files_planned"] == ["manifest.json", "dataset.zip"]
+    assert (d / "export_report.json").exists()
+
+
+def test_export_uploads_valid_zip(tmp_path: Path):
+    d = _dataset_dir(tmp_path)
+    captured = {}
+
+    class _ZipClient(_MockClient):
+        def upload_file(self, rid, tx, path, data):
+            super().upload_file(rid, tx, path, data)
+            if path == "dataset.zip":
+                captured["zip"] = data
+
+    export_dataset(d, _ZipClient(), _cfg(), report_t=1.0)
+    import io
+    zf = zipfile.ZipFile(io.BytesIO(captured["zip"]))
+    names = zf.namelist()
+    assert any(n.endswith("data.yaml") for n in names)
+    assert any(n.endswith("examples.jsonl") for n in names)

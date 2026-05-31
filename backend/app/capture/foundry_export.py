@@ -6,10 +6,14 @@ objects (Actions API) and the dataset files into a backing Foundry Dataset.
 """
 from __future__ import annotations
 
+import io
+import json
 import os
 import time
+import zipfile
 import httpx
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable, Optional
 
 _REQUIRED_MANIFEST_KEYS = ("mission_ids", "yolo", "cleaning_report", "label_events", "gemma")
@@ -185,3 +189,70 @@ class FoundryClient:
             "POST",
             f"/api/v2/datasets/{dataset_rid}/transactions/{transaction_rid}/commit",
         )
+
+
+def upsert_action(client, create_action: str, edit_action: str, params: dict) -> str:
+    """Idempotent: apply the create action; on a 4xx conflict (object exists),
+    apply the edit action instead. Returns 'created' or 'edited'."""
+    try:
+        client.apply_action(create_action, params)
+        return "created"
+    except FoundryApiError as exc:
+        if 400 <= exc.status < 500:
+            client.apply_action(edit_action, params)   # raises if this also fails
+            return "edited"
+        raise
+
+
+def _zip_dataset(dataset_dir: Path) -> bytes:
+    """Zip the yolo/ + gemma/ subtrees into an in-memory archive."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for sub in ("yolo", "gemma"):
+            base = dataset_dir / sub
+            if not base.exists():
+                continue
+            for path in sorted(base.rglob("*")):
+                if path.is_file():
+                    zf.write(path, arcname=str(path.relative_to(dataset_dir)))
+    return buf.getvalue()
+
+
+def export_dataset(dataset_dir, client, config: FoundryConfig, *,
+                   dry_run: bool = False, report_t: float = 0.0) -> dict:
+    dataset_dir = Path(dataset_dir)
+    manifest = json.loads((dataset_dir / "manifest.json").read_text())
+    validate_manifest(manifest)
+
+    mission_params = build_mission_params(manifest, config.dataset_rid)
+    class_param_rows = build_class_params(manifest)
+
+    report = {"t": report_t, "dry_run": dry_run, "dataset_rid": config.dataset_rid,
+              "classes": [], "mission": None, "files_uploaded": [], "files_planned": []}
+
+    if dry_run:
+        report["classes"] = [{"action": config.class_action, "params": p} for p in class_param_rows]
+        report["mission"] = {"action": config.mission_action, "params": mission_params}
+        report["files_planned"] = ["manifest.json", "dataset.zip"]
+        (dataset_dir / "export_report.json").write_text(json.dumps(report, indent=2))
+        return report
+
+    client.preflight()
+
+    for p in class_param_rows:
+        status = upsert_action(client, config.class_action, config.class_edit_action, p)
+        report["classes"].append({"classKey": p["classKey"], "status": status})
+
+    m_status = upsert_action(client, config.mission_action, config.mission_edit_action,
+                             mission_params)
+    report["mission"] = {"missionId": mission_params["missionId"], "status": m_status}
+
+    tx = client.create_transaction(config.dataset_rid, "SNAPSHOT")
+    client.upload_file(config.dataset_rid, tx, "manifest.json",
+                       (dataset_dir / "manifest.json").read_bytes())
+    client.upload_file(config.dataset_rid, tx, "dataset.zip", _zip_dataset(dataset_dir))
+    client.commit_transaction(config.dataset_rid, tx)
+    report["files_uploaded"] = ["manifest.json", "dataset.zip"]
+
+    (dataset_dir / "export_report.json").write_text(json.dumps(report, indent=2))
+    return report
