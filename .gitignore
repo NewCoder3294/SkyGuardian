@@ -23,6 +23,7 @@ models/**/*.pt
 models/**/*.pth
 models/**/*.onnx
 models/**/*.bin
+models/**/*.mlpackage
 captures/**/*.mp4
 captures/**/*.mov
 captures/**/*.avi
