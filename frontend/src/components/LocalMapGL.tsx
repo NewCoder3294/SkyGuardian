@@ -108,17 +108,28 @@ export function LocalMapGL({
     let cancelled = false;
     let map: maplibregl.Map | null = null;
 
-    // Offline guard: permit only requests that resolve to a local origin.
-    // apiBase may be "" (same-origin) — fall back to window.location.origin.
+    // Offline guard: permit only requests that resolve to an allowed ORIGIN.
+    // Compare on parsed origin (not string prefix) so look-alike hosts like
+    // `http://localhost:8000.evil.com` or userinfo tricks (`...@evil.com`)
+    // can't slip past. apiBase may be "" (same-origin).
+    const base = typeof window !== "undefined" ? window.location.href : undefined;
+    const allowedOrigins = new Set<string>();
+    if (typeof window !== "undefined") allowedOrigins.add(window.location.origin);
+    if (apiBase) {
+      try {
+        allowedOrigins.add(new URL(apiBase, base).origin);
+      } catch {
+        /* malformed apiBase → only same-origin is allowed */
+      }
+    }
     const transformRequest: maplibregl.RequestTransformFunction = (url) => {
-      const sameOrigin =
-        typeof window !== "undefined" && url.startsWith(window.location.origin);
-      const local =
-        (apiBase !== "" && url.startsWith(apiBase)) ||
-        (apiBase !== "" && url.startsWith(`pmtiles://${apiBase}`)) ||
-        url.startsWith(`pmtiles://${window.location.origin}`) ||
-        sameOrigin;
-      return local ? { url } : { url: "" };
+      const probe = url.startsWith("pmtiles://") ? url.slice("pmtiles://".length) : url;
+      try {
+        // Relative URLs resolve against the page origin (same-origin → allowed).
+        return allowedOrigins.has(new URL(probe, base).origin) ? { url } : { url: "" };
+      } catch {
+        return { url: "" };
+      }
     };
 
     fetchBasemapMeta(apiBase).then((meta) => {
