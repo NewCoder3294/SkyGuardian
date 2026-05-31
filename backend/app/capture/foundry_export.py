@@ -199,7 +199,12 @@ def upsert_action(client, create_action: str, edit_action: str, params: dict) ->
         return "created"
     except FoundryApiError as exc:
         if 400 <= exc.status < 500:
-            client.apply_action(edit_action, params)   # raises if this also fails
+            # Object likely already exists -> update it. Chain the original create
+            # error so a failing edit still shows the create context.
+            try:
+                client.apply_action(edit_action, params)
+            except FoundryApiError as edit_exc:
+                raise edit_exc from exc
             return "edited"
         raise
 
@@ -247,12 +252,20 @@ def export_dataset(dataset_dir, client, config: FoundryConfig, *,
                              mission_params)
     report["mission"] = {"missionId": mission_params["missionId"], "status": m_status}
 
-    tx = client.create_transaction(config.dataset_rid, "SNAPSHOT")
-    client.upload_file(config.dataset_rid, tx, "manifest.json",
-                       (dataset_dir / "manifest.json").read_bytes())
-    client.upload_file(config.dataset_rid, tx, "dataset.zip", _zip_dataset(dataset_dir))
-    client.commit_transaction(config.dataset_rid, tx)
-    report["files_uploaded"] = ["manifest.json", "dataset.zip"]
+    # Objects are already upserted at this point. If the file upload fails, record
+    # that the export is partial (objects persisted, files did not) so the operator
+    # can reconcile, write the report, and re-raise.
+    try:
+        tx = client.create_transaction(config.dataset_rid, "SNAPSHOT")
+        client.upload_file(config.dataset_rid, tx, "manifest.json",
+                           (dataset_dir / "manifest.json").read_bytes())
+        client.upload_file(config.dataset_rid, tx, "dataset.zip", _zip_dataset(dataset_dir))
+        client.commit_transaction(config.dataset_rid, tx)
+        report["files_uploaded"] = ["manifest.json", "dataset.zip"]
+    except Exception as exc:  # noqa: BLE001 - record partial state then re-raise
+        report["partial_failure"] = str(exc)
+        (dataset_dir / "export_report.json").write_text(json.dumps(report, indent=2))
+        raise
 
     (dataset_dir / "export_report.json").write_text(json.dumps(report, indent=2))
     return report

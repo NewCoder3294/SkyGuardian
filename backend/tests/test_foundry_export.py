@@ -253,3 +253,28 @@ def test_export_uploads_valid_zip(tmp_path: Path):
     names = zf.namelist()
     assert any(n.endswith("data.yaml") for n in names)
     assert any(n.endswith("examples.jsonl") for n in names)
+
+
+def test_upsert_reraises_non_4xx():
+    class _C(_MockClient):
+        def apply_action(self, action, params):
+            self.applied.append((action, params))
+            raise FoundryApiError(503, "unavailable")
+    c = _C()
+    with pytest.raises(FoundryApiError) as ei:
+        upsert_action(c, "create-x", "edit-x", {"a": 1})
+    assert ei.value.status == 503
+    assert [a for a, _ in c.applied] == ["create-x"]   # never tried the edit
+
+
+def test_export_records_partial_failure_on_upload_error(tmp_path):
+    d = _dataset_dir(tmp_path)
+    class _C(_MockClient):
+        def upload_file(self, rid, tx, path, data):
+            raise FoundryApiError(500, "boom")
+    c = _C()
+    with pytest.raises(FoundryApiError):
+        export_dataset(d, c, _cfg(), report_t=1.0)
+    report = json.loads((d / "export_report.json").read_text())
+    assert "partial_failure" in report
+    assert report["mission"]["status"] == "created"   # objects were upserted first
