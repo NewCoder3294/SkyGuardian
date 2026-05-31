@@ -183,7 +183,7 @@ export function VideoPlayer({ apiBase, name, onTimeUpdate }: Props) {
         className="pointer-events-none absolute inset-0 m-auto h-full w-full"
       />
 
-      <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2 border border-border-strong bg-surface/85 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.3em] text-text-muted backdrop-blur-sm">
+      <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2 border border-border-strong bg-bg px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.3em] text-text-muted">
         <span aria-hidden className="relative inline-flex h-2 w-2">
           <span className={`relative inline-block h-2 w-2 rounded-full ${data ? "bg-ok shadow-glow-cyan" : "bg-fail"}`} />
         </span>

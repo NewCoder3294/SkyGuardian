@@ -201,7 +201,8 @@ export function SourceSelector({ apiBase, onState }: Props) {
   const live = state?.streaming || upload?.state === "ready";
 
   return (
-    <div className="flex flex-wrap items-center justify-end gap-2 py-2">
+    <div>
+    <div className="flex items-center justify-end gap-2 py-1">
       <div className="flex items-center gap-2 border border-border bg-surface-elevated px-3 py-1.5">
         <span
           className={`inline-block h-1.5 w-1.5 rounded-full ${
@@ -285,8 +286,10 @@ export function SourceSelector({ apiBase, onState }: Props) {
         </label>
       </div>
 
+      </div>
+
       {showProcessing && upload && (
-        <div className="basis-full">
+        <div className="px-1 pb-1">
           <div className="flex items-baseline justify-between font-mono text-[10px] uppercase tracking-widest text-text-muted">
             <span>
               {upload.state === "uploading" ? "Uploading" : "Processing"} · {upload.name}
@@ -303,7 +306,7 @@ export function SourceSelector({ apiBase, onState }: Props) {
       )}
 
       {(error || upload?.error) && (
-        <div className="basis-full border border-fail/60 bg-fail/10 px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest text-fail">
+        <div className="mx-1 mb-1 border border-fail/60 bg-fail/10 px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest text-fail">
           ▲ {error || upload?.error}
         </div>
       )}
