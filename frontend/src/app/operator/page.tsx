@@ -193,6 +193,13 @@ export default function Page() {
             />
           </div>
           <span className="hidden h-5 w-px bg-border lg:block" aria-hidden />
+          <a
+            href="/data"
+            className="border border-border-strong bg-surface-elevated px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.3em] text-accent transition-colors hover:border-accent/60 hover:bg-accent/10"
+          >
+            Data
+          </a>
+          <span className="hidden h-5 w-px bg-border lg:block" aria-hidden />
           <div className="flex items-center gap-3 border border-border-strong bg-surface-elevated px-4 py-1.5">
             <span className="h-1.5 w-1.5 rounded-full bg-ok shadow-glow-cyan" aria-hidden />
             <span className="font-mono text-[9px] uppercase tracking-[0.3em] text-text-dim">Z</span>
