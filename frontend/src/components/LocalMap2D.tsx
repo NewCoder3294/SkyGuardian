@@ -37,6 +37,7 @@ interface Props {
   initialSpanM?: number;
   /** Optional single-line status (entity count, playback time, etc.). */
   statusLine?: string;
+  buildingsVersion?: number;
 }
 
 interface ViewState {
@@ -50,6 +51,7 @@ export function LocalMap2D({
   apiBase,
   initialSpanM = 0,
   statusLine,
+  buildingsVersion = 0,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -144,7 +146,7 @@ export function LocalMap2D({
     return () => {
       stopped = true;
     };
-  }, [apiBase, fitToBuildings]);
+  }, [apiBase, fitToBuildings, buildingsVersion]);
 
   // Redraw whenever entities change.
   useEffect(() => {

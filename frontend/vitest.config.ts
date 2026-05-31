@@ -1,8 +1,8 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
-// Pure-logic unit tests (no DOM): URL/config helpers that keep the dashboard
-// pointed at the same brain the mobile app and backend use.
+// jsdom so component/hook tests have a DOM; `automatic` JSX so .tsx tests don't
+// need an explicit React import. The existing pure-logic specs run fine here too.
 export default defineConfig({
   resolve: {
     alias: {
@@ -10,7 +10,7 @@ export default defineConfig({
     },
   },
   test: {
-    environment: "node",
-    include: ["src/**/*.test.ts"],
+    environment: "jsdom",
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
   },
 });

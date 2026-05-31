@@ -30,9 +30,10 @@ interface Props {
    *  isn't crowded by distant downtown blocks. 0 = no clip. */
   clipRadiusM?: number;
   opacity?: number;
+  buildingsVersion?: number;
 }
 
-export function Buildings({ apiBase, clipRadiusM = 0, opacity = 0.55 }: Props) {
+export function Buildings({ apiBase, clipRadiusM = 0, opacity = 0.55, buildingsVersion = 0 }: Props) {
   const [data, setData] = useState<BuildingsPayload | null>(null);
   const [missing, setMissing] = useState(false);
 
@@ -56,7 +57,7 @@ export function Buildings({ apiBase, clipRadiusM = 0, opacity = 0.55 }: Props) {
     return () => {
       stopped = true;
     };
-  }, [apiBase]);
+  }, [apiBase, buildingsVersion]);
 
   const meshes = useMemo(() => {
     if (!data) return [] as { key: string; geometry: THREE.ExtrudeGeometry; pos: [number, number, number] }[];
