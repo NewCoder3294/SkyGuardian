@@ -409,7 +409,7 @@ export default function LandingPage() {
                 name: "Alex Battikha",
                 role: "Co-Founder & CEO",
                 image: "/headshot-alex.png",
-                imageStyle: "object-cover object-top scale-[0.85]",
+                imageStyle: "object-cover object-center",
                 points: [
                   "10+ yrs robotics; world champion (1st of 7,100+ teams)",
                   "1 of 9 globally selected as an Irwin Jacobs full-ride scholar",
@@ -420,10 +420,10 @@ export default function LandingPage() {
                 name: "Nicolas Dos Santos",
                 role: "Co-Founder & CEO",
                 image: "/headshot-nick.jpg",
-                imageStyle: "object-cover object-top",
+                imageStyle: "object-cover object-center",
                 points: [
-                  "TS clearance — access to top-tier government contracts",
-                  "Incoming at Amazon",
+                  "Cyber Defense Operator + TS clearance",
+                  "Incoming at Palantir",
                   "6+ hackathon winner; ex-founder",
                 ],
               },
