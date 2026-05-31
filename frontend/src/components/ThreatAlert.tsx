@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DangerStripe } from "@/components/tactical";
 import type { DetectionLayer } from "@/lib/useWorldClient";
 import { isThreat } from "@/lib/threats";
@@ -8,6 +8,12 @@ import { isThreat } from "@/lib/threats";
 interface Props {
   detections: Record<string, DetectionLayer>;
 }
+
+/** How long the alert keeps showing after the last threat sighting before it
+ *  auto-clears. Long enough that a single-frame detection still gives the
+ *  operator (and the judges) something to see; short enough that a sustained
+ *  clean frame stream still clears the banner promptly. */
+const HOLD_MS = 5_000;
 
 /**
  * Bottom-right alert that fires whenever YOLO sees a weapon-class object in
@@ -18,27 +24,60 @@ interface Props {
  *
  * Visual: dark card with a thick signal-red border + a hatched red danger
  * stripe header (the kit's `DangerStripe tone="threat"`), monospaced threat
- * list. Pulse on the dot. Pure B&W elsewhere; red is reserved for exactly this
- * signal — an actual detected threat.
+ * list. Pulse on the dot. Pure B&W elsewhere; red is reserved for exactly
+ * this signal — an actual detected threat.
  *
- * Auto-clears the moment a clean frame arrives — no manual dismiss needed.
+ * Persistence: every fresh threat sighting refreshes a 5 s hold window. The
+ * alert disappears 5 s after the LAST threat-bearing frame, not immediately
+ * on the next clean frame — perception fps is bursty (~3 fps) and the model
+ * sometimes drops a detection between two solid ones, which used to make the
+ * banner flicker. The hold also gives the operator time to actually read it.
  */
 export function ThreatAlert({ detections }: Props) {
-  const active = useMemo(() => {
-    // Dedupe threats by label; we keep the first sighting in this frame.
-    const labels = new Map<string, string>();
-    const now = Date.now() / 1000;
+  const [active, setActive] = useState<string[]>([]);
+  const timerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    // Pull the current frame's threat labels (dedupe by lowercase key).
+    const found = new Set<string>();
+    const nowSec = Date.now() / 1000;
     for (const layer of Object.values(detections)) {
-      // Treat anything older than 2 s as cleared.
-      if (now - layer.t > 2) continue;
+      // Backend marks stale layers with t=0; the 2 s window also bounds an
+      // intermittently-broadcasting source.
+      if (layer.t <= 0 || nowSec - layer.t > 2) continue;
       for (const b of layer.boxes) {
         if (!isThreat(b.label)) continue;
-        const key = b.label.toLowerCase();
-        if (!labels.has(key)) labels.set(key, b.label);
+        found.add(b.label.toLowerCase());
       }
     }
-    return [...labels.values()].sort();
+
+    if (found.size === 0) {
+      // No threats this frame — leave the existing hold timer running. The
+      // alert will drop on its own when HOLD_MS elapses with no refresh.
+      return;
+    }
+
+    // Threat present: publish the label set and (re)arm the hold timer.
+    setActive([...found].sort());
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+    }
+    timerRef.current = window.setTimeout(() => {
+      setActive([]);
+      timerRef.current = null;
+    }, HOLD_MS);
   }, [detections]);
+
+  // Clear the pending dismissal if the component unmounts mid-hold so we
+  // don't fire setActive on a dead component.
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) {
+        window.clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, []);
 
   if (active.length === 0) return null;
 
@@ -71,7 +110,7 @@ export function ThreatAlert({ detections }: Props) {
         ))}
       </ul>
       <div className="border-t border-border bg-surface-elevated px-4 py-1.5 font-mono text-[9px] uppercase tracking-[0.3em] text-text-dim">
-        Auto-clears on clean frame
+        Auto-clears 5 s after last sighting
       </div>
     </div>
   );
