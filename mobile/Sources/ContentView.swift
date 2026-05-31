@@ -88,7 +88,7 @@ struct ContentView: View {
             Button("SCOUT & RETURN", role: .destructive) { scout.start(follow: follow) }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("The companion will scout ~\(scout.forwardCm / 100) m ahead, hold to scan, then return and resume following. LAND stops it any time.")
+            Text("The companion will explore ~\(scout.approxReachM) m ahead in short legs, scan the area, then retrace its path back and resume following. LAND stops it any time.")
         }
         .onReceive(follow.$phase) { _ in publishFollow() }
         .onReceive(client.$connection) { _ in
