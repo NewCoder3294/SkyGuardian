@@ -1,6 +1,7 @@
 "use client";
 
 import type { FollowState } from "@/lib/contracts";
+import { followTargetLabel } from "@/lib/followTarget";
 
 /**
  * Relative follow widget: the companion Tello's range + bearing from the soldier,
@@ -11,6 +12,8 @@ import type { FollowState } from "@/lib/contracts";
  */
 export function FollowInset({ state }: { state: FollowState | null }) {
   if (!state) return null;
+
+  const targetLabel = followTargetLabel(state);
 
   // "stale" = the laptop hasn't heard from the phone recently (link dead/wedged);
   // surfaced in red so a frozen reading can't be mistaken for a live follow.
@@ -71,6 +74,11 @@ export function FollowInset({ state }: { state: FollowState | null }) {
         <span className={`text-[13px] font-semibold uppercase tracking-[0.15em] ${phaseColor}`}>
           {state.phase}
         </span>
+        {targetLabel && (
+          <span className="text-[10px] uppercase tracking-[0.15em] text-text-dim">
+            {targetLabel}
+          </span>
+        )}
         {state.active ? (
           <span className="text-[11px] text-text-muted">
             {state.distance_m.toFixed(1)} m · {Math.round(state.bearing_deg)}°
