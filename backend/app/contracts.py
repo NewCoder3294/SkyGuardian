@@ -57,7 +57,10 @@ class Entity(BaseModel):
     timestamp: float  # unix seconds from the producing source
     source: EntitySource
     label: Optional[str] = None
-    ttl_s: float = 5.0
+    # Lifetime before the world model demotes the entity. Bounded so a client
+    # can't pin a marker ACTIVE indefinitely; the server further clamps reported
+    # ttls at receipt (see _apply_entity_report). 0 < ttl_s <= 60.
+    ttl_s: float = Field(gt=0.0, le=60.0, default=5.0)
     # status is owned by the world model, not the producer; default active on upsert.
     status: EntityStatus = EntityStatus.ACTIVE
 
@@ -158,6 +161,12 @@ class FollowState(BaseModel):
     distance_m: float = Field(default=0.0, ge=0.0, le=200.0)   # metres, bounded
     bearing_deg: float = Field(default=0.0, ge=-360.0, le=360.0)
     source: str = "phone"          # advisory only; not trusted for any decision
+    # What the lock is on. visual_me = ObjectTracker lock on the soldier;
+    # tag = an AprilTag designating another target. None when not following.
+    target_type: Literal["visual_me", "tag"] | None = None
+    # Raw identifier hint only (e.g. the tag id "7"); None for visual_me. The
+    # human display string is composed on the dashboard, not sent here.
+    target_label: str | None = None
     t: float
 
 

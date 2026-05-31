@@ -7,6 +7,7 @@ from app.contracts import (
     Command,
     DeviceLocation,
     EntityReport,
+    FollowState,
     IntentMessage,
     parse_client_message,
 )
@@ -107,3 +108,28 @@ def test_geopoint_rejects_out_of_range():
         GeoPoint(lat=91.0, lng=0.0)
     with pytest.raises(ValidationError):
         GeoPoint(lat=0.0, lng=-181.0)
+
+
+def test_follow_state_accepts_target_type_and_label():
+    msg = parse_client_message({
+        "type": "follow_state", "active": True, "phase": "following",
+        "distance_m": 2.5, "bearing_deg": 10.0, "t": 1.0,
+        "target_type": "visual_me", "target_label": None,
+    })
+    assert isinstance(msg, FollowState)
+    assert msg.target_type == "visual_me"
+    assert msg.target_label is None
+
+
+def test_follow_state_target_type_defaults_to_none():
+    msg = parse_client_message({
+        "type": "follow_state", "active": False, "phase": "disarmed", "t": 1.0,
+    })
+    assert msg.target_type is None
+
+
+def test_follow_state_rejects_bad_target_type():
+    import pytest
+    from pydantic import ValidationError
+    with pytest.raises((ValidationError, ValueError)):
+        FollowState(t=1.0, target_type="rocket")
