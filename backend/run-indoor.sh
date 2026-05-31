@@ -35,7 +35,7 @@ exec env \
   YOLO_DRONE_CONF="0.25" \
   YOLO_DRONE_RELABEL="0:drone,4:drone" \
   YOLO_CONF="0.30" \
-  YOLO_IMGSZ="480" \
+  YOLO_IMGSZ="640" \
   DEPTH_MODEL="off" \
   PERCEPTION_FPS="5" \
   UPLOAD_YOLO_WEIGHTS="$MODELS/yolov8l-worldv2.pt" \
