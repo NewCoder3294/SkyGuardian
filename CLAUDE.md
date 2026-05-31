@@ -30,7 +30,8 @@ Built for environments with no connectivity. Everything runs locally. No cloud, 
 - Writes detected entities and positions into the world model.
 
 **Tello (soldier companion)**
-- Follows the soldier using an AprilTag worn by the soldier (badge/back), reading bearing and distance to station-keep.
+- Tracks the soldier via on-device **visual lock** (`ObjectTracker`, the default "me" target). An **AprilTag** is used to **designate** other targets (a vehicle, a spot, another person) — not worn by the soldier.
+- The operator switches target by voice ("follow me" / "track the tag") or the mobile ControlBar's `ME`/`TAG` toggle; can take manual control at any time (`pauseToManual`); and re-locks on command (voice or the `RE-LOCK` button). Every new lock — initial, switch, or re-lock — passes through the `confirming` gate before the drone sends follow `rc` (confirm-always). A never-confirmed lock lands on initial takeoff; on a mid-flight re-lock it falls back to a manual hover instead. Visual tracking carries no identity, so re-lock targets whatever subject is centered in view (operator-assisted by design).
 - Plain Tello: it is its own WiFi AP. The active controller (normally the phone) joins the Tello AP and commands it directly over UDP (`192.168.10.1:8889`).
 - The Tello must only ever take commands from one source at a time. Exactly one controller — the phone OR the laptop backend — is armed against it; never both.
 
@@ -42,7 +43,7 @@ Built for environments with no connectivity. Everything runs locally. No cloud, 
 
 **Phone (mobile client)**
 - Reads the map and entities from the laptop server (subscribe, do not duplicate state).
-- Is the primary Tello controller: captures voice fully on-device (Apple `SFSpeechRecognizer` with `requiresOnDeviceRecognition`, no cloud) and maps the transcript to structured drone actions by deterministic keyword match (`DroneIntent.match`), then runs the AprilTag follow loop on-device, commanding the Tello directly over the Tello AP (`TelloCommander` → `192.168.10.1:8889`). (A Cactus/Gemma function-call mapper, `DronePilot`, is compiled in but not yet wired into the live voice loop — STT was moved off Cactus because Gemma 3n's `cactus_transcribe` path has no STT backend. Cactus/Gemma still powers on-device reasoning + vision.)
+- Is the primary Tello controller: captures voice fully on-device (Apple `SFSpeechRecognizer` with `requiresOnDeviceRecognition`, no cloud) and maps the transcript to structured drone actions by deterministic keyword match (`DroneIntent.match`), then runs the on-device follow loop (`FollowCoordinator`), commanding the Tello directly over the Tello AP (`TelloCommander` → `192.168.10.1:8889`). The default follow target is the visual-me lock (`ObjectTracker`); an **AprilTag** designates other targets. The ControlBar's `ME`/`TAG` toggle and voice ("follow me" / "track the tag") switch target mid-flight via `requestLock(_:)`; manual control engages at any time via voice or button (`pauseToManual`); the `RE-LOCK` button or voice re-acquires the current target (also `requestLock`). Every lock passes through `confirmTarget()` before follow `rc` begins. (A Cactus/Gemma function-call mapper, `DronePilot`, is compiled in but not yet wired into the live voice loop — STT was moved off Cactus because Gemma 3n's `cactus_transcribe` path has no STT backend. Cactus/Gemma still powers on-device reasoning + vision.)
 - Still sends mission-level intent (hold/recall) and its own device location to the laptop over the WebSocket for "follow me" context.
 - **Co-registers with the laptop world frame.** The phone observes the same **launch anchor AprilTag** the Mavic uses (`AnchorCamera` on the back camera) and `FrameAligner` co-registers the phone's launch frame with the shared world frame (both north-up, so alignment is a pure translation refreshed each time the tag is re-seen). The phone then publishes world-frame entities (`EntityReport`, operator + drone) that upsert directly into the laptop world model and render on both maps — no longer just a relative inset.
 - Runs a soldier-commanded **scout** maneuver (`ScoutController`): on command the pet leaves the follow, explores ahead in a few short bounded legs, rotates to scan at each, then retraces its exact path home and resumes following. Soldier-directed and bounded (leg count, rotation, time) — not autonomous pursuit; LAND/STOP preempt at any time.
@@ -52,9 +53,9 @@ Built for environments with no connectivity. Everything runs locally. No cloud, 
 
 ```
             [ Soldier w/ Phone ] ----AP (rc/takeoff/land)----> [ Tello ]
-                  |   ^                                     (follows soldier
-   mission intent |   | map + entities                      via AprilTag;
-   (hold/recall)  |   | (subscribe)                          on-device loop)
+                  |   ^                                     (visual-me lock
+   mission intent |   | map + entities                      by default; AprilTag
+   (hold/recall)  |   | (subscribe)                          designates targets)
    + device loc   v   |
 [ Manned Mavic ] --video--> [ LAPTOP (brain) ]   (backend FollowController is an
                                 |  YOLO (detect)   alternate Tello controller —
@@ -191,7 +192,7 @@ Map is a local frame anchored to landmarks plus launch point. Plot entities as t
 ## Command flow
 
 1. Phone turns speech into a structured drone action locally (Cactus/Gemma function-calling).
-2. Phone sends flight commands **directly** to the Tello over the Tello AP (`rc` / `takeoff` / `land` / `emergency`); the on-device AprilTag follow loop sends `rc` at a fixed cadence the same way.
+2. Phone sends flight commands **directly** to the Tello over the Tello AP (`rc` / `takeoff` / `land` / `emergency`); the on-device follow loop (visual-me by default; AprilTag for designated targets) sends `rc` at a fixed cadence the same way.
 3. Mission-level intent (hold/recall) and device location still go to the laptop over the WebSocket; the laptop owns the world model and streams map + state back to both clients. The phone also co-registers against the launch anchor tag (`AnchorCamera` + `FrameAligner`) and publishes world-frame entities (`EntityReport`) that upsert into the world model directly.
 4. The laptop's backend `FollowController` + approach loop is an alternate flight path and MUST stay disarmed while the phone is flying. A real **code interlock now exists** (`ArmingLock`, `backend/app/follow/arming.py`): the laptop controllers must hold the exclusive lock before driving the Tello, and arming owner `"phone"` disarms them. The operating rule still stands because the phone talks to the Tello over its own AP, outside the laptop's lock.
 
