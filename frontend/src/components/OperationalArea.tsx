@@ -34,7 +34,10 @@ export function OperationalArea({ apiBase }: Props) {
       setStatus({ kind: "error", message: "Enter valid lat / lng" });
       return;
     }
-    const body = { lat: Number(lat), lng: Number(lng), radius_m: Number(radius) };
+    // Radius is optional in spirit: a blank or non-numeric field falls back to
+    // the 400 m default rather than bouncing off the backend's 422 bound.
+    const radiusNum = radius.trim() && !Number.isNaN(Number(radius)) ? Number(radius) : 400;
+    const body = { lat: Number(lat), lng: Number(lng), radius_m: radiusNum };
     setStatus({ kind: "fetching" });
     try {
       const res = await fetch(`${apiBase}/map/area`, {
