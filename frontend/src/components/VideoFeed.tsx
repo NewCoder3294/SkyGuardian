@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { DetectionLayer } from "@/lib/useWorldClient";
 import { isThreat } from "@/lib/threats";
+import { Reticle, StandbyState, TickRuler } from "@/components/tactical";
 
 interface Props {
   /** Base URL for the single-frame JPEG endpoint. Polled at ~10 Hz. */
@@ -138,11 +139,15 @@ export function VideoFeed({ src, detections, label, pollMs = 100 }: Props) {
       }
 
       const boxes = detections?.boxes ?? [];
-      // Tactical reticle: amber corner brackets (targeting frame) over a faint
-      // full outline, with a square label tab. Threat classes lock in signal
-      // red instead of amber — the only place red appears on the feed.
-      const AMBER = "#d9a441";
-      const RED = "#e0483a";
+      // Tactical reticle: ink corner brackets (targeting frame) over a faint
+      // full outline, with a square label tab. Non-threat detections are strict
+      // monochrome (ink); threat classes lock in signal red — the only place
+      // red ever appears on the feed. Colors are pulled live from the theme
+      // tokens (--text / --invert / --fail) so the canvas tracks operator-theme.
+      const styles = getComputedStyle(canvas);
+      const INK = styles.getPropertyValue("--text").trim() || "#202020";
+      const PAPER = styles.getPropertyValue("--invert").trim() || "#f5f5f5";
+      const RED = styles.getPropertyValue("--fail").trim() || "#c0392b";
       ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, monospace";
       for (const b of boxes) {
         const x = offX + (b.cx - b.w / 2) * dispW;
@@ -150,11 +155,14 @@ export function VideoFeed({ src, detections, label, pollMs = 100 }: Props) {
         const bw = b.w * dispW;
         const bh = b.h * dispH;
         const threat = isThreat(b.label);
-        const stroke = threat ? RED : AMBER;
+        const stroke = threat ? RED : INK;
         // faint full frame
-        ctx.strokeStyle = threat ? "rgba(224,72,58,0.28)" : "rgba(217,164,65,0.24)";
+        ctx.save();
+        ctx.globalAlpha = threat ? 0.32 : 0.26;
+        ctx.strokeStyle = stroke;
         ctx.lineWidth = 1;
         ctx.strokeRect(x, y, bw, bh);
+        ctx.restore();
         // corner brackets
         const c = Math.max(7, Math.min(bw, bh) * 0.22);
         ctx.strokeStyle = stroke;
@@ -169,14 +177,15 @@ export function VideoFeed({ src, detections, label, pollMs = 100 }: Props) {
         // bottom-left
         ctx.moveTo(x + c, y + bh); ctx.lineTo(x, y + bh); ctx.lineTo(x, y + bh - c);
         ctx.stroke();
-        // label tab
+        // label tab — ink fill, paper text (inverted) for non-threat; threats
+        // keep the red stroke as the tab text so red still reads as the alarm.
         const tag = b.label.toUpperCase();
         const pad = 4;
         const tw = ctx.measureText(tag).width + pad * 2;
         const th = 14;
-        ctx.fillStyle = "rgba(10,14,9,0.92)";
+        ctx.fillStyle = threat ? PAPER : INK;
         ctx.fillRect(x, Math.max(offY, y - th), tw, th);
-        ctx.fillStyle = stroke;
+        ctx.fillStyle = threat ? RED : PAPER;
         ctx.fillText(tag, x + pad, Math.max(offY + th - 4, y - 4));
       }
     };
@@ -194,6 +203,12 @@ export function VideoFeed({ src, detections, label, pollMs = 100 }: Props) {
   const PLACEHOLDER =
     "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 
+  // Show the faint center reticle only when the feed is live but the brain has
+  // nothing locked — a "watching, no contact" graticule. Hidden the moment a
+  // box appears (the per-box corner brackets take over) or the feed drops.
+  const detCount = detections?.boxes.length ?? 0;
+  const showReticle = isLive && detCount === 0 && !errored;
+
   return (
     <div className="tac-corners relative h-full min-h-0 w-full overflow-hidden border border-border bg-bg hud-grid shadow-card">
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -208,22 +223,26 @@ export function VideoFeed({ src, detections, label, pollMs = 100 }: Props) {
         ref={canvasRef}
         className="pointer-events-none absolute inset-0 m-auto h-full w-full"
       />
+      {/* Measurement tick strips along the left + bottom edges of the feed. */}
+      <TickRuler edge="left" />
+      <TickRuler edge="bottom" />
       {/* Boresight crosshair — fixed graticule the operator reads against. */}
       <div aria-hidden className="pointer-events-none absolute inset-0">
         <span className="absolute left-1/2 top-1/2 h-px w-5 -translate-x-1/2 -translate-y-1/2 bg-accent/30" />
         <span className="absolute left-1/2 top-1/2 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-accent/30" />
       </div>
-      {/* No "linking feed…" placeholder. When nothing's connected the pane
-          stays visually empty — the LEADER status dot + the "Source" toolbar
-          already tell the operator what's going on. A pulsing prompt here
-          would just imply something is actively trying. The fault state
-          ("feed offline") is preserved because it's actionable. */}
+      {/* Faint center reticle: live feed, no active detection. */}
+      {showReticle && (
+        <Reticle
+          size={48}
+          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 opacity-30"
+        />
+      )}
+      {/* Loss-of-link standby: an armed "standing by" reticle + scan state.
+          Not a threat, so strict monochrome (red is threats only). */}
       {errored && (
-        <div className="absolute inset-0 grid place-items-center">
-          {/* Loss-of-link, not a threat — strict monochrome (red is threats only). */}
-          <div className="border border-border-strong bg-surface/90 px-4 py-2 font-mono text-[11px] uppercase tracking-[0.3em] text-text">
-            ▲ Feed offline
-          </div>
+        <div className="absolute inset-0">
+          <StandbyState title="Feed offline" caveat="Awaiting video link" />
         </div>
       )}
       <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2 border border-border-strong bg-surface/85 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.3em] text-text-muted backdrop-blur-sm">
