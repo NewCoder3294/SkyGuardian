@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
-# Indoor live demo: detect person, backpack, firearm — nothing else.
+# One-process backend that handles BOTH demo paths simultaneously:
 #
-# Stack:
-#   * COCO yolov8s for person + backpack (supervised, tight boxes).
-#   * Threat yolov8n for "gun" only, at conf=0.40 to suppress the false
-#     positives the model fires on cables / electronics at lower thresholds.
-#   * YOLO-World is OFF — slow, weak on weapons, no longer carrying its weight
-#     once the specialty model handles firearms.
-#   * Depth OFF — no Z accuracy needed indoors; frees ~3 GB of MPS memory.
-#   * imgsz 480 — ~1.7x faster than 640, no meaningful recall hit for these
-#     classes at indoor distances.
+#   * Live RTMP perception (indoor, judge demo) — uses the light stack:
+#     yolov8s for person + backpack, threat yolov8n for gun at conf=0.40, no
+#     YOLO-World, imgsz=480, no depth. Smooth, low false-positive rate.
 #
-# Expected: ~3-5 fps perception, boxes stay locked on objects across frames,
-# detection log shows only person / backpack / gun.
+#   * Uploaded clip processing (outdoor, pre-recorded demo) — uses the heavy
+#     stack via the UPLOAD_* overrides: yolov8l-worldv2 with the full
+#     defense vocab + yolov8l COCO + threat detector, imgsz=640. Loaded
+#     on-demand inside the upload worker thread and freed when processing
+#     completes, so live perception keeps the lightweight stack the whole
+#     time.
+#
+# Operator workflow:
+#   1. ./run-indoor.sh                              # this script — that's it.
+#   2. Live demo via DJI Fly → rtmp://laptop-ip:1935/live.
+#   3. Pre-record outdoor flight → upload via the dashboard UPLOAD button →
+#      heavy processing runs once → dashboard plays back the clip.
 set -euo pipefail
 cd "$(dirname "$0")"
 MODELS="$(cd .. && pwd)/models/yolo"
@@ -30,4 +34,10 @@ exec env \
   YOLO_IMGSZ="480" \
   DEPTH_MODEL="off" \
   PERCEPTION_FPS="5" \
+  UPLOAD_YOLO_WEIGHTS="$MODELS/yolov8l-worldv2.pt" \
+  UPLOAD_YOLO_CLASSES="soldier,rifle,handgun,pistol,AK-47,AR-15,assault rifle,firearm,shotgun,knife,machete,helmet,tactical vest,vehicle,ship,vessel,ied,drone,weapon" \
+  UPLOAD_YOLO_COCO_WEIGHTS="$MODELS/yolov8l.pt" \
+  UPLOAD_YOLO_COCO_KEEP="person,car,truck,motorcycle,bicycle,bus,backpack,boat" \
+  UPLOAD_YOLO_IMGSZ="640" \
+  UPLOAD_YOLO_CONF="0.20" \
   "$UVICORN" app.server:app --host 0.0.0.0 --port 8000

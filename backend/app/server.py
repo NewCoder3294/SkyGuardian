@@ -337,6 +337,43 @@ _YOLO_SPECIALTY_CONF: float | None = (
     float(os.environ["YOLO_SPECIALTY_CONF"]) if os.environ.get("YOLO_SPECIALTY_CONF") else None
 )
 
+# --- Upload-only overrides ---
+# When the operator uploads a recorded clip via the dashboard, they're not
+# bound by the realtime budget the live RTMP pipeline is. Any `UPLOAD_*`
+# variant overrides the corresponding live config for that one processing
+# job (and only that job) — letting the live stack stay lightweight while
+# offline uploads run a heavier, higher-recall model set. Unset → use the
+# live config (current behaviour, no surprise).
+def _u(env: str, fallback):
+    v = os.environ.get(env)
+    return v if v else fallback
+
+_UPLOAD_YOLO_WEIGHTS_ENV = os.environ.get("UPLOAD_YOLO_WEIGHTS")
+if _UPLOAD_YOLO_WEIGHTS_ENV and _UPLOAD_YOLO_WEIGHTS_ENV.strip().lower() == "off":
+    _UPLOAD_YOLO_WEIGHTS = None
+else:
+    _UPLOAD_YOLO_WEIGHTS = _UPLOAD_YOLO_WEIGHTS_ENV or _YOLO_WEIGHTS
+_upload_yolo_classes_env = os.environ.get("UPLOAD_YOLO_CLASSES")
+_UPLOAD_YOLO_CLASSES: list[str] | None = (
+    [c.strip() for c in _upload_yolo_classes_env.split(",") if c.strip()]
+    if _upload_yolo_classes_env
+    else _YOLO_CLASSES
+)
+_UPLOAD_YOLO_IMGSZ = int(_u("UPLOAD_YOLO_IMGSZ", _YOLO_IMGSZ))
+_UPLOAD_YOLO_CONF = float(_u("UPLOAD_YOLO_CONF", _YOLO_CONF))
+_UPLOAD_YOLO_COCO_WEIGHTS = _u("UPLOAD_YOLO_COCO_WEIGHTS", _YOLO_COCO_WEIGHTS)
+_upload_yolo_coco_keep_env = os.environ.get("UPLOAD_YOLO_COCO_KEEP")
+_UPLOAD_YOLO_COCO_KEEP: list[str] = (
+    [c.strip().lower() for c in _upload_yolo_coco_keep_env.split(",") if c.strip()]
+    if _upload_yolo_coco_keep_env
+    else _YOLO_COCO_KEEP
+)
+# Re-strip the upload world vocab against the upload COCO keep set so the same
+# de-duplication invariant the live config maintains is preserved per job.
+if _UPLOAD_YOLO_COCO_WEIGHTS and _UPLOAD_YOLO_CLASSES:
+    _strip_u = set(_UPLOAD_YOLO_COCO_KEEP)
+    _UPLOAD_YOLO_CLASSES = [c for c in _UPLOAD_YOLO_CLASSES if c.lower() not in _strip_u]
+
 # Monocular depth model — unlocks true 3D positions for YOLO entities.
 # Disable with DEPTH_MODEL="off". Calibration: DEPTH_SCALE tunes the
 # (relative inverse depth) → metres mapping.
@@ -1081,12 +1118,12 @@ async def _process_uploaded_file(safe_name: str, dest: Path) -> None:
             process_video_file,
             dest,
             _detections_path_for(safe_name),
-            yolo_weights=_YOLO_WEIGHTS,
-            yolo_classes=_YOLO_CLASSES,
-            yolo_imgsz=_YOLO_IMGSZ,
-            yolo_conf=_YOLO_CONF,
-            yolo_coco_weights=_YOLO_COCO_WEIGHTS,
-            yolo_coco_keep=_YOLO_COCO_KEEP,
+            yolo_weights=_UPLOAD_YOLO_WEIGHTS,
+            yolo_classes=_UPLOAD_YOLO_CLASSES,
+            yolo_imgsz=_UPLOAD_YOLO_IMGSZ,
+            yolo_conf=_UPLOAD_YOLO_CONF,
+            yolo_coco_weights=_UPLOAD_YOLO_COCO_WEIGHTS,
+            yolo_coco_keep=_UPLOAD_YOLO_COCO_KEEP,
             depth_model=_DEPTH_MODEL,
             depth_scale=_DEPTH_SCALE,
             sample_fps=float(os.environ.get("PERCEPTION_FPS", "5")),
