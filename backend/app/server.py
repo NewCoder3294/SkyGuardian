@@ -346,6 +346,29 @@ approach = ApproachController(
 _designator = Designator()
 
 
+def _apply_designation(now: float) -> None:
+    """Rank current recon detections and mark the top one as `designated_target`.
+
+    No-op (the prior mark TTL-clears) when there's no high-value candidate. The
+    emitted entity's label is not a high-value class, so it is excluded from
+    re-selection — no feedback loop. Read-only situational awareness; commands
+    nothing.
+    """
+    threat = _intel_summary.threat_level if _intel_summary is not None else "unknown"
+    designation = _designator.select(world.snapshot(), threat)
+    if designation is not None:
+        world.upsert(Entity(
+            id="designated_target",
+            type=EntityType.POI,
+            position=designation.position,
+            confidence=designation.confidence,
+            timestamp=now,
+            source=EntitySource.YOLO,
+            label=f"DESIGNATED: {designation.label}",
+            ttl_s=3.0,
+        ))
+
+
 def _route_arming_for_command(command: Command, lock: ArmingLock) -> None:
     """Transfer the Tello arming lock to match the commanded mode."""
     if command is Command.APPROACH:
@@ -398,24 +421,7 @@ async def _broadcast_loop() -> None:
         # single producer of world/mission/health for every client.
         try:
             now = clock.now()
-            # Target designation: rank current recon detections, mark the top one
-            # as `designated_target` so both maps can highlight it. No-op (TTL
-            # clears the prior mark) when there's no high-value candidate. The
-            # emitted entity is excluded from re-selection (its label isn't a
-            # high-value class), so there's no feedback loop.
-            _threat = _intel_summary.threat_level if _intel_summary is not None else "unknown"
-            _designation = _designator.select(world.snapshot(), _threat)
-            if _designation is not None:
-                world.upsert(Entity(
-                    id="designated_target",
-                    type=EntityType.POI,
-                    position=_designation.position,
-                    confidence=_designation.confidence,
-                    timestamp=now,
-                    source=EntitySource.YOLO,
-                    label=f"DESIGNATED: {_designation.label}",
-                    ttl_s=3.0,
-                ))
+            _apply_designation(now)
             await hub.broadcast(WorldSnapshot(entities=world.snapshot(), t=now))
             await hub.broadcast(MissionState(
                 stage=mission.stage.value,
