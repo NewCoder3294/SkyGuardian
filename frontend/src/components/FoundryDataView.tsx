@@ -542,10 +542,6 @@ function AskData({
             </div>
           </div>
         )}
-
-        <div className="mt-3 font-mono text-[9px] uppercase tracking-[0.3em] text-text-dim">
-          Foundry AIP When Configured · Local Fallback
-        </div>
       </div>
     </section>
   );
