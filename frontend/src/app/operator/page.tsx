@@ -9,6 +9,7 @@ import { IntelPanel } from "@/components/IntelPanel";
 import { IntelSummaryCard } from "@/components/IntelSummaryCard";
 import { LocalMap2D } from "@/components/LocalMap2D";
 import { LocalMap3D } from "@/components/LocalMap3D";
+import { OperationalArea } from "@/components/OperationalArea";
 import { SourceSelector, type SourceState } from "@/components/SourceSelector";
 import { StatusBar } from "@/components/StatusBar";
 import { ThreatAlert } from "@/components/ThreatAlert";
@@ -273,6 +274,7 @@ export default function Page() {
                 <LocalMap2D
                   entities={effectiveOpEntities}
                   apiBase={apiBase}
+                  buildingsVersion={wsLive.buildingsVersion}
                   statusLine={
                     isPlayback && playbackData
                       ? `${effectiveOpEntities.length} entities · t=${playbackTime.toFixed(1)}s`
@@ -286,6 +288,7 @@ export default function Page() {
                   showLandmarks={false}
                   apiBase={apiBase}
                   buildingsRadiusM={800}
+                  buildingsVersion={wsLive.buildingsVersion}
                   statusLine={
                     isPlayback && playbackData
                       ? `${effectiveOpEntities.length} entities · t=${playbackTime.toFixed(1)}s`
@@ -294,6 +297,9 @@ export default function Page() {
                 />
               )}
               <MapViewToggle value={mapView} onChange={setMapView} />
+              <div className="pointer-events-auto absolute right-3 top-3 z-10 max-w-sm">
+                <OperationalArea apiBase={apiBase} />
+              </div>
               <div className="pointer-events-auto absolute left-3 bottom-3 right-3 md:right-auto md:max-w-md">
                 <IntelSummaryCard apiBase={apiBase} variant="compact" />
               </div>
