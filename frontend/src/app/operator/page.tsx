@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Clock } from "@/components/Clock";
 import { ConsolePanel } from "@/components/ConsolePanel";
 import { FollowInset } from "@/components/FollowInset";
+import FoundryDataView from "@/components/FoundryDataView";
 import { IntelChat } from "@/components/IntelChat";
 import { IntelPanel } from "@/components/IntelPanel";
 import { IntelSummaryCard } from "@/components/IntelSummaryCard";
@@ -27,12 +28,13 @@ import type { ConnectionState, DetectionEvent, DetectionLayer } from "@/lib/useW
 import { useWorldClient } from "@/lib/useWorldClient";
 import { resolveWsUrl } from "@/lib/wsConfig";
 
-type Tab = "feed" | "map" | "intel";
+type Tab = "feed" | "map" | "intel" | "data";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "feed", label: "Feed" },
   { id: "map", label: "Map" },
   { id: "intel", label: "Intel" },
+  { id: "data", label: "Data" },
 ];
 
 export default function Page() {
@@ -51,7 +53,12 @@ export default function Page() {
   const [tab, setTab] = useState<Tab>("feed");
   useEffect(() => {
     const saved = window.localStorage.getItem("sg.tab");
-    if (saved === "feed" || saved === "map" || saved === "intel") {
+    if (
+      saved === "feed" ||
+      saved === "map" ||
+      saved === "intel" ||
+      saved === "data"
+    ) {
       setTab(saved as Tab);
     }
   }, []);
@@ -193,13 +200,6 @@ export default function Page() {
             />
           </div>
           <span className="hidden h-5 w-px bg-border lg:block" aria-hidden />
-          <a
-            href="/data"
-            className="border border-border-strong bg-surface-elevated px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.3em] text-accent transition-colors hover:border-accent/60 hover:bg-accent/10"
-          >
-            Data
-          </a>
-          <span className="hidden h-5 w-px bg-border lg:block" aria-hidden />
           <div className="flex items-center gap-3 border border-border-strong bg-surface-elevated px-4 py-1.5">
             <span className="h-1.5 w-1.5 rounded-full bg-ok shadow-glow-cyan" aria-hidden />
             <span className="font-mono text-[9px] uppercase tracking-[0.3em] text-text-dim">Z</span>
@@ -330,6 +330,11 @@ export default function Page() {
                   <IntelChat apiBase={apiBase} />
                 </div>
               </aside>
+            </div>
+          )}
+          {tab === "data" && (
+            <div className="min-h-0 flex-1 overflow-auto">
+              <FoundryDataView />
             </div>
           )}
         </section>
