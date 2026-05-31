@@ -205,8 +205,10 @@ export function SourceSelector({ apiBase, onState }: Props) {
     <div className="flex items-center justify-end gap-2 py-1">
       <div className="flex items-center gap-2 border border-border bg-surface-elevated px-3 py-1.5">
         <span
-          className={`inline-block h-1.5 w-1.5 rounded-full ${
-            live ? "bg-ok shadow-glow-cyan" : "bg-fail"
+          className={`inline-block h-1.5 w-1.5 ${
+            live
+              ? "rounded-full bg-text shadow-glow-cyan"
+              : "border border-dashed border-text-dim bg-transparent"
           }`}
           aria-hidden
         />

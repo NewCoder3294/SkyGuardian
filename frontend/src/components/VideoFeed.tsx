@@ -220,7 +220,8 @@ export function VideoFeed({ src, detections, label, pollMs = 100 }: Props) {
           ("feed offline") is preserved because it's actionable. */}
       {errored && (
         <div className="absolute inset-0 grid place-items-center">
-          <div className="border border-fail/60 bg-surface/90 px-4 py-2 font-mono text-[11px] uppercase tracking-[0.3em] text-fail">
+          {/* Loss-of-link, not a threat — strict monochrome (red is threats only). */}
+          <div className="border border-border-strong bg-surface/90 px-4 py-2 font-mono text-[11px] uppercase tracking-[0.3em] text-text">
             ▲ Feed offline
           </div>
         </div>
@@ -231,8 +232,10 @@ export function VideoFeed({ src, detections, label, pollMs = 100 }: Props) {
             <span className="absolute inset-0 animate-ping rounded-full bg-accent opacity-60" />
           )}
           <span
-            className={`relative inline-block h-2 w-2 rounded-full ${
-              isLive ? "bg-accent shadow-glow-cyan" : "bg-fail"
+            className={`relative inline-block h-2 w-2 ${
+              isLive
+                ? "rounded-full bg-accent shadow-glow-cyan"
+                : "border border-dashed border-text-dim bg-transparent"
             }`}
           />
         </span>

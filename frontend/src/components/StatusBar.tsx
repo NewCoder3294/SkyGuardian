@@ -4,6 +4,7 @@ import type { Health } from "@/lib/contracts";
 import type { ConnectionState } from "@/lib/useWorldClient";
 import {
   dotClass,
+  labelClass,
   leaderTier,
   linkTier,
   perceptionTier,
@@ -20,10 +21,12 @@ interface Props {
 
 /**
  * Compact telemetry readout for the header. Every channel is binary: ONLINE
- * (green) or OFFLINE (red) — the dot carries the state so the eye doesn't have
- * to read. Lives inline next to the clock rather than as its own band; the
- * fault line is surfaced separately by the page so a healthy system stays at
- * two header rows.
+ * (solid ink dot) or OFFLINE (hollow dashed ink ring) — the dot shape carries
+ * the state so the eye doesn't have to read. Strict monochrome: a down channel
+ * is loss-of-link, not a threat, so it never goes red (red is reserved for the
+ * ThreatAlert path). Lives inline next to the clock rather than as its own
+ * band; the fault line is surfaced separately by the page so a healthy system
+ * stays at two header rows.
  */
 export function StatusBar({
   connection,
@@ -58,11 +61,7 @@ function Channel({ label, tier }: { label: string; tier: StatusTier }) {
       title={`${label}: ${tierLabel(tier)}`}
     >
       <span className={`h-1.5 w-1.5 rounded-full ${dotClass(tier)}`} aria-hidden />
-      <span
-        className={`text-[10px] uppercase tracking-[0.2em] ${
-          tier === "ok" ? "text-text-muted" : "text-fail"
-        }`}
-      >
+      <span className={`text-[10px] uppercase tracking-[0.2em] ${labelClass(tier)}`}>
         {label}
       </span>
     </span>
