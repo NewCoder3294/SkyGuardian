@@ -35,8 +35,8 @@ const domains = [
     label: "Land",
     mission: "Perimeter security and force protection",
     value: "Route observation, missing person search, disaster response, and small unit overwatch.",
-    image: "/desert-canyon-aerial.png",
-    alt: "Aerial drone surveillance of desert canyon terrain",
+    image: "https://images.unsplash.com/photo-1516738901171-8eb4fc13bd20?w=1200&q=85",
+    alt: "Aerial drone view of rugged terrain and landscape",
   },
   {
     label: "Air",
@@ -280,8 +280,8 @@ export default function LandingPage() {
                     className="object-cover transition-transform duration-500 group-hover:scale-105"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-bg/20 to-transparent" />
-                  <div className="absolute left-5 top-4 border border-border-strong bg-bg/85 px-3 py-2 backdrop-blur-sm">
-                    <p className="font-mono text-[11px] uppercase tracking-[0.36em] text-accent">
+                  <div className="absolute left-5 top-4 border border-border-strong bg-bg px-3 py-2">
+                    <p className="font-mono text-[11px] uppercase tracking-[0.36em] text-text">
                       Domain {domain.label}
                     </p>
                   </div>
@@ -401,7 +401,7 @@ export default function LandingPage() {
               <article key={person.name} className="tac-corners border border-border-strong bg-bg p-6">
                 <div className="flex items-center gap-5">
                   <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-full border border-border-strong bg-surface">
-                    <Image src={person.image} alt={person.name} fill sizes="80px" className="object-cover" />
+                    <Image src={person.image} alt={person.name} fill sizes="80px" className="object-cover scale-[0.7] object-top" />
                   </div>
                   <div>
                     <h3 className="text-xl font-semibold leading-tight">{person.name}</h3>
