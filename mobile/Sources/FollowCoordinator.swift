@@ -114,8 +114,8 @@ final class FollowCoordinator: ObservableObject {
         stream.onPixelBuffer = { [weak self] pb in self?.ingest(pb) }
 
         commands.send("takeoff")
-        confirmTimeoutLands = true   // initial arm: a never-confirmed takeoff lands
         rcQueue.async {
+            self.confirmTimeoutLands = true   // initial arm: a never-confirmed takeoff lands
             self.mode = mode
             self.armed = true
             self.followActive = true
@@ -146,8 +146,8 @@ final class FollowCoordinator: ObservableObject {
     func requestLock(_ mode: TargetMode) {
         guard isArmed else { return }
         if mode == .visualMe { detectQueue.async { self.tracker.reset() } }
-        confirmTimeoutLands = false   // mid-flight: never-confirmed re-lock falls back to manual, not land
         rcQueue.async {
+            self.confirmTimeoutLands = false   // mid-flight: never-confirmed re-lock falls back to manual, not land
             self.mode = mode
             self.followActive = true
             self.manualHover = false
