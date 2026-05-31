@@ -164,7 +164,7 @@ export default function LandingPage() {
               See it in action
             </p>
             <h2 className="mt-5 max-w-2xl text-3xl font-semibold leading-tight md:text-5xl">
-              Watch the demo
+              Let the demo speak for itself.
             </h2>
           </div>
           <div className="mx-auto mt-12 max-w-4xl">
@@ -185,8 +185,10 @@ export default function LandingPage() {
       </section>
 
       {/* Problem */}
-      <section id="problem" className="border-b border-border bg-surface">
-        <div className="mx-auto grid max-w-7xl gap-10 px-5 py-20 md:grid-cols-[0.9fr_1.4fr] md:px-8">
+      <section id="problem" className="relative overflow-hidden border-b border-border bg-surface">
+        <div className="hud-grid-drift pointer-events-none absolute inset-0 opacity-50" />
+        <div className="scan-beam" />
+        <div className="relative mx-auto grid max-w-7xl gap-10 px-5 py-20 md:grid-cols-[0.9fr_1.4fr] md:px-8">
           <div>
             <p className="font-mono text-[11px] uppercase tracking-[0.42em] text-accent">
               The failure
@@ -197,7 +199,11 @@ export default function LandingPage() {
           </div>
           <div className="grid gap-4 md:grid-cols-3">
             {failures.map((item) => (
-              <article key={item.title} className="tac-corners border border-border-strong bg-bg p-5 shadow-[0_18px_60px_oklch(0.12_0.03_130_/_0.06)]">
+              <article
+                key={item.title}
+                className="group tac-corners relative overflow-hidden border border-border-strong bg-bg/85 p-5 shadow-[0_18px_60px_oklch(0.12_0.03_130_/_0.06)] backdrop-blur-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-accent hover:shadow-[0_24px_80px_oklch(0.12_0.03_130_/_0.12)]"
+              >
+                <span className="absolute left-0 right-0 top-0 h-0.5 origin-left scale-x-0 bg-accent transition-transform duration-300 group-hover:scale-x-100" />
                 <h3 className="text-xl font-semibold leading-tight">{item.title}</h3>
                 <p className="mt-5 text-sm leading-6 text-text-muted">{item.body}</p>
               </article>
@@ -207,8 +213,9 @@ export default function LandingPage() {
       </section>
 
       {/* Capability */}
-      <section id="capability" className="border-b border-border">
-        <div className="mx-auto grid max-w-7xl gap-12 px-5 py-20 md:grid-cols-[1.1fr_0.9fr] md:px-8">
+      <section id="capability" className="relative overflow-hidden border-b border-border">
+        <div className="hud-grid-drift pointer-events-none absolute inset-0 opacity-40" />
+        <div className="relative mx-auto grid max-w-7xl gap-12 px-5 py-20 md:grid-cols-[1.1fr_0.9fr] md:px-8">
           <div>
             <p className="font-mono text-[11px] uppercase tracking-[0.42em] text-accent">
               The solution
@@ -221,10 +228,21 @@ export default function LandingPage() {
             </p>
           </div>
           <div className="self-end">
-            <div className="border border-border-strong bg-bg">
+            <div className="relative border border-border-strong bg-bg/85 backdrop-blur-sm">
+              {/* Vertical signal rail — observation handing down the chain. */}
+              <div className="pointer-events-none absolute bottom-0 left-[2.05rem] top-0 hidden w-px bg-gradient-to-b from-transparent via-border-strong to-transparent md:block">
+                <div className="signal-dot-y" />
+              </div>
               {capabilities.map((cap, index) => (
-                <div key={cap.step} className="flex items-start gap-5 border-b border-border px-5 py-4 last:border-b-0">
-                  <span className="mt-0.5 font-mono text-[11px] uppercase tracking-[0.28em] text-accent">
+                <div
+                  key={cap.step}
+                  className="group relative flex items-start gap-5 border-b border-border px-5 py-4 transition-colors duration-200 last:border-b-0 hover:bg-surface"
+                >
+                  <span className="absolute left-0 top-0 h-full w-0.5 origin-top scale-y-0 bg-accent transition-transform duration-200 group-hover:scale-y-100" />
+                  <span
+                    className="node-pulse mt-0.5 block rounded-full font-mono text-[11px] uppercase tracking-[0.28em] text-accent"
+                    style={{ animationDelay: `${index * 0.5}s` }}
+                  >
                     {String(index + 1).padStart(2, "0")}
                   </span>
                   <div>
@@ -325,8 +343,11 @@ export default function LandingPage() {
       </section>
 
       {/* Markets — text only, no image */}
-      <section className="border-b border-border bg-surface">
-        <div className="mx-auto grid max-w-7xl gap-10 px-5 py-20 md:grid-cols-[1fr_1fr] md:px-8">
+      <section className="relative overflow-hidden border-b border-border bg-surface">
+        <div className="hud-grid-drift pointer-events-none absolute inset-0 opacity-70" />
+        <div className="scan-beam" />
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(900px_360px_at_85%_50%,oklch(0.58_0.15_75_/_0.06),transparent_70%)]" />
+        <div className="relative mx-auto grid max-w-7xl gap-10 px-5 py-20 md:grid-cols-[1fr_1fr] md:px-8">
           <div>
             <p className="font-mono text-[11px] uppercase tracking-[0.42em] text-accent">
               Dual-use market
@@ -339,14 +360,20 @@ export default function LandingPage() {
             <p className="max-w-lg text-lg leading-8 text-text-muted">
               One autonomy platform across defense ISR, public safety, port security, emergency response, infrastructure inspection, and environmental monitoring.
             </p>
-            <div className="mt-8 grid grid-cols-3 border border-border-strong bg-bg">
-              {["Same platform", "Mission changes", "Awareness persists"].map((item) => (
-                <p
+            <div className="mt-8 grid grid-cols-3 border border-border-strong bg-bg/80 backdrop-blur-sm">
+              {["Same platform", "Mission changes", "Awareness persists"].map((item, index) => (
+                <div
                   key={item}
-                  className="border-r border-border px-4 py-3.5 font-mono text-[9px] uppercase tracking-[0.24em] text-text-muted last:border-r-0"
+                  className="flex items-center gap-2 border-r border-border px-4 py-3.5 last:border-r-0"
                 >
-                  {item}
-                </p>
+                  <span
+                    className="node-pulse block h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
+                    style={{ animationDelay: `${index * 0.9}s` }}
+                  />
+                  <p className="font-mono text-[9px] uppercase tracking-[0.24em] text-text-muted">
+                    {item}
+                  </p>
+                </div>
               ))}
             </div>
           </div>
@@ -354,8 +381,9 @@ export default function LandingPage() {
       </section>
 
       {/* Roadmap — text only, no images */}
-      <section id="roadmap" className="border-b border-border">
-        <div className="mx-auto max-w-7xl px-5 py-20 md:px-8">
+      <section id="roadmap" className="relative overflow-hidden border-b border-border">
+        <div className="hud-grid-drift pointer-events-none absolute inset-0 opacity-50" />
+        <div className="relative mx-auto max-w-7xl px-5 py-20 md:px-8">
           <p className="font-mono text-[11px] uppercase tracking-[0.42em] text-accent">
             Roadmap
           </p>
@@ -363,7 +391,20 @@ export default function LandingPage() {
             From single asset to persistent network.
           </h2>
 
-          <div className="mt-12 grid gap-4 md:grid-cols-3">
+          {/* Progression track — a signal travelling across three lit waypoints. */}
+          <div className="relative mt-14 hidden h-2 md:block">
+            <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-gradient-to-r from-transparent via-border-strong to-transparent" />
+            <div className="signal-dot" />
+            {[0, 1, 2].map((i) => (
+              <span
+                key={i}
+                className="node-pulse absolute top-1/2 block h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-accent bg-bg"
+                style={{ left: `${16.667 + i * 33.333}%`, animationDelay: `${i * 0.9}s` }}
+              />
+            ))}
+          </div>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-3">
             {[
               {
                 label: "Today",
@@ -378,7 +419,10 @@ export default function LandingPage() {
                 body: "Mission-aware swarms form persistent observation networks with specialized autonomous roles.",
               },
             ].map((item, index) => (
-              <article key={item.label} className="tac-corners border border-border-strong bg-surface p-6">
+              <article
+                key={item.label}
+                className="tac-corners border border-border-strong bg-surface/85 p-6 backdrop-blur-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-accent hover:shadow-[0_20px_70px_oklch(0.12_0.03_130_/_0.10)]"
+              >
                 <div className="flex items-center gap-4">
                   <span className="font-mono text-[11px] uppercase tracking-[0.28em] text-accent">
                     {String(index + 1).padStart(2, "0")}

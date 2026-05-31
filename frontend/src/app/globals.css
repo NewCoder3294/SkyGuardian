@@ -120,3 +120,151 @@ button:focus-visible {
   right: -1px;
   border-width: 0 1px 1px 0;
 }
+
+/* ─── Landing section motion — CSS-only, reduced-motion aware ─────────── */
+
+/* Slow drift of the survey graticule — a faint living backdrop. */
+@keyframes grid-drift {
+  from {
+    background-position:
+      0 0,
+      0 0;
+  }
+  to {
+    background-position:
+      36px 36px,
+      36px 36px;
+  }
+}
+.hud-grid-drift {
+  background-image:
+    linear-gradient(oklch(0.58 0.15 75 / 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(0.58 0.15 75 / 0.07) 1px, transparent 1px);
+  background-size: 36px 36px;
+  animation: grid-drift 9s linear infinite;
+}
+
+/* A radar/scan beam sweeping across a panel. */
+@keyframes scan-sweep {
+  0% {
+    transform: translateX(-130%);
+    opacity: 0;
+  }
+  14% {
+    opacity: 1;
+  }
+  86% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(130%);
+    opacity: 0;
+  }
+}
+.scan-beam {
+  position: absolute;
+  inset: 0;
+  width: 55%;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    oklch(0.58 0.15 75 / 0.1) 46%,
+    oklch(0.58 0.15 75 / 0.28) 50%,
+    oklch(0.58 0.15 75 / 0.1) 54%,
+    transparent 100%
+  );
+  animation: scan-sweep 7s ease-in-out infinite;
+}
+
+/* Roadmap connector — a signal dot travelling left → right (single asset → network). */
+@keyframes signal-travel {
+  0% {
+    left: 0%;
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  92% {
+    opacity: 1;
+  }
+  100% {
+    left: 100%;
+    opacity: 0;
+  }
+}
+.signal-dot {
+  position: absolute;
+  top: 50%;
+  height: 8px;
+  width: 8px;
+  margin-top: -4px;
+  margin-left: -4px;
+  border-radius: 9999px;
+  background: var(--accent);
+  box-shadow:
+    0 0 0 2px oklch(0.58 0.15 75 / 0.25),
+    0 0 12px 2px oklch(0.58 0.15 75 / 0.55);
+  animation: signal-travel 4.5s ease-in-out infinite;
+}
+
+/* Capability rail — a signal dot travelling top → bottom through the steps. */
+@keyframes signal-travel-y {
+  0% {
+    top: 0%;
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  92% {
+    opacity: 1;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+.signal-dot-y {
+  position: absolute;
+  left: 50%;
+  height: 8px;
+  width: 8px;
+  margin-top: -4px;
+  margin-left: -4px;
+  border-radius: 9999px;
+  background: var(--accent);
+  box-shadow:
+    0 0 0 2px oklch(0.58 0.15 75 / 0.25),
+    0 0 12px 2px oklch(0.58 0.15 75 / 0.55);
+  animation: signal-travel-y 5s ease-in-out infinite;
+}
+
+/* Pulsing node ring — expanding halo on the roadmap waypoints / market dots. */
+@keyframes node-pulse {
+  0% {
+    box-shadow: 0 0 0 0 oklch(0.58 0.15 75 / 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 9px oklch(0.58 0.15 75 / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 oklch(0.58 0.15 75 / 0);
+  }
+}
+.node-pulse {
+  animation: node-pulse 2.8s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-grid-drift,
+  .signal-dot,
+  .signal-dot-y,
+  .node-pulse {
+    animation: none;
+  }
+  .scan-beam {
+    display: none;
+  }
+}
