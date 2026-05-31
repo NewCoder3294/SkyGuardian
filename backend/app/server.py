@@ -289,6 +289,18 @@ _DEPTH_MODEL_ENV = os.environ.get("DEPTH_MODEL", "depth-anything/Depth-Anything-
 _DEPTH_MODEL: str | None = None if _DEPTH_MODEL_ENV.lower() == "off" else _DEPTH_MODEL_ENV
 _DEPTH_SCALE = float(os.environ.get("DEPTH_SCALE", "5.0"))
 
+_capture_recorder = None
+if os.environ.get("CAPTURE_ENABLED") == "1":
+    from .capture.recorder import CaptureRecorder  # noqa: PLC0415
+    _capture_recorder = CaptureRecorder(
+        root=Path(__file__).resolve().parent.parent.parent / "captures",
+        mission_id=os.environ.get("CAPTURE_MISSION_ID", "mission"),
+        max_mb=float(os.environ.get("CAPTURE_MAX_MB", "2000")),
+        cadence_s=float(os.environ.get("CAPTURE_CADENCE_S", "2.0")),
+        low_conf=float(os.environ.get("CAPTURE_LOW_CONF", "0.4")),
+        enabled=True,
+    )
+
 perception = PerceptionPipeline(
     video_source=mavic_camera,
     world=world,
@@ -303,6 +315,7 @@ perception = PerceptionPipeline(
     depth_scale=_DEPTH_SCALE,
     tag_size_m=float(os.environ.get("ANCHOR_TAG_SIZE_M", "0.20")),
     perception_fps=float(os.environ.get("PERCEPTION_FPS", "5")),
+    recorder=_capture_recorder,
 )
 
 # Tello — single owner. The supervisor thread auto-reconnects; we never fail to
