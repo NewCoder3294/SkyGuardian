@@ -81,7 +81,7 @@ export function IntelChat({ apiBase }: Props) {
 
       <div
         ref={listRef}
-        className="max-h-72 min-h-[10rem] space-y-2 overflow-y-auto px-5 py-4"
+        className="h-[360px] space-y-2 overflow-y-auto px-5 py-4"
       >
         {messages.length === 0 && !pending && (
           <div className="space-y-3">

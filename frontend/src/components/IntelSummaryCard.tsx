@@ -67,7 +67,7 @@ export function IntelSummaryCard({
   const isCompact = variant === "compact";
   const wrap = isCompact
     ? "max-w-md rounded-md border border-border-strong bg-surface/85 px-3 py-2 backdrop-blur-sm shadow-card"
-    : "rounded-md border border-border bg-surface px-4 py-4 shadow-card";
+    : "flex h-48 flex-col overflow-auto rounded-md border border-border bg-surface px-5 py-5 shadow-card";
 
   if (!data) {
     return (
